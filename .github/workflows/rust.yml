@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "renovate/**"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
+        with:
+          toolchain: 1.85
+          components: clippy, rustfmt
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+
+      - uses: taiki-e/install-action@1c861c252bd329898ca0817dc2913d5963834965 # v2
+        with:
+          tool: cargo-nextest
+
+      - name: Build
+        run: cargo build
+
+      - name: Test
+        run: cargo nextest run
+
+      - name: Clippy
+        uses: auguwu/clippy-action@94a9ff2f6920180b89e5c03d121d0af04a9d3e03 # 1.4.0
+        with:
+          token: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Cargo fmt
+        run: cargo fmt --check
+
+      - name: Cargo doctests
+        run: cargo test --doc

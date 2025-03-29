@@ -1,0 +1,34 @@
+[package]
+name = "splinter-rs"
+version = "0.1.0"
+edition = "2024"
+authors = ["orbitinghail <hello@orbitinghail.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/orbitinghail/splinter-rs"
+homepage = "https://github.com/orbitinghail/splinter-rs"
+rust-version = "1.85"
+
+keywords = ["bitmap", "compression", "zero-copy"]
+description = "A compressed bitmap format optimized for small, sparse sets of u32s with zero-copy querying."
+
+[lints.clippy]
+disallowed_methods = "deny"
+uninlined-format-args = "warn"
+doc-markdown = "warn"
+map-unwrap-or = "warn"
+
+[dependencies]
+culprit = "0.4"
+bytes = "1.10"
+either = "1.15"
+thiserror = "2.0"
+zerocopy = { version = "0.8", features = ["derive"] }
+itertools = "0.14"
+
+[dev-dependencies]
+criterion = "0.5"
+roaring = "0.10"
+
+[[bench]]
+name = "bitmaps"
+harness = false
