@@ -2,9 +2,9 @@
 <p align="center">
   <a href="https://docs.rs/splinter-rs"><img alt="docs.rs" src="https://img.shields.io/docsrs/splinter-rs"></a>
   &nbsp;
-  <a href="https://crates.io/crates/splinter-rs"><img alt="crates.io" src="https://img.shields.io/crates/v/splinter-rs.svg"></a>
+  <a href="https://github.com/orbitinghail/splinter-rs/actions"><img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/orbitinghail/splinter-rs/rust.yml"></a>
   &nbsp;
-  <a href="https://github.com/orbitinghail/splinter-rs/actions"><img alt="Build Status" src="https://github.com/orbitinghail/splinter-rs/actions/workflows/rust.yml/badge.svg"></a>
+  <a href="https://crates.io/crates/splinter-rs"><img alt="crates.io" src="https://img.shields.io/crates/v/splinter-rs.svg"></a>
 </p>
 
 Splinter is a compressed bitmap format similar to [Roaring], optimized specifically for small, sparse sets of 32-bit unsigned integers (`u32`).
