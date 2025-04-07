@@ -27,7 +27,7 @@ itertools = "0.14"
 
 [dev-dependencies]
 criterion = "=0.5.1"
-roaring = "=0.10.10"
+roaring = "=0.10.12"
 
 [[bench]]
 name = "bitmaps"
