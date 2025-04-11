@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
 use bytes::Bytes;
+use itertools::Itertools;
 
 use crate::{Splinter, SplinterRef, util::CopyToOwned};
-use itertools::Itertools;
 
 pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
     let mut splinter = Splinter::default();

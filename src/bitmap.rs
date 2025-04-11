@@ -8,7 +8,7 @@ pub type Bitmap = [u8; BITMAP_SIZE];
 pub trait BitmapMutExt {
     fn as_mut(&mut self) -> &mut Bitmap;
 
-    /// Insert a segment into the bitmap, returning true if a bit was set
+    /// Inserts a segment into the bitmap, returning true if a bit was set
     #[inline]
     fn insert(&mut self, segment: Segment) -> bool {
         let key = bitmap_key(segment);
@@ -36,7 +36,7 @@ where
         self.as_ref().iter().map(|&x| x.count_ones() as usize).sum()
     }
 
-    /// Return the last segment in the bitmap
+    /// Returns the last segment in the bitmap
     #[inline]
     fn last(&self) -> Option<Segment> {
         // Traverse the bitmap from the last byte to the first
@@ -54,7 +54,7 @@ where
         None // If all bits are 0
     }
 
-    /// Count the number of 1-bits in the block up to and including the `position`
+    /// Counts the number of 1-bits in the block up to and including the `position`
     #[inline]
     fn rank(&self, position: u8) -> usize {
         let key = bitmap_key(position);

@@ -61,6 +61,7 @@ impl Footer {
     }
 }
 
+/// An owned, compressed bitmap for u32 keys
 #[derive(Default, Clone)]
 pub struct Splinter {
     partitions: Partition<U32, Partition<U32, Partition<U16, Block>>>,
@@ -79,11 +80,38 @@ impl Splinter {
         SplinterRef::from_bytes(data).map(Into::into)
     }
 
+    /// Returns `true` if the splinter is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// assert!(splinter.is_empty());
+    /// splinter.insert(1);
+    /// assert!(!splinter.is_empty());
+    /// ```
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.partitions.is_empty()
     }
 
+    /// Returns `true` if the splinter contains the given key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    ///
+    /// assert!(splinter.contains(1));
+    /// assert!(!splinter.contains(2));
+    /// assert!(splinter.contains(3));
+    /// ```
     pub fn contains(&self, key: u32) -> bool {
         let (a, b, c, d) = segments(key);
 
@@ -98,7 +126,20 @@ impl Splinter {
         false
     }
 
-    /// calculates the total number of values stored in the set
+    /// Calculates the total number of values stored in the set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    ///
+    /// assert_eq!(3, splinter.cardinality());
+    /// ```
     pub fn cardinality(&self) -> usize {
         self.partitions
             .sorted_iter()
@@ -108,6 +149,20 @@ impl Splinter {
             .sum()
     }
 
+    /// Returns an sorted [`Iterator`] over all keys.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    ///
+    /// assert_eq!(&[1, 3, 6], &*splinter.iter().collect::<Vec<_>>());
+    /// ```
     pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.partitions
             .sorted_iter()
@@ -116,7 +171,7 @@ impl Splinter {
             .flat_map(|(a, b, c, p)| p.segments().map(move |d| combine_segments(a, b, c, d)))
     }
 
-    /// attempts to insert a key into the Splinter, returning true if a key was inserted
+    /// Attempts to insert a key into the Splinter, returning true if a key was inserted
     pub fn insert(&mut self, key: u32) -> bool {
         let (a, b, c, d) = segments(key);
         let partition = self.partitions.get_or_init(a);
@@ -149,7 +204,21 @@ impl Splinter {
         SplinterRef::from_bytes(self.serialize_to_bytes()).expect("serialization roundtrip failed")
     }
 
-    /// returns the last key in the set
+    /// Returns the last key in the set
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    ///
+    /// assert_eq!(None, splinter.last());
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    /// assert_eq!(Some(6), splinter.last());
+    /// ```
     pub fn last(&self) -> Option<u32> {
         let (a, p) = self.partitions.last()?;
         let (b, p) = p.last()?;
@@ -178,6 +247,7 @@ impl<K: Into<u32>> FromIterator<K> for Splinter {
     }
 }
 
+/// A compressed bitmap for u32 keys operating directly on a slice of bytes
 #[derive(Clone)]
 pub struct SplinterRef<T> {
     data: T,
@@ -228,6 +298,42 @@ where
         PartitionRef::from_suffix(slice, self.partitions)
     }
 
+    /// Returns `true` if the splinter is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default().serialize_to_splinter_ref();
+    /// assert!(splinter.is_empty());
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(1);
+    /// let splinter = splinter.serialize_to_splinter_ref();
+    /// assert!(!splinter.is_empty());
+    /// ```
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.load_partitions().is_empty()
+    }
+
+    /// Returns `true` if the splinter contains the given key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    /// let splinter = splinter.serialize_to_splinter_ref();
+    ///
+    /// assert!(splinter.contains(1));
+    /// assert!(!splinter.contains(2));
+    /// assert!(splinter.contains(3));
+    /// ```
     pub fn contains(&self, key: u32) -> bool {
         let (a, b, c, d) = segments(key);
 
@@ -242,7 +348,21 @@ where
         false
     }
 
-    /// calculates the total number of values stored in the set
+    /// Calculates the total number of values stored in the set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    /// let splinter = splinter.serialize_to_splinter_ref();
+    ///
+    /// assert_eq!(3, splinter.cardinality());
+    /// ```
     pub fn cardinality(&self) -> usize {
         let mut sum = 0;
         for (_, partition) in self.load_partitions().sorted_iter() {
@@ -253,6 +373,21 @@ where
         sum
     }
 
+    /// Returns an sorted [`Iterator`] over all keys.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    /// let splinter = splinter.serialize_to_splinter_ref();
+    ///
+    /// assert_eq!(&[1, 3, 6], &*splinter.iter().collect::<Vec<_>>());
+    /// ```
     pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.load_partitions()
             .into_iter()
