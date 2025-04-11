@@ -465,7 +465,7 @@ checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
 
 [[package]]
 name = "splinter-rs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "criterion",
