@@ -58,8 +58,9 @@ impl SerializeContainer for Block {
         self.bitmap.has_bits_set()
     }
 
-    /// Serialize the block to the output buffer returning the block's cardinality
-    /// and number of bytes written.
+    /// Serializes the block to the output buffer.
+    ///
+    /// Returns the block's cardinality and number of bytes written.
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
         let cardinality = self.cardinality();
 
@@ -104,7 +105,7 @@ impl<'a> BlockRef<'a> {
         Self::Partial { segments }
     }
 
-    /// Resolve this `BlockRef` to either a Bitmap or a slice of segments
+    /// Resolves this `BlockRef` to either a Bitmap or a slice of segments
     #[inline]
     pub(crate) fn resolve_bitmap(&self) -> Either<&Bitmap, &[Segment]> {
         match *self {

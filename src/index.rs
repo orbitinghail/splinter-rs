@@ -52,7 +52,7 @@ where
         self.cardinalities.len()
     }
 
-    /// returns the cardinality of the index by summing all of
+    /// Returns the cardinality of the index by summing all of
     /// the index's entry cardinalities
     #[inline]
     pub fn cardinality(&self) -> usize {

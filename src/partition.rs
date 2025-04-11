@@ -44,7 +44,11 @@ where
 }
 
 impl<O, V> Partition<O, V> {
-    // insert a value into the partition; panics if the segment is already present
+    /// Inserts a value into the partition.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the segment is already present.
     pub fn insert(&mut self, segment: Segment, value: V) {
         assert!(
             self.values.insert(segment, value).is_none(),
@@ -203,7 +207,7 @@ where
     Offset: FromBytes + Immutable + Copy + Into<u32>,
     V: FromSuffix<'a> + 'a,
 {
-    /// returns the cardinality of the partition by summing the cardinalities
+    /// Returns the cardinality of the partition by summing the cardinalities
     /// stored in the partition's index
     #[inline]
     pub fn cardinality(&self) -> usize {
