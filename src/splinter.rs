@@ -557,6 +557,13 @@ mod tests {
             let splinter_lz4 = lz4::block::compress(&splinter, None, true).unwrap();
             let roaring_lz4 = lz4::block::compress(&roaring, None, true).unwrap();
 
+            // verify round trip
+            assert_eq!(
+                splinter,
+                lz4::block::decompress(&splinter_lz4, None).unwrap()
+            );
+            assert_eq!(roaring, lz4::block::decompress(&roaring_lz4, None).unwrap());
+
             reports.push(Report {
                 name,
                 baseline: set.len() * std::mem::size_of::<u32>(),
