@@ -525,13 +525,13 @@ mod tests {
 
     #[test]
     fn test_expected_compression() {
-        let roaring_size = |set: Vec<u32>| {
+        let to_roaring = |set: Vec<u32>| {
             let mut buf = io::Cursor::new(Vec::new());
             RoaringBitmap::from_sorted_iter(set)
                 .unwrap()
                 .serialize_into(&mut buf)
                 .unwrap();
-            buf.into_inner().len()
+            buf.into_inner()
         };
 
         struct Report {
@@ -540,6 +540,9 @@ mod tests {
             //        (actual, expected)
             splinter: (usize, usize),
             roaring: (usize, usize),
+
+            splinter_lz4: usize,
+            roaring_lz4: usize,
         }
 
         let mut reports = vec![];
@@ -548,12 +551,20 @@ mod tests {
                             set: Vec<u32>,
                             expected_splinter: usize,
                             expected_roaring: usize| {
-            let data = mksplinter(set.clone()).serialize_to_bytes();
+            let splinter = mksplinter(set.clone()).serialize_to_bytes();
+            let roaring = to_roaring(set.clone());
+
+            let splinter_lz4 = lz4::block::compress(&splinter, None, true).unwrap();
+            let roaring_lz4 = lz4::block::compress(&roaring, None, true).unwrap();
+
             reports.push(Report {
                 name,
                 baseline: set.len() * std::mem::size_of::<u32>(),
-                splinter: (data.len(), expected_splinter),
-                roaring: (roaring_size(set), expected_roaring),
+                splinter: (splinter.len(), expected_splinter),
+                roaring: (roaring.len(), expected_roaring),
+
+                splinter_lz4: splinter_lz4.len(),
+                roaring_lz4: roaring_lz4.len(),
             });
         };
 
@@ -694,6 +705,34 @@ mod tests {
                     "<"
                 } else {
                     "ok"
+                }
+            );
+            let diff = report.splinter_lz4 as f64 / report.splinter.0 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Splinter LZ4",
+                report.splinter_lz4,
+                report.splinter_lz4,
+                diff,
+                if report.splinter.0 <= report.splinter_lz4 {
+                    ">"
+                } else {
+                    "<"
+                }
+            );
+            let diff = report.roaring_lz4 as f64 / report.splinter_lz4 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Roaring LZ4",
+                report.roaring_lz4,
+                report.roaring_lz4,
+                diff,
+                if report.splinter_lz4 <= report.roaring_lz4 {
+                    "ok"
+                } else {
+                    "<"
                 }
             );
             let diff = report.baseline as f64 / report.splinter.0 as f64;
