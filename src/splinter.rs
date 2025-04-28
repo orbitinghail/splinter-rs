@@ -833,7 +833,7 @@ mod tests {
             "{:30} {:12} {:>6} {:>10} {:>10} {:>10}",
             "test", "bitmap", "size", "expected", "relative", "ok"
         );
-        for report in reports {
+        for report in &reports {
             println!(
                 "{:30} {:12} {:6} {:10} {:>10} {:>10}",
                 report.name,
@@ -909,6 +909,15 @@ mod tests {
                 }
             );
         }
+
+        // calculate average compression ratio (splinter_lz4 / splinter)
+        let avg_ratio = reports
+            .iter()
+            .map(|r| r.splinter_lz4 as f64 / r.splinter.0 as f64)
+            .sum::<f64>()
+            / reports.len() as f64;
+
+        println!("average compression ratio (splinter_lz4 / splinter): {avg_ratio:.2}");
 
         assert!(!fail_test, "compression test failed");
     }
