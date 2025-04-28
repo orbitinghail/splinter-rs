@@ -636,15 +636,18 @@ mod tests {
 
             analyze_compression_patterns(&splinter);
 
-            let splinter_lz4 = lz4::block::compress(&splinter, None, true).unwrap();
-            let roaring_lz4 = lz4::block::compress(&roaring, None, true).unwrap();
+            let splinter_lz4 = lz4::block::compress(&splinter, None, false).unwrap();
+            let roaring_lz4 = lz4::block::compress(&roaring, None, false).unwrap();
 
             // verify round trip
             assert_eq!(
                 splinter,
-                lz4::block::decompress(&splinter_lz4, None).unwrap()
+                lz4::block::decompress(&splinter_lz4, Some(splinter.len() as i32)).unwrap()
             );
-            assert_eq!(roaring, lz4::block::decompress(&roaring_lz4, None).unwrap());
+            assert_eq!(
+                roaring,
+                lz4::block::decompress(&roaring_lz4, Some(roaring.len() as i32)).unwrap()
+            );
 
             reports.push(Report {
                 name,
