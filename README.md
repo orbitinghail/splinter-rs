@@ -163,6 +163,51 @@ fully dense                    Splinter         84         84       1.00        
                                Splinter LZ4  23910      23910       0.52          <
                                Roaring LZ4   41059      41059       1.72         ok
                                Baseline      16384      16384       0.35          <
+dense throughout               Splinter       6584       6584       1.00         ok
+                               Roaring        8712       8712       1.32         ok
+                               Splinter LZ4    154        154       0.02          <
+                               Roaring LZ4     691        691       4.49         ok
+                               Baseline      16384      16384       2.49         ok
+dense low                      Splinter       2292       2292       1.00         ok
+                               Roaring        8208       8208       3.58         ok
+                               Splinter LZ4    177        177       0.08          <
+                               Roaring LZ4    8240       8240      46.55         ok
+                               Baseline      16384      16384       7.15         ok
+dense mid/low                  Splinter       6350       6350       1.00         ok
+                               Roaring        8456       8456       1.33         ok
+                               Splinter LZ4    245        245       0.04          <
+                               Roaring LZ4     560        560       2.29         ok
+                               Baseline      16384      16384       2.58         ok
+random/32                      Splinter        546        546       1.00         ok
+                               Roaring         328        328       0.60          <
+                               Splinter LZ4    445        445       0.82          <
+                               Roaring LZ4     331        331       0.74          <
+                               Baseline        128        128       0.23          <
+random/256                     Splinter       3656       3656       1.00         ok
+                               Roaring        2568       2568       0.70          <
+                               Splinter LZ4   2734       2734       0.75          <
+                               Roaring LZ4    2576       2576       0.94          <
+                               Baseline       1024       1024       0.28          <
+random/1024                    Splinter      12530      12530       1.00         ok
+                               Roaring       10216      10216       0.82          <
+                               Splinter LZ4   7932       7932       0.63          <
+                               Roaring LZ4   10241      10241       1.29         ok
+                               Baseline       4096       4096       0.33          <
+random/4096                    Splinter      45594      45594       1.00         ok
+                               Roaring       39968      39968       0.88          <
+                               Splinter LZ4  25617      25617       0.56          <
+                               Roaring LZ4   40085      40085       1.56         ok
+                               Baseline      16384      16384       0.36          <
+random/16384                   Splinter     163970     163970       1.00         ok
+                               Roaring      148952     148952       0.91          <
+                               Splinter LZ4 101983     101983       0.62          <
+                               Roaring LZ4  149536     149536       1.47         ok
+                               Baseline      65536      65536       0.40          <
+random/65535                   Splinter     543929     543929       1.00         ok
+                               Roaring      462742     462742       0.85          <
+                               Splinter LZ4 358584     358584       0.66          <
+                               Roaring LZ4  464556     464556       1.30         ok
+                               Baseline     262140     262140       0.48          <
 ```
 
 ## License
