@@ -435,12 +435,14 @@ fn combine_segments(a: Segment, b: Segment, c: Segment, d: Segment) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, ops::RangeInclusive};
+
+    use std::io;
 
     use crate::testutil::{mksplinter, mksplinter_ref};
 
     use super::*;
-    use itertools::iproduct;
+    use itertools::Itertools;
+    use rand::{SeedableRng, seq::index};
     use roaring::RoaringBitmap;
 
     #[test]
@@ -523,15 +525,91 @@ mod tests {
         assert!(!splinter.contains(90999), "unexpected key: 90999");
     }
 
+    /// Heuristic analyzer: prints patterns found in the data which could be
+    /// exploited by lz4 to improve compression
+    pub fn analyze_compression_patterns(data: &[u8]) {
+        use std::collections::HashMap;
+
+        let len = data.len();
+        if len == 0 {
+            println!("empty slice");
+            return;
+        }
+        println!("length: {len} bytes");
+
+        // --- zeros ---
+        let (mut zeros, mut longest_run, mut run) = (0usize, 0usize, 0usize);
+        for &b in data {
+            if b == 0 {
+                zeros += 1;
+                run += 1;
+                longest_run = longest_run.max(run);
+            } else {
+                run = 0;
+            }
+        }
+        println!(
+            "zeros: {zeros} ({:.2}%), longest run: {longest_run}",
+            zeros as f64 * 100.0 / len as f64
+        );
+
+        // --- histogram / entropy ---
+        let mut freq = [0u32; 256];
+        for &b in data {
+            freq[b as usize] += 1;
+        }
+        let entropy: f64 = freq
+            .iter()
+            .filter(|&&c| c != 0)
+            .map(|&c| {
+                let p = c as f64 / len as f64;
+                -p * p.log2()
+            })
+            .sum();
+        println!("shannon entropy ≈ {entropy:.3} bits/byte (max 8)");
+
+        // --- repeated 8-byte blocks ---
+        const BLOCK: usize = 8;
+        if len >= BLOCK {
+            let mut map: HashMap<&[u8], u32> = HashMap::new();
+            for chunk in data.chunks_exact(BLOCK) {
+                *map.entry(chunk).or_default() += 1;
+            }
+
+            let mut duplicate_bytes = 0u32;
+            let mut top: Option<(&[u8], u32)> = None;
+
+            for (&k, &v) in map.iter() {
+                if v > 1 {
+                    duplicate_bytes += (v - 1) * BLOCK as u32;
+                    if top.map_or(true, |(_, max)| v > max) {
+                        top = Some((k, v));
+                    }
+                }
+            }
+
+            if let Some((bytes, count)) = top {
+                println!(
+                    "repeated 8-byte blocks: {} duplicate bytes; most common occurs {count}× (bytes {:02X?})",
+                    duplicate_bytes, bytes
+                );
+            } else {
+                println!("no duplicated 8-byte blocks");
+            }
+        }
+
+        println!("analysis complete");
+    }
+
     #[test]
     fn test_expected_compression() {
-        let roaring_size = |set: Vec<u32>| {
+        let to_roaring = |set: Vec<u32>| {
             let mut buf = io::Cursor::new(Vec::new());
             RoaringBitmap::from_sorted_iter(set)
                 .unwrap()
                 .serialize_into(&mut buf)
                 .unwrap();
-            buf.into_inner().len()
+            buf.into_inner()
         };
 
         struct Report {
@@ -540,6 +618,9 @@ mod tests {
             //        (actual, expected)
             splinter: (usize, usize),
             roaring: (usize, usize),
+
+            splinter_lz4: usize,
+            roaring_lz4: usize,
         }
 
         let mut reports = vec![];
@@ -548,115 +629,203 @@ mod tests {
                             set: Vec<u32>,
                             expected_splinter: usize,
                             expected_roaring: usize| {
-            let data = mksplinter(set.clone()).serialize_to_bytes();
+            println!("-------------------------------------");
+            println!("running test: {name}");
+
+            let splinter = mksplinter(set.clone()).serialize_to_bytes();
+            let roaring = to_roaring(set.clone());
+
+            analyze_compression_patterns(&splinter);
+
+            let splinter_lz4 = lz4::block::compress(&splinter, None, false).unwrap();
+            let roaring_lz4 = lz4::block::compress(&roaring, None, false).unwrap();
+
+            // verify round trip
+            assert_eq!(
+                splinter,
+                lz4::block::decompress(&splinter_lz4, Some(splinter.len() as i32)).unwrap()
+            );
+            assert_eq!(
+                roaring,
+                lz4::block::decompress(&roaring_lz4, Some(roaring.len() as i32)).unwrap()
+            );
+
             reports.push(Report {
                 name,
                 baseline: set.len() * std::mem::size_of::<u32>(),
-                splinter: (data.len(), expected_splinter),
-                roaring: (roaring_size(set), expected_roaring),
+                splinter: (splinter.len(), expected_splinter),
+                roaring: (roaring.len(), expected_roaring),
+
+                splinter_lz4: splinter_lz4.len(),
+                roaring_lz4: roaring_lz4.len(),
             });
         };
 
-        #[track_caller]
-        fn mkset(
-            high: RangeInclusive<u8>,
-            mid: RangeInclusive<u8>,
-            low: RangeInclusive<u8>,
-            block: RangeInclusive<u8>,
-            expected_len: usize,
-        ) -> Vec<u32> {
-            let out: Vec<u32> = iproduct!(high, mid, low, block)
-                .map(|(a, b, c, d)| u32::from_be_bytes([a, b, c, d]))
-                .collect();
-            assert_eq!(out.len(), expected_len);
-            out
+        struct SetGen {
+            rng: rand::rngs::StdRng,
         }
+
+        impl SetGen {
+            #[track_caller]
+            fn distributed(
+                &mut self,
+                high: usize,
+                mid: usize,
+                low: usize,
+                block: usize,
+                expected_len: usize,
+            ) -> Vec<u32> {
+                let mut out = Vec::with_capacity(expected_len);
+                for high in index::sample(&mut self.rng, 256, high) {
+                    for mid in index::sample(&mut self.rng, 256, mid) {
+                        for low in index::sample(&mut self.rng, 256, low) {
+                            for blk in index::sample(&mut self.rng, 256, block) {
+                                out.push(u32::from_be_bytes([
+                                    high as u8, mid as u8, low as u8, blk as u8,
+                                ]));
+                            }
+                        }
+                    }
+                }
+                out.sort();
+                assert_eq!(out.len(), expected_len);
+                out
+            }
+
+            #[track_caller]
+            fn dense(
+                &mut self,
+                high: usize,
+                mid: usize,
+                low: usize,
+                block: usize,
+                expected_len: usize,
+            ) -> Vec<u32> {
+                let out: Vec<u32> = itertools::iproduct!(0..high, 0..mid, 0..low, 0..block)
+                    .map(|(a, b, c, d)| u32::from_be_bytes([a as u8, b as u8, c as u8, d as u8]))
+                    .collect();
+                assert_eq!(out.len(), expected_len);
+                out
+            }
+
+            fn random(&mut self, len: usize) -> Vec<u32> {
+                index::sample(&mut self.rng, u32::MAX as usize, len)
+                    .into_iter()
+                    .map(|i| i as u32)
+                    .sorted()
+                    .collect()
+            }
+        }
+
+        let mut set_gen = SetGen {
+            rng: rand::rngs::StdRng::seed_from_u64(0xDEAD_BEEF),
+        };
 
         // empty splinter
         run_test("empty", vec![], 8, 8);
 
         // 1 element in set
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=0, 1);
+        let set = set_gen.distributed(1, 1, 1, 1, 1);
         run_test("1 element", set, 25, 18);
 
         // 1 fully dense block
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=255, 256);
+        let set = set_gen.distributed(1, 1, 1, 256, 256);
         run_test("1 dense block", set, 24, 528);
 
         // 1 half full block
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=127, 128);
+        let set = set_gen.distributed(1, 1, 1, 128, 128);
         run_test("1 half full block", set, 56, 272);
 
         // 1 sparse block
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=15, 16);
+        let set = set_gen.distributed(1, 1, 1, 16, 16);
         run_test("1 sparse block", set, 40, 48);
 
         // 8 half full blocks
-        let set = mkset(0..=0, 0..=0, 0..=7, 0..=127, 1024);
+        let set = set_gen.distributed(1, 1, 8, 128, 1024);
         run_test("8 half full blocks", set, 308, 2064);
 
         // 8 sparse blocks
-        let set = mkset(0..=0, 0..=0, 0..=7, 0..=1, 16);
+        let set = set_gen.distributed(1, 1, 8, 2, 16);
         run_test("8 sparse blocks", set, 68, 48);
 
         // 64 half full blocks
-        let set = mkset(0..=3, 0..=3, 0..=3, 0..=127, 8192);
+        let set = set_gen.distributed(4, 4, 4, 128, 8192);
         run_test("64 half full blocks", set, 2432, 16520);
 
         // 64 sparse blocks
-        let set = mkset(0..=3, 0..=3, 0..=3, 0..=1, 128);
+        let set = set_gen.distributed(4, 4, 4, 2, 128);
         run_test("64 sparse blocks", set, 512, 392);
 
         // 256 half full blocks
-        let set = mkset(0..=3, 0..=7, 0..=7, 0..=127, 32768);
+        let set = set_gen.distributed(4, 8, 8, 128, 32768);
         run_test("256 half full blocks", set, 9440, 65800);
 
         // 256 sparse blocks
-        let set = mkset(0..=3, 0..=7, 0..=7, 0..=1, 512);
+        let set = set_gen.distributed(4, 8, 8, 2, 512);
         run_test("256 sparse blocks", set, 1760, 1288);
 
         // 512 half full blocks
-        let set = mkset(0..=7, 0..=7, 0..=7, 0..=127, 65536);
+        let set = set_gen.distributed(8, 8, 8, 128, 65536);
         run_test("512 half full blocks", set, 18872, 131592);
 
         // 512 sparse blocks
-        let set = mkset(0..=7, 0..=7, 0..=7, 0..=1, 1024);
+        let set = set_gen.distributed(8, 8, 8, 2, 1024);
         run_test("512 sparse blocks", set, 3512, 2568);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;
 
         // fully dense splinter
-        let set = mkset(0..=0, 0..=0, 0..=15, 0..=255, elements);
+        let set = set_gen.distributed(1, 1, 16, 256, elements);
         run_test("fully dense", set, 84, 8208);
 
         // 128 elements per block; dense partitions
-        let set = mkset(0..=0, 0..=0, 0..=31, 0..=127, elements);
+        let set = set_gen.distributed(1, 1, 32, 128, elements);
         run_test("128/block; dense", set, 1172, 8208);
 
         // 32 elements per block; dense partitions
-        let set = mkset(0..=0, 0..=0, 0..=127, 0..=31, elements);
+        let set = set_gen.distributed(1, 1, 128, 32, elements);
         run_test("32/block; dense", set, 4532, 8208);
 
         // 16 element per block; dense low partitions
-        let set = mkset(0..=0, 0..=0, 0..=255, 0..=15, elements);
+        let set = set_gen.distributed(1, 1, 256, 16, elements);
         run_test("16/block; dense", set, 4884, 8208);
 
         // 128 elements per block; sparse mid partitions
-        let set = mkset(0..=0, 0..=31, 0..=0, 0..=127, elements);
+        let set = set_gen.distributed(1, 32, 1, 128, elements);
         run_test("128/block; sparse mid", set, 1358, 8456);
 
         // 128 elements per block; sparse high partitions
-        let set = mkset(0..=31, 0..=0, 0..=0, 0..=127, elements);
+        let set = set_gen.distributed(32, 1, 1, 128, elements);
         run_test("128/block; sparse high", set, 1544, 8456);
 
         // 1 element per block; sparse mid partitions
-        let set = mkset(0..=0, 0..=255, 0..=15, 0..=0, elements);
+        let set = set_gen.distributed(1, 256, 16, 1, elements);
         run_test("1/block; sparse mid", set, 21774, 10248);
 
         // 1 element per block; sparse high partitions
-        let set = mkset(0..=255, 0..=15, 0..=0, 0..=0, elements);
+        let set = set_gen.distributed(256, 16, 1, 1, elements);
         run_test("1/block; sparse high", set, 46344, 40968);
+
+        // each partition is dense
+        let set = set_gen.dense(8, 8, 8, 8, elements);
+        run_test("dense throughout", set, 6584, 8712);
+
+        // the lowest partitions are dense
+        let set = set_gen.dense(1, 1, 64, 64, elements);
+        run_test("dense low", set, 2292, 8208);
+
+        // the mid and low partitions are dense
+        let set = set_gen.dense(1, 32, 16, 8, elements);
+        run_test("dense mid/low", set, 6350, 8456);
+
+        // fully random sets of varying sizes
+        run_test("random/32", set_gen.random(32), 546, 328);
+        run_test("random/256", set_gen.random(256), 3656, 2568);
+        run_test("random/1024", set_gen.random(1024), 12530, 10216);
+        run_test("random/4096", set_gen.random(4096), 45594, 39968);
+        run_test("random/16384", set_gen.random(16384), 163970, 148952);
+        run_test("random/65535", set_gen.random(65535), 543929, 462742);
 
         let mut fail_test = false;
 
@@ -664,7 +833,7 @@ mod tests {
             "{:30} {:12} {:>6} {:>10} {:>10} {:>10}",
             "test", "bitmap", "size", "expected", "relative", "ok"
         );
-        for report in reports {
+        for report in &reports {
             println!(
                 "{:30} {:12} {:6} {:10} {:>10} {:>10}",
                 report.name,
@@ -696,6 +865,34 @@ mod tests {
                     "ok"
                 }
             );
+            let diff = report.splinter_lz4 as f64 / report.splinter.0 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Splinter LZ4",
+                report.splinter_lz4,
+                report.splinter_lz4,
+                diff,
+                if report.splinter.0 <= report.splinter_lz4 {
+                    ">"
+                } else {
+                    "<"
+                }
+            );
+            let diff = report.roaring_lz4 as f64 / report.splinter_lz4 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Roaring LZ4",
+                report.roaring_lz4,
+                report.roaring_lz4,
+                diff,
+                if report.splinter_lz4 <= report.roaring_lz4 {
+                    "ok"
+                } else {
+                    "<"
+                }
+            );
             let diff = report.baseline as f64 / report.splinter.0 as f64;
             println!(
                 "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
@@ -712,6 +909,15 @@ mod tests {
                 }
             );
         }
+
+        // calculate average compression ratio (splinter_lz4 / splinter)
+        let avg_ratio = reports
+            .iter()
+            .map(|r| r.splinter_lz4 as f64 / r.splinter.0 as f64)
+            .sum::<f64>()
+            / reports.len() as f64;
+
+        println!("average compression ratio (splinter_lz4 / splinter): {avg_ratio:.2}");
 
         assert!(!fail_test, "compression test failed");
     }
