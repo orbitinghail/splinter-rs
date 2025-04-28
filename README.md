@@ -208,6 +208,7 @@ random/65535                   Splinter     543929     543929       1.00        
                                Splinter LZ4 358584     358584       0.66          <
                                Roaring LZ4  464556     464556       1.30         ok
                                Baseline     262140     262140       0.48          <
+average compression ratio (splinter_lz4 / splinter): 0.74
 ```
 
 ## License
