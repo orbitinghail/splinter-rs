@@ -435,12 +435,13 @@ fn combine_segments(a: Segment, b: Segment, c: Segment, d: Segment) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{io, ops::RangeInclusive};
+
+    use std::io;
 
     use crate::testutil::{mksplinter, mksplinter_ref};
 
     use super::*;
-    use itertools::iproduct;
+    use rand::{SeedableRng, seq::index};
     use roaring::RoaringBitmap;
 
     #[test]
@@ -523,6 +524,82 @@ mod tests {
         assert!(!splinter.contains(90999), "unexpected key: 90999");
     }
 
+    /// Heuristic analyzer: prints patterns found in the data which could be
+    /// exploited by lz4 to improve compression
+    pub fn analyze_compression_patterns(data: &[u8]) {
+        use std::collections::HashMap;
+
+        let len = data.len();
+        if len == 0 {
+            println!("empty slice");
+            return;
+        }
+        println!("length: {len} bytes");
+
+        // --- zeros ---
+        let (mut zeros, mut longest_run, mut run) = (0usize, 0usize, 0usize);
+        for &b in data {
+            if b == 0 {
+                zeros += 1;
+                run += 1;
+                longest_run = longest_run.max(run);
+            } else {
+                run = 0;
+            }
+        }
+        println!(
+            "zeros: {zeros} ({:.2}%), longest run: {longest_run}",
+            zeros as f64 * 100.0 / len as f64
+        );
+
+        // --- histogram / entropy ---
+        let mut freq = [0u32; 256];
+        for &b in data {
+            freq[b as usize] += 1;
+        }
+        let entropy: f64 = freq
+            .iter()
+            .filter(|&&c| c != 0)
+            .map(|&c| {
+                let p = c as f64 / len as f64;
+                -p * p.log2()
+            })
+            .sum();
+        println!("shannon entropy ≈ {entropy:.3} bits/byte (max 8)");
+
+        // --- repeated 8-byte blocks ---
+        const BLOCK: usize = 8;
+        if len >= BLOCK {
+            let mut map: HashMap<&[u8], u32> = HashMap::new();
+            for chunk in data.chunks_exact(BLOCK) {
+                *map.entry(chunk).or_default() += 1;
+            }
+
+            let mut duplicate_bytes = 0u32;
+            let mut top: Option<(&[u8], u32)> = None;
+
+            for (&k, &v) in map.iter() {
+                if v > 1 {
+                    duplicate_bytes += (v - 1) * BLOCK as u32;
+                    if top.map_or(true, |(_, max)| v > max) {
+                        top = Some((k, v));
+                    }
+                }
+            }
+
+            if let Some((bytes, count)) = top {
+                println!(
+                    "repeated 8-byte blocks: {} duplicate bytes; most common occurs {count}× (bytes {:02X?})",
+                    duplicate_bytes, bytes
+                );
+            } else {
+                println!("no duplicated 8-byte blocks");
+            }
+        }
+
+        println!("analysis complete");
+    }
+
     #[test]
     fn test_expected_compression() {
         let to_roaring = |set: Vec<u32>| {
@@ -551,8 +628,13 @@ mod tests {
                             set: Vec<u32>,
                             expected_splinter: usize,
                             expected_roaring: usize| {
+            println!("-------------------------------------");
+            println!("running test: {name}");
+
             let splinter = mksplinter(set.clone()).serialize_to_bytes();
             let roaring = to_roaring(set.clone());
+
+            analyze_compression_patterns(&splinter);
 
             let splinter_lz4 = lz4::block::compress(&splinter, None, true).unwrap();
             let roaring_lz4 = lz4::block::compress(&roaring, None, true).unwrap();
@@ -575,105 +657,126 @@ mod tests {
             });
         };
 
-        #[track_caller]
-        fn mkset(
-            high: RangeInclusive<u8>,
-            mid: RangeInclusive<u8>,
-            low: RangeInclusive<u8>,
-            block: RangeInclusive<u8>,
-            expected_len: usize,
-        ) -> Vec<u32> {
-            let out: Vec<u32> = iproduct!(high, mid, low, block)
-                .map(|(a, b, c, d)| u32::from_be_bytes([a, b, c, d]))
-                .collect();
-            assert_eq!(out.len(), expected_len);
-            out
+        struct SetGen {
+            rng: rand::rngs::StdRng,
         }
+
+        impl SetGen {
+            #[track_caller]
+            fn make(
+                &mut self,
+                high: usize,
+                mid: usize,
+                low: usize,
+                block: usize,
+                expected_len: usize,
+            ) -> Vec<u32> {
+                let mut out = Vec::with_capacity(expected_len);
+                for high in index::sample(&mut self.rng, 256, high) {
+                    for mid in index::sample(&mut self.rng, 256, mid) {
+                        for low in index::sample(&mut self.rng, 256, low) {
+                            for blk in index::sample(&mut self.rng, 256, block) {
+                                out.push(u32::from_be_bytes([
+                                    high as u8, mid as u8, low as u8, blk as u8,
+                                ]));
+                            }
+                        }
+                    }
+                }
+                out.sort();
+                assert_eq!(out.len(), expected_len);
+                out
+            }
+        }
+
+        let mut set_gen = SetGen {
+            rng: rand::rngs::StdRng::seed_from_u64(0xDEAD_BEEF),
+        };
 
         // empty splinter
         run_test("empty", vec![], 8, 8);
 
         // 1 element in set
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=0, 1);
+        let set = set_gen.make(1, 1, 1, 1, 1);
         run_test("1 element", set, 25, 18);
 
         // 1 fully dense block
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=255, 256);
+        let set = set_gen.make(1, 1, 1, 256, 256);
         run_test("1 dense block", set, 24, 528);
 
         // 1 half full block
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=127, 128);
+        let set = set_gen.make(1, 1, 1, 128, 128);
         run_test("1 half full block", set, 56, 272);
 
         // 1 sparse block
-        let set = mkset(0..=0, 0..=0, 0..=0, 0..=15, 16);
+        let set = set_gen.make(1, 1, 1, 16, 16);
         run_test("1 sparse block", set, 40, 48);
 
         // 8 half full blocks
-        let set = mkset(0..=0, 0..=0, 0..=7, 0..=127, 1024);
+        let set = set_gen.make(1, 1, 8, 128, 1024);
         run_test("8 half full blocks", set, 308, 2064);
 
         // 8 sparse blocks
-        let set = mkset(0..=0, 0..=0, 0..=7, 0..=1, 16);
+        let set = set_gen.make(1, 1, 8, 2, 16);
         run_test("8 sparse blocks", set, 68, 48);
 
         // 64 half full blocks
-        let set = mkset(0..=3, 0..=3, 0..=3, 0..=127, 8192);
+        let set = set_gen.make(4, 4, 4, 128, 8192);
         run_test("64 half full blocks", set, 2432, 16520);
 
         // 64 sparse blocks
-        let set = mkset(0..=3, 0..=3, 0..=3, 0..=1, 128);
+        let set = set_gen.make(4, 4, 4, 2, 128);
         run_test("64 sparse blocks", set, 512, 392);
 
         // 256 half full blocks
-        let set = mkset(0..=3, 0..=7, 0..=7, 0..=127, 32768);
+        let set = set_gen.make(4, 8, 8, 128, 32768);
         run_test("256 half full blocks", set, 9440, 65800);
 
         // 256 sparse blocks
-        let set = mkset(0..=3, 0..=7, 0..=7, 0..=1, 512);
+        let set = set_gen.make(4, 8, 8, 2, 512);
         run_test("256 sparse blocks", set, 1760, 1288);
 
         // 512 half full blocks
-        let set = mkset(0..=7, 0..=7, 0..=7, 0..=127, 65536);
+        let set = set_gen.make(8, 8, 8, 128, 65536);
         run_test("512 half full blocks", set, 18872, 131592);
 
         // 512 sparse blocks
-        let set = mkset(0..=7, 0..=7, 0..=7, 0..=1, 1024);
+        let set = set_gen.make(8, 8, 8, 2, 1024);
         run_test("512 sparse blocks", set, 3512, 2568);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;
 
         // fully dense splinter
-        let set = mkset(0..=0, 0..=0, 0..=15, 0..=255, elements);
+        let set = set_gen.make(1, 1, 16, 256, elements);
         run_test("fully dense", set, 84, 8208);
 
         // 128 elements per block; dense partitions
-        let set = mkset(0..=0, 0..=0, 0..=31, 0..=127, elements);
+        let set = set_gen.make(1, 1, 32, 128, elements);
         run_test("128/block; dense", set, 1172, 8208);
 
         // 32 elements per block; dense partitions
-        let set = mkset(0..=0, 0..=0, 0..=127, 0..=31, elements);
+        let set = set_gen.make(1, 1, 128, 32, elements);
         run_test("32/block; dense", set, 4532, 8208);
 
         // 16 element per block; dense low partitions
-        let set = mkset(0..=0, 0..=0, 0..=255, 0..=15, elements);
+        let set = set_gen.make(1, 1, 256, 16, elements);
         run_test("16/block; dense", set, 4884, 8208);
 
         // 128 elements per block; sparse mid partitions
-        let set = mkset(0..=0, 0..=31, 0..=0, 0..=127, elements);
+        let set = set_gen.make(1, 32, 1, 128, elements);
         run_test("128/block; sparse mid", set, 1358, 8456);
 
         // 128 elements per block; sparse high partitions
-        let set = mkset(0..=31, 0..=0, 0..=0, 0..=127, elements);
+        let set = set_gen.make(32, 1, 1, 128, elements);
         run_test("128/block; sparse high", set, 1544, 8456);
 
         // 1 element per block; sparse mid partitions
-        let set = mkset(0..=0, 0..=255, 0..=15, 0..=0, elements);
+        let set = set_gen.make(1, 256, 16, 1, elements);
         run_test("1/block; sparse mid", set, 21774, 10248);
 
         // 1 element per block; sparse high partitions
-        let set = mkset(0..=255, 0..=15, 0..=0, 0..=0, elements);
+        let set = set_gen.make(256, 16, 1, 1, elements);
         run_test("1/block; sparse high", set, 46344, 40968);
 
         let mut fail_test = false;

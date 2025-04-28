@@ -65,103 +65,103 @@ empty                          Splinter          8          8       1.00        
                                Baseline          0          0       0.00          <
 1 element                      Splinter         25         25       1.00         ok
                                Roaring          18         18       0.72          <
-                               Splinter LZ4     18         18       0.72          <
-                               Roaring LZ4      20         20       1.11         ok
+                               Splinter LZ4     29         29       1.16          >
+                               Roaring LZ4      24         24       0.83          <
                                Baseline          4          4       0.16          <
 1 dense block                  Splinter         24         24       1.00         ok
                                Roaring         528        528      22.00         ok
-                               Splinter LZ4     20         20       0.83          <
-                               Roaring LZ4     533        533      26.65         ok
+                               Splinter LZ4     28         28       1.17          >
+                               Roaring LZ4     536        536      19.14         ok
                                Baseline       1024       1024      42.67         ok
 1 half full block              Splinter         56         56       1.00         ok
                                Roaring         272        272       4.86         ok
-                               Splinter LZ4     26         26       0.46          <
-                               Roaring LZ4     276        276      10.62         ok
+                               Splinter LZ4     61         61       1.09          >
+                               Roaring LZ4     279        279       4.57         ok
                                Baseline        512        512       9.14         ok
 1 sparse block                 Splinter         40         40       1.00         ok
                                Roaring          48         48       1.20         ok
-                               Splinter LZ4     37         37       0.93          <
-                               Roaring LZ4      52         52       1.41         ok
+                               Splinter LZ4     45         45       1.12          >
+                               Roaring LZ4      54         54       1.20         ok
                                Baseline         64         64       1.60         ok
 8 half full blocks             Splinter        308        308       1.00         ok
                                Roaring        2064       2064       6.70         ok
-                               Splinter LZ4     70         70       0.23          <
-                               Roaring LZ4    2075       2075      29.64         ok
+                               Splinter LZ4    314        314       1.02          >
+                               Roaring LZ4    2078       2078       6.62         ok
                                Baseline       4096       4096      13.30         ok
 8 sparse blocks                Splinter         68         68       1.00         ok
                                Roaring          48         48       0.71          <
-                               Splinter LZ4     56         56       0.82          <
-                               Roaring LZ4      51         51       0.91          <
+                               Splinter LZ4     71         71       1.04          >
+                               Roaring LZ4      54         54       0.76          <
                                Baseline         64         64       0.94          <
 64 half full blocks            Splinter       2432       2432       1.00         ok
                                Roaring       16520      16520       6.79         ok
-                               Splinter LZ4    117        117       0.05          <
-                               Roaring LZ4    1237       1237      10.57         ok
+                               Splinter LZ4   2268       2268       0.93          <
+                               Roaring LZ4   16558      16558       7.30         ok
                                Baseline      32768      32768      13.47         ok
 64 sparse blocks               Splinter        512        512       1.00         ok
                                Roaring         392        392       0.77          <
-                               Splinter LZ4     84         84       0.16          <
-                               Roaring LZ4     165        165       1.96         ok
+                               Splinter LZ4    331        331       0.65          <
+                               Roaring LZ4     399        399       1.21         ok
                                Baseline        512        512       1.00         ok
 256 half full blocks           Splinter       9440       9440       1.00         ok
                                Roaring       65800      65800       6.97         ok
-                               Splinter LZ4    178        178       0.02          <
-                               Roaring LZ4    2584       2584      14.52         ok
+                               Splinter LZ4   8748       8748       0.93          <
+                               Roaring LZ4   66050      66050       7.55         ok
                                Baseline     131072     131072      13.88         ok
 256 sparse blocks              Splinter       1760       1760       1.00         ok
                                Roaring        1288       1288       0.73          <
-                               Splinter LZ4    122        122       0.07          <
-                               Roaring LZ4     378        378       3.10         ok
+                               Splinter LZ4   1053       1053       0.60          <
+                               Roaring LZ4    1298       1298       1.23         ok
                                Baseline       2048       2048       1.16         ok
 512 half full blocks           Splinter      18872      18872       1.00         ok
                                Roaring      131592     131592       6.97         ok
-                               Splinter LZ4    232        232       0.01          <
-                               Roaring LZ4    3098       3098      13.35         ok
+                               Splinter LZ4  17417      17417       0.92          <
+                               Roaring LZ4  131545     131545       7.55         ok
                                Baseline     262144     262144      13.89         ok
 512 sparse blocks              Splinter       3512       3512       1.00         ok
                                Roaring        2568       2568       0.73          <
-                               Splinter LZ4    142        142       0.04          <
-                               Roaring LZ4     575        575       4.05         ok
+                               Splinter LZ4   2044       2044       0.58          <
+                               Roaring LZ4    2584       2584       1.26         ok
                                Baseline       4096       4096       1.17         ok
 fully dense                    Splinter         84         84       1.00         ok
                                Roaring        8208       8208      97.71         ok
-                               Splinter LZ4     44         44       0.52          <
-                               Roaring LZ4    8244       8244     187.36         ok
+                               Splinter LZ4     50         50       0.60          <
+                               Roaring LZ4    8246       8246     164.92         ok
                                Baseline      16384      16384     195.05         ok
 128/block; dense               Splinter       1172       1172       1.00         ok
                                Roaring        8208       8208       7.00         ok
-                               Splinter LZ4    121        121       0.10          <
-                               Roaring LZ4    8244       8244      68.13         ok
+                               Splinter LZ4   1161       1161       0.99          <
+                               Roaring LZ4    8246       8246       7.10         ok
                                Baseline      16384      16384      13.98         ok
 32/block; dense                Splinter       4532       4532       1.00         ok
                                Roaring        8208       8208       1.81         ok
-                               Splinter LZ4    322        322       0.07          <
-                               Roaring LZ4    8244       8244      25.60         ok
+                               Splinter LZ4   4221       4221       0.93          <
+                               Roaring LZ4    8246       8246       1.95         ok
                                Baseline      16384      16384       3.62         ok
 16/block; dense                Splinter       4884       4884       1.00         ok
                                Roaring        8208       8208       1.68         ok
-                               Splinter LZ4    580        580       0.12          <
-                               Roaring LZ4    8244       8244      14.21         ok
+                               Splinter LZ4   4668       4668       0.96          <
+                               Roaring LZ4    8246       8246       1.77         ok
                                Baseline      16384      16384       3.35         ok
 128/block; sparse mid          Splinter       1358       1358       1.00         ok
                                Roaring        8456       8456       6.23         ok
-                               Splinter LZ4    176        176       0.13          <
-                               Roaring LZ4     563        563       3.20         ok
+                               Splinter LZ4   1342       1342       0.99          <
+                               Roaring LZ4    8493       8493       6.33         ok
                                Baseline      16384      16384      12.06         ok
 128/block; sparse high         Splinter       1544       1544       1.00         ok
                                Roaring        8456       8456       5.48         ok
-                               Splinter LZ4    179        179       0.12          <
-                               Roaring LZ4     563        563       3.15         ok
+                               Splinter LZ4   1489       1489       0.96          <
+                               Roaring LZ4    8495       8495       5.71         ok
                                Baseline      16384      16384      10.61         ok
 1/block; sparse mid            Splinter      21774      21774       1.00         ok
                                Roaring       10248      10248       0.47          <
-                               Splinter LZ4   1191       1191       0.05          <
-                               Roaring LZ4    2138       2138       1.80         ok
+                               Splinter LZ4  10359      10359       0.48          <
+                               Roaring LZ4   10294      10294       0.99          <
                                Baseline      16384      16384       0.75          <
 1/block; sparse high           Splinter      46344      46344       1.00         ok
                                Roaring       40968      40968       0.88          <
-                               Splinter LZ4   1313       1313       0.03          <
-                               Roaring LZ4   32931      32931      25.08         ok
+                               Splinter LZ4  23914      23914       0.52          <
+                               Roaring LZ4   41063      41063       1.72         ok
                                Baseline      16384      16384       0.35          <
 ```
 
