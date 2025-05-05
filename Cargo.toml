@@ -29,7 +29,7 @@ itertools = "0.14"
 criterion = "=0.5.1"
 roaring = "=0.10.12"
 lz4 = "=1.28.1"
-rand = "0.8.5"
+rand = "=0.8.5"
 
 [[bench]]
 name = "bitmaps"
