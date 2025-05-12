@@ -821,11 +821,11 @@ mod tests {
 
         // fully random sets of varying sizes
         run_test("random/32", set_gen.random(32), 546, 328);
-        run_test("random/256", set_gen.random(256), 3656, 2568);
-        run_test("random/1024", set_gen.random(1024), 12530, 10216);
-        run_test("random/4096", set_gen.random(4096), 45594, 39968);
-        run_test("random/16384", set_gen.random(16384), 163970, 148952);
-        run_test("random/65535", set_gen.random(65535), 543929, 462742);
+        run_test("random/256", set_gen.random(256), 3655, 2560);
+        run_test("random/1024", set_gen.random(1024), 12499, 10168);
+        run_test("random/4096", set_gen.random(4096), 45582, 39952);
+        run_test("random/16384", set_gen.random(16384), 163758, 148600);
+        run_test("random/65535", set_gen.random(65535), 543584, 462190);
 
         let mut fail_test = false;
 
