@@ -807,6 +807,10 @@ mod tests {
         let set = set_gen.distributed(256, 16, 1, 1, elements);
         run_test("1/block; sparse high", set, 46344, 40968);
 
+        // 1/block; spread low
+        let set = set_gen.dense(1, 16, 256, 1, elements);
+        run_test("1/block; spread low", set, 16494, 8328);
+
         // each partition is dense
         let set = set_gen.dense(8, 8, 8, 8, elements);
         run_test("dense throughout", set, 6584, 8712);
