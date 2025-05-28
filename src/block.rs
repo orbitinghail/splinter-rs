@@ -6,7 +6,7 @@ use either::Either;
 use crate::{
     Segment,
     bitmap::{BITMAP_FULL, BITMAP_SIZE, Bitmap, BitmapExt, BitmapMutExt},
-    util::{CopyToOwned, FromSuffix, SerializeContainer},
+    util::{Cardinality, CopyToOwned, FromSuffix, SerializeContainer},
 };
 
 mod cmp;
@@ -62,7 +62,7 @@ impl SerializeContainer for Block {
     ///
     /// Returns the block's cardinality and number of bytes written.
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
-        let cardinality = self.cardinality();
+        let cardinality = Cardinality::cardinality(self);
 
         let bytes_written = if cardinality < 32 {
             for segment in self.bitmap.segments() {
@@ -89,6 +89,13 @@ impl FromIterator<Segment> for Block {
             block.insert(segment);
         }
         block
+    }
+}
+
+impl Cardinality for Block {
+    #[inline]
+    fn cardinality(&self) -> usize {
+        BitmapExt::cardinality(self)
     }
 }
 
@@ -153,10 +160,33 @@ impl<'a> BlockRef<'a> {
         }
     }
 
-    /// Count the number of 1-bits in the block up to and including the `position`
-    pub fn rank(&self, position: u8) -> usize {
+    /// Returns the zero-based position of `position` within the block if the
+    /// segment is present.
+    pub fn rank(&self, position: u8) -> Option<usize> {
         match self.resolve_bitmap() {
             Either::Left(bitmap) => bitmap.rank(position),
+            Either::Right(segments) => segments.binary_search(&position).ok(),
+        }
+    }
+
+    /// Returns the number of segments less than or equal to `position`.
+    pub(crate) fn prefix_len(&self, position: u8) -> usize {
+        const fn bitmap_key(segment: Segment) -> usize {
+            segment as usize / 8
+        }
+
+        const fn bitmap_bit(segment: Segment) -> u8 {
+            segment % 8
+        }
+
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => {
+                let key = bitmap_key(position);
+                let prefix_bits = bitmap[..key].iter().map(|&x| x.count_ones()).sum::<u32>();
+                let bit = bitmap_bit(position) as u32;
+                let bits = (bitmap[key] << (7 - bit)).count_ones();
+                (prefix_bits + bits) as usize
+            }
             Either::Right(segments) => match segments.binary_search(&position) {
                 Ok(i) => i + 1,
                 Err(i) => i,
@@ -169,6 +199,16 @@ impl<'a> BlockRef<'a> {
         match self.resolve_bitmap() {
             Either::Left(bitmap) => bitmap.contains(segment),
             Either::Right(segments) => segments.contains(&segment),
+        }
+    }
+}
+
+impl Cardinality for BlockRef<'_> {
+    #[inline]
+    fn cardinality(&self) -> usize {
+        match self.resolve_bitmap() {
+            Either::Left(bitmap) => bitmap.cardinality(),
+            Either::Right(segments) => segments.len(),
         }
     }
 }
@@ -221,7 +261,7 @@ mod tests {
         cb_block(block.clone());
         let mut buf = BytesMut::new();
         let (cardinality, n) = block.serialize(&mut buf);
-        assert_eq!(cardinality, block.cardinality());
+        assert_eq!(cardinality, Cardinality::cardinality(&block));
         assert_eq!(n, buf.len());
         let block_ref = BlockRef::from_suffix(&buf, cardinality);
         cb_ref(block_ref);
@@ -266,34 +306,34 @@ mod tests {
     #[test]
     fn test_block_rank() {
         // empty block
-        assert_block_fn_eq!(0..0, 0, |b| { b.rank(0) });
-        assert_block_fn_eq!(0..0, 0, |b| { b.rank(128) });
-        assert_block_fn_eq!(0..0, 0, |b| { b.rank(255) });
+        assert_block_fn_eq!(0..0, None, |b| { b.rank(0) });
+        assert_block_fn_eq!(0..0, None, |b| { b.rank(128) });
+        assert_block_fn_eq!(0..0, None, |b| { b.rank(255) });
 
         // block with 1 element
-        assert_block_fn_eq!(0..1, 1, |b| { b.rank(0) });
-        assert_block_fn_eq!(0..1, 1, |b| { b.rank(128) });
-        assert_block_fn_eq!(128..129, 0, |b| { b.rank(0) });
+        assert_block_fn_eq!(0..1, Some(0), |b| { b.rank(0) });
+        assert_block_fn_eq!(0..1, None, |b| { b.rank(128) });
+        assert_block_fn_eq!(128..129, None, |b| { b.rank(0) });
 
         // block with 31 elements; stored as a list
-        assert_block_fn_eq!(0..31, 31, |b| { b.cardinality() });
+        assert_block_fn_eq!(0..31, 31, |b| { Cardinality::cardinality(&b) });
         for i in 0usize..31 {
-            assert_block_fn_eq!(0..31, i + 1, |b| { b.rank(i as Segment) });
+            assert_block_fn_eq!(0..31, Some(i), |b| { b.rank(i as Segment) });
         }
 
         // block with 32 elements; stored as a bitmap
-        assert_block_fn_eq!(0..32, 32, |b| { b.cardinality() });
+        assert_block_fn_eq!(0..32, 32, |b| { Cardinality::cardinality(&b) });
         for i in 0usize..32 {
-            assert_block_fn_eq!(0..32, i + 1, |b| { b.rank(i as Segment) });
+            assert_block_fn_eq!(0..32, Some(i), |b| { b.rank(i as Segment) });
         }
         for i in 32..255 {
-            assert_block_fn_eq!(0..32, 32, |b| { b.rank(i as Segment) });
+            assert_block_fn_eq!(0..32, None, |b| { b.rank(i as Segment) });
         }
 
         // full block
-        assert_block_fn_eq!(0..=255, 256, |b| { b.cardinality() });
+        assert_block_fn_eq!(0..=255, 256, |b| { Cardinality::cardinality(&b) });
         for i in 0usize..255 {
-            assert_block_fn_eq!(0..=255, i + 1, |b| { b.rank(i as Segment) });
+            assert_block_fn_eq!(0..=255, Some(i), |b| { b.rank(i as Segment) });
         }
     }
 
@@ -310,19 +350,19 @@ mod tests {
         assert_block_fn_eq!(128..129, false, |b| { b.contains(0) });
 
         // block with 31 elements; stored as a list
-        assert_block_fn_eq!(0..31, 31, |b| { b.cardinality() });
+        assert_block_fn_eq!(0..31, 31, |b| { Cardinality::cardinality(&b) });
         for i in 0..255 {
             assert_block_fn_eq!(0..31, i < 31, |b| { b.contains(i) });
         }
 
         // block with 32 elements; stored as a bitmap
-        assert_block_fn_eq!(0..32, 32, |b| { b.cardinality() });
+        assert_block_fn_eq!(0..32, 32, |b| { Cardinality::cardinality(&b) });
         for i in 0..255 {
             assert_block_fn_eq!(0..32, i < 32, |b| { b.contains(i) });
         }
 
         // full block
-        assert_block_fn_eq!(0..=255, 256, |b| { b.cardinality() });
+        assert_block_fn_eq!(0..=255, 256, |b| { Cardinality::cardinality(&b) });
         for i in 0..255 {
             assert_block_fn_eq!(0..=255, true, |b| { b.contains(i) });
         }

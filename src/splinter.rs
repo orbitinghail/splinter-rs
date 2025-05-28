@@ -171,6 +171,21 @@ impl Splinter {
             .flat_map(|(a, b, c, p)| p.segments().map(move |d| combine_segments(a, b, c, d)))
     }
 
+    /// Returns the zero-based position of `value` within the set.
+    pub fn rank(&self, value: u32) -> Option<usize> {
+        let (a, b, c, d) = segments(value);
+        let (mut offset, pa) = self.partitions.rank(a);
+        let pa = pa?;
+        let (p2, pb) = pa.rank(b);
+        offset += p2;
+        let pb = pb?;
+        let (p3, pc) = pb.rank(c);
+        offset += p3;
+        let block = pc?;
+        offset += block.rank(d)?;
+        Some(offset)
+    }
+
     /// Attempts to insert a key into the Splinter, returning true if a key was inserted
     pub fn insert(&mut self, key: u32) -> bool {
         let (a, b, c, d) = segments(key);
@@ -394,6 +409,22 @@ where
             .flat_map(|(a, p)| p.into_iter().map(move |(b, p)| (a, b, p)))
             .flat_map(|(a, b, p)| p.into_iter().map(move |(c, p)| (a, b, c, p)))
             .flat_map(|(a, b, c, p)| p.into_segments().map(move |d| combine_segments(a, b, c, d)))
+    }
+
+    /// Returns the zero-based position of `value` within the set.
+    pub fn rank(&self, value: u32) -> Option<usize> {
+        let (a, b, c, d) = segments(value);
+        let partitions = self.load_partitions();
+        let (mut offset, pa) = partitions.rank(a);
+        let pa = pa?;
+        let (p2, pb) = pa.rank(b);
+        offset += p2;
+        let pb = pb?;
+        let (p3, pc) = pb.rank(c);
+        offset += p3;
+        let block = pc?;
+        offset += block.rank(d)?;
+        Some(offset)
     }
 }
 
@@ -924,5 +955,18 @@ mod tests {
         println!("average compression ratio (splinter_lz4 / splinter): {avg_ratio:.2}");
 
         assert!(!fail_test, "compression test failed");
+    }
+
+    #[test]
+    fn test_rank_basic() {
+        let values = vec![0u32, 1, 5, 10, 20, 255, 256];
+        let s = mksplinter(values.iter().copied());
+        let r = mksplinter_ref(values.iter().copied());
+        for (idx, &v) in values.iter().enumerate() {
+            assert_eq!(s.rank(v), Some(idx));
+            assert_eq!(r.rank(v), Some(idx));
+        }
+        assert_eq!(s.rank(999), None);
+        assert_eq!(r.rank(999), None);
     }
 }

@@ -54,9 +54,10 @@ where
         None // If all bits are 0
     }
 
-    /// Counts the number of 1-bits in the block up to and including the `position`
+    /// Returns the zero-based position of `segment` within the bitmap if the
+    /// bit is set.
     #[inline]
-    fn rank(&self, position: u8) -> usize {
+    fn rank(&self, position: u8) -> Option<usize> {
         let key = bitmap_key(position);
 
         // number of bits set up to the key-th byte
@@ -65,11 +66,16 @@ where
             .map(|&x| x.count_ones())
             .sum::<u32>();
 
-        // number of bits set up to the bit-th bit in the key-th byte
-        let bit = bitmap_bit(position) as u32;
-        let bits = (self.as_ref()[key] << (7 - bit)).count_ones();
+        let bit = bitmap_bit(position);
+        let byte = self.as_ref()[key];
+        if byte & (1 << bit) == 0 {
+            return None;
+        }
 
-        (prefix_bits + bits) as usize
+        // number of bits set up to and including the bit-th bit in the key-th byte
+        let bits = (byte << (7 - bit)).count_ones();
+
+        Some((prefix_bits + bits) as usize - 1)
     }
 
     #[inline]

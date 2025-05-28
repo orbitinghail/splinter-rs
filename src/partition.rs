@@ -16,7 +16,7 @@ use crate::{
     index::IndexRef,
     ops::Merge,
     relational::Relation,
-    util::{CopyToOwned, FromSuffix, SerializeContainer},
+    util::{Cardinality, CopyToOwned, FromSuffix, SerializeContainer},
 };
 
 #[derive(Clone)]
@@ -62,6 +62,25 @@ impl<O, V> Partition<O, V> {
 
     pub fn last(&self) -> Option<(Segment, &V)> {
         self.values.last_key_value().map(|(k, v)| (*k, v))
+    }
+}
+
+impl<O, V> Partition<O, V>
+where
+    V: Cardinality,
+{
+    /// Computes the number of values preceding `segment` and returns the child
+    /// partition if it exists.
+    pub fn rank(&self, segment: Segment) -> (usize, Option<&V>) {
+        let mut prefix = 0usize;
+        for value in self.values.range(..segment).map(|(_, v)| v) {
+            prefix += value.cardinality();
+        }
+        if let Some(value) = self.values.get(&segment) {
+            (prefix, Some(value))
+        } else {
+            (prefix, None)
+        }
     }
 }
 
@@ -170,6 +189,16 @@ where
     }
 }
 
+impl<O, V> Cardinality for Partition<O, V>
+where
+    V: Cardinality,
+{
+    #[inline]
+    fn cardinality(&self) -> usize {
+        self.values.values().map(|v| v.cardinality()).sum()
+    }
+}
+
 pub struct PartitionRef<'a, Offset, V> {
     values: &'a [u8],
     index: IndexRef<'a, Offset>,
@@ -219,6 +248,20 @@ where
             values: self.values,
             index_iter: self.index.into_iter(),
             _phantom: PhantomData,
+        }
+    }
+
+    /// Returns the number of values preceding `segment` and the referenced
+    /// child if present.
+    pub fn rank(&self, segment: Segment) -> (usize, Option<V>) {
+        let (prefix, entry) = self.index.rank(segment);
+        match entry {
+            Some((cardinality, offset)) => {
+                assert!(self.values.len() >= offset, "offset out of range");
+                let data = &self.values[..(self.values.len() - offset)];
+                (prefix, Some(V::from_suffix(data, cardinality)))
+            }
+            None => (prefix, None),
         }
     }
 }

@@ -62,11 +62,25 @@ where
     /// Lookup the segment in the index
     /// Returns the segment's cardinality and offset
     pub fn lookup(&self, segment: u8) -> Option<(usize, usize)> {
-        if self.keys.contains(segment) {
-            let rank = self.keys.rank(segment);
-            self.get(rank - 1)
+        self.keys.rank(segment).and_then(|idx| self.get(idx))
+    }
+
+    /// Returns the total number of values preceding `segment` and, if present,
+    /// the cardinality and offset for `segment` itself.
+    pub fn rank(&self, segment: u8) -> (usize, Option<(usize, usize)>) {
+        let idx_opt = self.keys.rank(segment);
+        let prefix_idx = match idx_opt {
+            Some(i) => i,
+            None => self.keys.prefix_len(segment),
+        };
+        let mut prefix = 0usize;
+        for &c in &self.cardinalities[..prefix_idx.min(self.len())] {
+            prefix += c as usize + 1;
+        }
+        if let Some(idx) = idx_opt {
+            (prefix, self.get(idx))
         } else {
-            None
+            (prefix, None)
         }
     }
 

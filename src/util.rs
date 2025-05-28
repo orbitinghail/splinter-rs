@@ -21,3 +21,9 @@ pub trait SerializeContainer {
     /// Returns the cardinality of the object and number of bytes written.
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize);
 }
+
+/// A trait for types that can report how many values they contain.
+pub trait Cardinality {
+    /// Returns the total number of stored values.
+    fn cardinality(&self) -> usize;
+}
