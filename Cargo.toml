@@ -27,7 +27,7 @@ itertools = "0.14"
 
 [dev-dependencies]
 criterion = "=0.6.0"
-roaring = "=0.10.12"
+roaring = "=0.11.0"
 lz4 = "=1.28.1"
 rand = "=0.9.1"
 
