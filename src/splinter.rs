@@ -435,7 +435,6 @@ fn combine_segments(a: Segment, b: Segment, c: Segment, d: Segment) -> u32 {
 
 #[cfg(test)]
 mod tests {
-
     use std::io;
 
     use crate::testutil::{mksplinter, mksplinter_ref};
@@ -605,10 +604,9 @@ mod tests {
     fn test_expected_compression() {
         let to_roaring = |set: Vec<u32>| {
             let mut buf = io::Cursor::new(Vec::new());
-            RoaringBitmap::from_sorted_iter(set)
-                .unwrap()
-                .serialize_into(&mut buf)
-                .unwrap();
+            let mut bmp = RoaringBitmap::from_sorted_iter(set).unwrap();
+            bmp.optimize();
+            bmp.serialize_into(&mut buf).unwrap();
             buf.into_inner()
         };
 
@@ -730,11 +728,11 @@ mod tests {
 
         // 1 fully dense block
         let set = set_gen.distributed(1, 1, 1, 256, 256);
-        run_test("1 dense block", set, 24, 528);
+        run_test("1 dense block", set, 24, 15);
 
         // 1 half full block
         let set = set_gen.distributed(1, 1, 1, 128, 128);
-        run_test("1 half full block", set, 56, 272);
+        run_test("1 half full block", set, 56, 247);
 
         // 1 sparse block
         let set = set_gen.distributed(1, 1, 1, 16, 16);
@@ -750,7 +748,7 @@ mod tests {
 
         // 64 half full blocks
         let set = set_gen.distributed(4, 4, 4, 128, 8192);
-        run_test("64 half full blocks", set, 2432, 16520);
+        run_test("64 half full blocks", set, 2432, 16486);
 
         // 64 sparse blocks
         let set = set_gen.distributed(4, 4, 4, 2, 128);
@@ -758,7 +756,7 @@ mod tests {
 
         // 256 half full blocks
         let set = set_gen.distributed(4, 8, 8, 128, 32768);
-        run_test("256 half full blocks", set, 9440, 65800);
+        run_test("256 half full blocks", set, 9440, 65520);
 
         // 256 sparse blocks
         let set = set_gen.distributed(4, 8, 8, 2, 512);
@@ -766,7 +764,7 @@ mod tests {
 
         // 512 half full blocks
         let set = set_gen.distributed(8, 8, 8, 128, 65536);
-        run_test("512 half full blocks", set, 18872, 131592);
+        run_test("512 half full blocks", set, 18872, 130742);
 
         // 512 sparse blocks
         let set = set_gen.distributed(8, 8, 8, 2, 1024);
@@ -777,11 +775,11 @@ mod tests {
 
         // fully dense splinter
         let set = set_gen.distributed(1, 1, 16, 256, elements);
-        run_test("fully dense", set, 84, 8208);
+        run_test("fully dense", set, 84, 75);
 
         // 128 elements per block; dense partitions
         let set = set_gen.distributed(1, 1, 32, 128, elements);
-        run_test("128/block; dense", set, 1172, 8208);
+        run_test("128/block; dense", set, 1172, 8195);
 
         // 32 elements per block; dense partitions
         let set = set_gen.distributed(1, 1, 128, 32, elements);
@@ -793,11 +791,11 @@ mod tests {
 
         // 128 elements per block; sparse mid partitions
         let set = set_gen.distributed(1, 32, 1, 128, elements);
-        run_test("128/block; sparse mid", set, 1358, 8456);
+        run_test("128/block; sparse mid", set, 1358, 8300);
 
         // 128 elements per block; sparse high partitions
         let set = set_gen.distributed(32, 1, 1, 128, elements);
-        run_test("128/block; sparse high", set, 1544, 8456);
+        run_test("128/block; sparse high", set, 1544, 8290);
 
         // 1 element per block; sparse mid partitions
         let set = set_gen.distributed(1, 256, 16, 1, elements);
@@ -813,15 +811,15 @@ mod tests {
 
         // each partition is dense
         let set = set_gen.dense(8, 8, 8, 8, elements);
-        run_test("dense throughout", set, 6584, 8712);
+        run_test("dense throughout", set, 6584, 2700);
 
         // the lowest partitions are dense
         let set = set_gen.dense(1, 1, 64, 64, elements);
-        run_test("dense low", set, 2292, 8208);
+        run_test("dense low", set, 2292, 267);
 
         // the mid and low partitions are dense
         let set = set_gen.dense(1, 32, 16, 8, elements);
-        run_test("dense mid/low", set, 6350, 8456);
+        run_test("dense mid/low", set, 6350, 2376);
 
         // fully random sets of varying sizes
         run_test("random/32", set_gen.random(32), 546, 328);
