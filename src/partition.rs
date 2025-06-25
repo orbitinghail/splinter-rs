@@ -4,6 +4,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     mem::size_of,
+    ops::RangeInclusive,
 };
 
 use bytes::BufMut;
@@ -70,7 +71,7 @@ where
     V: Merge + Clone,
 {
     fn merge(&mut self, rhs: &Self) {
-        for (k, v) in rhs.sorted_iter() {
+        for (k, v) in rhs.iter() {
             match self.values.entry(k) {
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().merge(v);
@@ -90,7 +91,7 @@ where
     Rv: FromSuffix<'a> + CopyToOwned<Owned = V>,
 {
     fn merge(&mut self, rhs: &PartitionRef<'a, O, Rv>) {
-        for (k, v) in rhs.sorted_iter() {
+        for (k, v) in rhs.iter() {
             match self.values.entry(k) {
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().merge(&v);
@@ -114,12 +115,19 @@ impl<O, V> Relation for Partition<O, V> {
         self.values.len()
     }
 
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+    fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
         self.values.iter().map(|(k, v)| (*k, v))
     }
 
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
         self.values.get(&key)
+    }
+
+    fn range(
+        &self,
+        range: RangeInclusive<Segment>,
+    ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+        self.values.range(range).map(|(k, v)| (*k, v))
     }
 }
 
@@ -194,10 +202,8 @@ where
     type Owned = Partition<Offset, V::Owned>;
 
     fn copy_to_owned(&self) -> Self::Owned {
-        let values: BTreeMap<Segment, V::Owned> = self
-            .sorted_iter()
-            .map(|(k, v)| (k, v.copy_to_owned()))
-            .collect();
+        let values: BTreeMap<Segment, V::Owned> =
+            self.iter().map(|(k, v)| (k, v.copy_to_owned())).collect();
         Partition { values, _phantom: PhantomData }
     }
 }
@@ -220,6 +226,16 @@ where
             index_iter: self.index.into_iter(),
             _phantom: PhantomData,
         }
+    }
+
+    pub fn into_range(
+        self,
+        range: RangeInclusive<Segment>,
+    ) -> impl Iterator<Item = (Segment, V)> + 'a {
+        let r2 = range.clone();
+        self.into_iter()
+            .skip_while(move |(k, _)| !r2.contains(k))
+            .take_while(move |(k, _)| range.contains(k))
     }
 }
 
@@ -263,7 +279,7 @@ where
     }
 
     #[inline]
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+    fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
         PartitionRefIter {
             values: self.values,
             index_iter: self.index.clone().into_iter(),
@@ -279,6 +295,17 @@ where
         } else {
             None
         }
+    }
+
+    #[inline]
+    fn range(
+        &self,
+        range: RangeInclusive<Segment>,
+    ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+        let r2 = range.clone();
+        self.iter()
+            .skip_while(move |(k, _)| !r2.contains(k))
+            .take_while(move |(k, _)| range.contains(k))
     }
 }
 
@@ -298,7 +325,7 @@ where
     V: FromSuffix<'a> + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len() && self.sorted_iter().eq(other.sorted_iter())
+        self.len() == other.len() && self.iter().eq(other.iter())
     }
 }
 
@@ -312,7 +339,7 @@ where
         if self.len() != other.values.len() {
             return false;
         }
-        for ((k1, v1), (k2, v2)) in self.sorted_iter().zip(other.sorted_iter()) {
+        for ((k1, v1), (k2, v2)) in self.iter().zip(other.iter()) {
             if k1 != k2 || v1 != *v2 {
                 return false;
             }

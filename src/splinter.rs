@@ -1,6 +1,10 @@
 use bytes::{Bytes, BytesMut};
 use culprit::Culprit;
-use std::fmt::Debug;
+use either::Either;
+use std::{
+    fmt::Debug,
+    ops::{Bound, RangeBounds, RangeInclusive},
+};
 use zerocopy::{
     ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned,
     little_endian::{U16, U32},
@@ -113,7 +117,7 @@ impl Splinter {
     /// assert!(splinter.contains(3));
     /// ```
     pub fn contains(&self, key: u32) -> bool {
-        let (a, b, c, d) = segments(key);
+        let [a, b, c, d] = segments(key);
 
         if let Some(partition) = self.partitions.get(a) {
             if let Some(partition) = partition.get(b) {
@@ -142,9 +146,9 @@ impl Splinter {
     /// ```
     pub fn cardinality(&self) -> usize {
         self.partitions
-            .sorted_iter()
-            .flat_map(|(_, p)| p.sorted_iter())
-            .flat_map(|(_, p)| p.sorted_iter())
+            .iter()
+            .flat_map(|(_, p)| p.iter())
+            .flat_map(|(_, p)| p.iter())
             .map(|(_, b)| b.cardinality())
             .sum()
     }
@@ -165,15 +169,56 @@ impl Splinter {
     /// ```
     pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.partitions
-            .sorted_iter()
-            .flat_map(|(a, p)| p.sorted_iter().map(move |(b, p)| (a, b, p)))
-            .flat_map(|(a, b, p)| p.sorted_iter().map(move |(c, p)| (a, b, c, p)))
+            .iter()
+            .flat_map(|(a, p)| p.iter().map(move |(b, p)| (a, b, p)))
+            .flat_map(|(a, b, p)| p.iter().map(move |(c, p)| (a, b, c, p)))
             .flat_map(|(a, b, c, p)| p.segments().map(move |d| combine_segments(a, b, c, d)))
+    }
+
+    /// Returns an sorted [`Iterator`] over all keys contained by the provided range.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    /// splinter.insert(5);
+    /// splinter.insert(9);
+    ///
+    /// assert_eq!(&[3, 5, 6], &*splinter.range(3..=6).collect::<Vec<_>>());
+    /// ```
+    pub fn range<'a, R>(&'a self, range: R) -> impl Iterator<Item = u32> + 'a
+    where
+        R: RangeBounds<u32> + 'a,
+    {
+        // compute the high, mid, low, and block ranges
+        let Some([ra, rb, rc, rd]) = segment_ranges(range) else {
+            return Either::Left(std::iter::empty());
+        };
+        Either::Right(
+            self.partitions
+                .range(ra.into())
+                .flat_map(move |(a, p)| {
+                    p.range(inner_range(a, ra, rb)).map(move |(b, p)| (a, b, p))
+                })
+                .flat_map(move |(a, b, p)| {
+                    p.range(inner_range(b, rb, rc))
+                        .map(move |(c, p)| (a, b, c, p))
+                })
+                .flat_map(move |(a, b, c, p)| {
+                    p.range(inner_range(c, rc, rd))
+                        .map(move |d| combine_segments(a, b, c, d))
+                }),
+        )
     }
 
     /// Attempts to insert a key into the Splinter, returning true if a key was inserted
     pub fn insert(&mut self, key: u32) -> bool {
-        let (a, b, c, d) = segments(key);
+        let [a, b, c, d] = segments(key);
         let partition = self.partitions.get_or_init(a);
         let partition = partition.get_or_init(b);
         let block = partition.get_or_init(c);
@@ -335,7 +380,7 @@ where
     /// assert!(splinter.contains(3));
     /// ```
     pub fn contains(&self, key: u32) -> bool {
-        let (a, b, c, d) = segments(key);
+        let [a, b, c, d] = segments(key);
 
         if let Some(partition) = self.load_partitions().get(a) {
             if let Some(partition) = partition.get(b) {
@@ -365,8 +410,8 @@ where
     /// ```
     pub fn cardinality(&self) -> usize {
         let mut sum = 0;
-        for (_, partition) in self.load_partitions().sorted_iter() {
-            for (_, partition) in partition.sorted_iter() {
+        for (_, partition) in self.load_partitions().iter() {
+            for (_, partition) in partition.iter() {
                 sum += partition.cardinality();
             }
         }
@@ -394,6 +439,49 @@ where
             .flat_map(|(a, p)| p.into_iter().map(move |(b, p)| (a, b, p)))
             .flat_map(|(a, b, p)| p.into_iter().map(move |(c, p)| (a, b, c, p)))
             .flat_map(|(a, b, c, p)| p.into_segments().map(move |d| combine_segments(a, b, c, d)))
+    }
+
+    /// Returns an sorted [`Iterator`] over all keys contained by the provided range.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use splinter_rs::Splinter;
+    ///
+    /// let mut splinter = Splinter::default();
+    /// splinter.insert(6);
+    /// splinter.insert(1);
+    /// splinter.insert(3);
+    /// splinter.insert(5);
+    /// splinter.insert(9);
+    /// let splinter = splinter.serialize_to_splinter_ref();
+    ///
+    /// assert_eq!(&[3, 5, 6], &*splinter.range(3..=6).collect::<Vec<_>>());
+    /// ```
+    pub fn range<'a, R>(&'a self, range: R) -> impl Iterator<Item = u32> + 'a
+    where
+        R: RangeBounds<u32> + 'a,
+    {
+        // compute the high, mid, low, and block ranges
+        let Some([ra, rb, rc, rd]) = segment_ranges(range) else {
+            return Either::Left(std::iter::empty());
+        };
+        Either::Right(
+            self.load_partitions()
+                .into_range(ra.into())
+                .flat_map(move |(a, p)| {
+                    p.into_range(inner_range(a, ra, rb))
+                        .map(move |(b, p)| (a, b, p))
+                })
+                .flat_map(move |(a, b, p)| {
+                    p.into_range(inner_range(b, rb, rc))
+                        .map(move |(c, p)| (a, b, c, p))
+                })
+                .flat_map(move |(a, b, c, p)| {
+                    p.into_range(inner_range(c, rc, rd))
+                        .map(move |d| combine_segments(a, b, c, d))
+                }),
+        )
     }
 }
 
@@ -423,9 +511,8 @@ impl<T: AsRef<[u8]>> CopyToOwned for SplinterRef<T> {
 
 /// split the key into 4 8-bit segments
 #[inline]
-fn segments(key: u32) -> (Segment, Segment, Segment, Segment) {
-    let [a, b, c, d] = key.to_be_bytes();
-    (a, b, c, d)
+fn segments(key: u32) -> [Segment; 4] {
+    key.to_be_bytes()
 }
 
 #[inline]
@@ -433,15 +520,80 @@ fn combine_segments(a: Segment, b: Segment, c: Segment, d: Segment) -> u32 {
     u32::from_be_bytes([a, b, c, d])
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SegmentRange {
+    start: Segment,
+    end: Segment,
+}
+
+impl Into<RangeInclusive<Segment>> for SegmentRange {
+    fn into(self) -> RangeInclusive<Segment> {
+        self.start..=self.end
+    }
+}
+
+/// Split a range of keys into 4 inclusive ranges corresponding to the high,
+/// mid, low, and block segments.
+///
+/// Returns None if the input range is empty.
+#[inline]
+fn segment_ranges<R: RangeBounds<u32>>(range: R) -> Option<[SegmentRange; 4]> {
+    use Bound::*;
+    let (start_bound, end_bound) = (range.start_bound().cloned(), range.end_bound().cloned());
+    let is_empty = match (start_bound, end_bound) {
+        (_, Excluded(u32::MIN)) | (Excluded(u32::MAX), _) => true,
+        (Included(start), Excluded(end))
+        | (Excluded(start), Included(end))
+        | (Excluded(start), Excluded(end)) => start >= end,
+        (Included(start), Included(end)) => start > end,
+        _ => false,
+    };
+    if is_empty {
+        return None;
+    }
+
+    let start = match start_bound {
+        Unbounded => [0; 4],
+        Included(segment) => segments(segment),
+        Excluded(segment) => segments(segment.saturating_add(1)),
+    };
+    let end = match end_bound {
+        Unbounded => [u8::MAX; 4],
+        Included(segment) => segments(segment),
+        Excluded(segment) => segments(segment.checked_sub(1).expect("end segment underflow")),
+    };
+    // zip the two arrays together
+    Some(std::array::from_fn(|i| SegmentRange {
+        start: start[i],
+        end: end[i],
+    }))
+}
+
+#[inline]
+fn inner_range(
+    key: Segment,
+    key_range: SegmentRange,
+    inner_range: SegmentRange,
+) -> RangeInclusive<Segment> {
+    let SegmentRange { start: s, end: e } = key_range;
+    if key == s && key == e {
+        inner_range.into()
+    } else if key == s {
+        inner_range.start..=u8::MAX
+    } else if key == e {
+        0..=inner_range.end
+    } else {
+        0..=u8::MAX
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io;
 
-    use crate::testutil::{mksplinter, mksplinter_ref};
+    use crate::testutil::{SetGen, mksplinter, mksplinter_ref};
 
     use super::*;
-    use itertools::Itertools;
-    use rand::{SeedableRng, seq::index};
     use roaring::RoaringBitmap;
 
     #[test]
@@ -522,6 +674,119 @@ mod tests {
         // check that some keys are not present
         assert!(!splinter.contains(65535), "unexpected key: 65535");
         assert!(!splinter.contains(90999), "unexpected key: 90999");
+    }
+
+    /// verify Splinter::range and SplinterRef::range
+    #[test]
+    pub fn test_range() {
+        #[track_caller]
+        fn case<I1, R, I2>(name: &str, set: I1, range: R, expected: I2)
+        where
+            I1: IntoIterator<Item = u32> + Clone,
+            R: RangeBounds<u32> + Clone,
+            I2: IntoIterator<Item = u32> + Clone,
+        {
+            let expected = expected.into_iter().collect::<Vec<_>>();
+
+            let output = mksplinter(set.clone())
+                .range(range.clone())
+                .collect::<Vec<_>>();
+            assert!(
+                output == expected,
+                "Splinter::range failed for case: {name}; output: {:?}; expected: {:?}",
+                (output.first(), output.last(), output.len()),
+                (expected.first(), expected.last(), expected.len()),
+            );
+
+            let output = mksplinter_ref(set).range(range).collect::<Vec<_>>();
+            assert!(
+                output == expected,
+                "SplinterRef::range failed for case: {name}; output: {:?}; expected: {:?}",
+                (output.first(), output.last(), output.len()),
+                (expected.first(), expected.last(), expected.len()),
+            );
+        }
+
+        case("empty", [], .., []);
+        case("one element", [156106], .., [156106]);
+        case(
+            "one element, inclusive",
+            [156106],
+            156105..=156106,
+            [156106],
+        );
+        case("one element, exclusive", [156106], 156105..156107, [156106]);
+
+        case("zero", [0], .., [0]);
+        case("zero, inclusive end", [0], ..=0, [0]);
+        case("zero, inclusive start", [0], 0.., [0]);
+        case("zero, exclusive end", [0], ..0, []);
+        case("zero, exclusive start", [0], 1.., []);
+
+        case("max element", [u32::MAX], .., [u32::MAX]);
+        case(
+            "max element, inclusive end",
+            [u32::MAX],
+            ..=u32::MAX,
+            [u32::MAX],
+        );
+        case(
+            "max element, inclusive start",
+            [u32::MAX],
+            u32::MAX..,
+            [u32::MAX],
+        );
+        case("max element, exclusive end", [u32::MAX], ..u32::MAX, []);
+        case(
+            "max element, exclusive start",
+            [u32::MAX],
+            u32::MAX - 1..,
+            [u32::MAX],
+        );
+
+        case(
+            "simple set",
+            [12, 16, 19, 1000002, 1000016, 1000046],
+            ..,
+            [12, 16, 19, 1000002, 1000016, 1000046],
+        );
+        case(
+            "simple set, inclusive",
+            [12, 16, 19, 1000002, 1000016, 1000046],
+            19..=1000016,
+            [19, 1000002, 1000016],
+        );
+        case(
+            "simple set, exclusive",
+            [12, 16, 19, 1000002, 1000016, 1000046],
+            19..1000016,
+            [19, 1000002],
+        );
+
+        let mut set_gen = SetGen::new(0xDEAD_BEEF);
+
+        let set = set_gen.distributed(4, 8, 8, 128, 32768);
+        let expected = set[1024..16384].to_vec();
+        let range = expected[0]..=expected[expected.len() - 1];
+        case("256 half full blocks", set.clone(), range, expected);
+
+        let expected = set[1024..].to_vec();
+        let range = expected[0]..;
+        case(
+            "256 half full blocks, unbounded right",
+            set.clone(),
+            range,
+            expected,
+        );
+
+        let expected = set[..16384].to_vec();
+        let range = ..=expected[expected.len() - 1];
+        case(
+            "256 half full blocks, unbounded left",
+            set.clone(),
+            range,
+            expected,
+        );
     }
 
     /// Heuristic analyzer: prints patterns found in the data which could be
@@ -659,65 +924,7 @@ mod tests {
             });
         };
 
-        struct SetGen {
-            rng: rand::rngs::StdRng,
-        }
-
-        impl SetGen {
-            #[track_caller]
-            fn distributed(
-                &mut self,
-                high: usize,
-                mid: usize,
-                low: usize,
-                block: usize,
-                expected_len: usize,
-            ) -> Vec<u32> {
-                let mut out = Vec::with_capacity(expected_len);
-                for high in index::sample(&mut self.rng, 256, high) {
-                    for mid in index::sample(&mut self.rng, 256, mid) {
-                        for low in index::sample(&mut self.rng, 256, low) {
-                            for blk in index::sample(&mut self.rng, 256, block) {
-                                out.push(u32::from_be_bytes([
-                                    high as u8, mid as u8, low as u8, blk as u8,
-                                ]));
-                            }
-                        }
-                    }
-                }
-                out.sort();
-                assert_eq!(out.len(), expected_len);
-                out
-            }
-
-            #[track_caller]
-            fn dense(
-                &mut self,
-                high: usize,
-                mid: usize,
-                low: usize,
-                block: usize,
-                expected_len: usize,
-            ) -> Vec<u32> {
-                let out: Vec<u32> = itertools::iproduct!(0..high, 0..mid, 0..low, 0..block)
-                    .map(|(a, b, c, d)| u32::from_be_bytes([a as u8, b as u8, c as u8, d as u8]))
-                    .collect();
-                assert_eq!(out.len(), expected_len);
-                out
-            }
-
-            fn random(&mut self, len: usize) -> Vec<u32> {
-                index::sample(&mut self.rng, u32::MAX as usize, len)
-                    .into_iter()
-                    .map(|i| i as u32)
-                    .sorted()
-                    .collect()
-            }
-        }
-
-        let mut set_gen = SetGen {
-            rng: rand::rngs::StdRng::seed_from_u64(0xDEAD_BEEF),
-        };
+        let mut set_gen = SetGen::new(0xDEAD_BEEF);
 
         // empty splinter
         run_test("empty", vec![], 8, 8);
