@@ -1,4 +1,4 @@
-use std::array::TryFromSliceError;
+use std::{array::TryFromSliceError, ops::RangeInclusive};
 
 use bytes::BufMut;
 use either::Either;
@@ -111,7 +111,7 @@ impl<'a> BlockRef<'a> {
         match *self {
             BlockRef::Partial { segments } => {
                 if segments.len() == BITMAP_SIZE {
-                    Either::Left(TryInto::<&Bitmap>::try_into(segments).unwrap())
+                    Either::Left(segments.try_into().unwrap())
                 } else {
                     Either::Right(segments)
                 }
@@ -125,13 +125,35 @@ impl<'a> BlockRef<'a> {
         match self {
             BlockRef::Partial { segments } => {
                 if segments.len() == BITMAP_SIZE {
-                    let bitmap = TryInto::<&Bitmap>::try_into(segments).unwrap();
+                    let bitmap: &Bitmap = segments.try_into().unwrap();
                     Either::Left(Either::Left(bitmap.into_segments()))
                 } else {
                     Either::Left(Either::Right(segments.iter().copied()))
                 }
             }
             BlockRef::Full => Either::Right(0..=255),
+        }
+    }
+
+    #[inline]
+    pub fn into_range(self, range: RangeInclusive<Segment>) -> impl Iterator<Item = Segment> + 'a {
+        match self {
+            BlockRef::Partial { segments } => {
+                if segments.len() == BITMAP_SIZE {
+                    let bitmap: &Bitmap = segments.try_into().unwrap();
+                    Either::Left(Either::Left(bitmap.into_range(range)))
+                } else {
+                    Either::Left(Either::Right({
+                        let r2 = range.clone();
+                        segments
+                            .iter()
+                            .copied()
+                            .skip_while(move |s| !range.contains(s))
+                            .take_while(move |s| r2.contains(s))
+                    }))
+                }
+            }
+            BlockRef::Full => Either::Right(range),
         }
     }
 

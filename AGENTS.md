@@ -5,6 +5,7 @@
 When changing rust code:
 
 - run tests using `cargo nextest run --all-targets`
+- run doctests using `cargo test --doc`
 - run lints using `cargo clippy`
 - ensure the code is formatted correctly using `cargo fmt`
 
@@ -45,3 +46,4 @@ Splinter is low-level systems software. Prioritize safety, performance, and clar
 - Fix any test or type errors until the whole suite is green.
 - Add or update tests for the code you change, even if nobody asked.
 - Ensure benchmarks continue to compile and run.
+- Add docs and doctests to any public functions on `Splinter` or `SplinterRef`, then verify them using `cargo test --doc`

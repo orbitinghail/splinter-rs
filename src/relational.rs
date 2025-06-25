@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use crate::Segment;
 
 pub trait Relation {
@@ -18,7 +20,13 @@ pub trait Relation {
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>>;
 
     /// Returns an iterator over the key-value pairs of the relation sorted by key.
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)>;
+    fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)>;
+
+    /// Returns an iterator over a sub-range of key-value pairs of the relation sorted by key.
+    fn range(
+        &self,
+        range: RangeInclusive<Segment>,
+    ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)>;
 
     /// Returns an iterator over the inner join of two relations.
     fn inner_join<'a, R>(
@@ -28,7 +36,7 @@ pub trait Relation {
     where
         R: Relation,
     {
-        self.sorted_iter()
+        self.iter()
             .filter_map(|(k, l)| right.get(k).map(|r| (k, l, r)))
     }
 }
@@ -50,14 +58,21 @@ where
         (**self).get(key)
     }
 
-    fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        (**self).sorted_iter()
+    fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+        (**self).iter()
+    }
+
+    fn range(
+        &self,
+        range: RangeInclusive<Segment>,
+    ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+        (**self).range(range)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, ops::RangeInclusive};
 
     use crate::Segment;
 
@@ -77,12 +92,19 @@ mod tests {
             self.data.len()
         }
 
-        fn sorted_iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+        fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
             self.data.iter().map(|(k, v)| (*k, v))
         }
 
         fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
             self.data.get(&key)
+        }
+
+        fn range(
+            &self,
+            range: RangeInclusive<Segment>,
+        ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
+            self.data.range(range).map(|(k, v)| (*k, v))
         }
     }
 
@@ -96,7 +118,7 @@ mod tests {
     #[test]
     fn test_values() {
         let relation = TestRelation { data: [(1, 1), (2, 2), (3, 3)].into() };
-        let values: Vec<_> = relation.sorted_iter().map(|(_, b)| *b).collect();
+        let values: Vec<_> = relation.iter().map(|(_, b)| *b).collect();
         assert_eq!(values, [1, 2, 3]);
     }
 
@@ -107,5 +129,12 @@ mod tests {
 
         let joined: Vec<_> = left.inner_join(&right).collect();
         assert_eq!(joined, [(2, &2, &4), (3, &3, &5)]);
+    }
+
+    #[test]
+    fn test_range() {
+        let relation = TestRelation { data: [(1, 1), (2, 2), (3, 3)].into() };
+        let range: Vec<_> = relation.range(2..=3).collect();
+        assert_eq!(range, [(2, &2), (3, &3)]);
     }
 }

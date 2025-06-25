@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use crate::Segment;
 
 pub const BITMAP_SIZE: usize = 32;
@@ -85,6 +87,22 @@ where
     #[inline]
     fn into_segments(self) -> BitmapSegmentsIter<Self> {
         BitmapSegmentsIter::new(self)
+    }
+
+    #[inline]
+    fn range(&self, range: RangeInclusive<Segment>) -> impl Iterator<Item = Segment> {
+        let r2 = range.clone();
+        self.segments()
+            .skip_while(move |s| !r2.contains(s))
+            .take_while(move |s| range.contains(s))
+    }
+
+    #[inline]
+    fn into_range(self, range: RangeInclusive<Segment>) -> impl Iterator<Item = Segment> {
+        let r2 = range.clone();
+        self.into_segments()
+            .skip_while(move |s| !r2.contains(s))
+            .take_while(move |s| range.contains(s))
     }
 }
 
