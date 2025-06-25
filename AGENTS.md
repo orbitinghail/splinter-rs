@@ -4,7 +4,7 @@
 
 When changing rust code:
 
-- run tests using `cargo nexttest run --all-targets`
+- run tests using `cargo nextest run --all-targets`
 - run lints using `cargo clippy`
 - ensure the code is formatted correctly using `cargo fmt`
 
@@ -34,8 +34,9 @@ Splinter is low-level systems software. Prioritize safety, performance, and clar
 - Off-by-One safety: Treat indexes, counts, sizes as distinct. Be explicit in rounding and division.
 
 **Documentation**
- - Document public APIs with Rustdoc comments.
- - Keep the README and examples updated when behavior or usage changes.
+
+- Document public APIs with Rustdoc comments.
+- Keep the README and examples updated when behavior or usage changes.
 
 ## Development and testing instructions
 
