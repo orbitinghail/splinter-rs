@@ -526,9 +526,9 @@ struct SegmentRange {
     end: Segment,
 }
 
-impl Into<RangeInclusive<Segment>> for SegmentRange {
-    fn into(self) -> RangeInclusive<Segment> {
-        self.start..=self.end
+impl From<SegmentRange> for RangeInclusive<Segment> {
+    fn from(val: SegmentRange) -> Self {
+        val.start..=val.end
     }
 }
 
