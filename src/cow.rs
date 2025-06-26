@@ -1,18 +1,60 @@
+use std::fmt::Debug;
+
 use culprit::Culprit;
 use either::Either;
 
 use crate::{DecodeErr, Splinter, SplinterRead, SplinterRef, SplinterWrite, util::CopyToOwned};
 
 // A Clone-on-write Splinter
+#[derive(Clone)]
 pub enum CowSplinter<B> {
     Ref(SplinterRef<B>),
     Owned(Splinter),
 }
 
-impl<B> CowSplinter<B>
+impl<B> Default for CowSplinter<B> {
+    fn default() -> Self {
+        Self::Owned(Splinter::default())
+    }
+}
+
+impl<B: AsRef<[u8]>> Debug for CowSplinter<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref.fmt(f),
+            CowSplinter::Owned(splinter) => splinter.fmt(f),
+        }
+    }
+}
+
+impl<B, K: Into<u32>> FromIterator<K> for CowSplinter<B>
 where
     B: AsRef<[u8]>,
 {
+    fn from_iter<I: IntoIterator<Item = K>>(iter: I) -> Self {
+        Self::Owned(Splinter::from_iter(iter))
+    }
+}
+
+impl<B> From<Splinter> for CowSplinter<B> {
+    fn from(splinter: Splinter) -> Self {
+        Self::Owned(splinter)
+    }
+}
+
+impl<B> From<SplinterRef<B>> for CowSplinter<B> {
+    fn from(splinter_ref: SplinterRef<B>) -> Self {
+        Self::Ref(splinter_ref)
+    }
+}
+
+impl<B: AsRef<[u8]>> From<CowSplinter<B>> for Splinter {
+    fn from(cow_splinter: CowSplinter<B>) -> Self {
+        cow_splinter.into_owned()
+    }
+}
+
+impl<B> CowSplinter<B> {
     pub fn from_owned(splinter: Splinter) -> Self {
         Self::Owned(splinter)
     }
@@ -20,9 +62,18 @@ where
     pub fn from_ref(splinter: SplinterRef<B>) -> Self {
         Self::Ref(splinter)
     }
+}
 
+impl<B: AsRef<[u8]>> CowSplinter<B> {
     pub fn from_bytes(data: B) -> Result<Self, Culprit<DecodeErr>> {
         Ok(Self::Ref(SplinterRef::from_bytes(data)?))
+    }
+
+    pub fn into_owned(self) -> Splinter {
+        match self {
+            Self::Ref(splinter_ref) => splinter_ref.copy_to_owned(),
+            Self::Owned(splinter) => splinter,
+        }
     }
 
     pub fn to_mut(&mut self) -> &mut Splinter {
