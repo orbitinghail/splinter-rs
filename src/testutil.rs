@@ -4,7 +4,7 @@ use bytes::Bytes;
 use itertools::Itertools;
 use rand::{SeedableRng, seq::index};
 
-use crate::{Splinter, SplinterRef, util::CopyToOwned};
+use crate::{Splinter, SplinterRead, SplinterRef, SplinterWrite, util::CopyToOwned};
 
 pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
     let mut splinter = Splinter::default();

@@ -237,6 +237,27 @@ where
             .skip_while(move |(k, _)| !r2.contains(k))
             .take_while(move |(k, _)| range.contains(k))
     }
+
+    pub fn last(&self) -> Option<(Segment, V)> {
+        if let Some((segment, cardinality, offset)) = self.index.last() {
+            Some((
+                segment,
+                read_partition_ref_value(cardinality, offset, self.values),
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+fn read_partition_ref_value<'a, V: FromSuffix<'a>>(
+    cardinality: usize,
+    offset: usize,
+    values: &'a [u8],
+) -> V {
+    assert!(values.len() >= offset, "offset out of range");
+    let data = &values[..(values.len() - offset)];
+    V::from_suffix(data, cardinality)
 }
 
 struct PartitionRefIter<'a, I, V> {
@@ -254,9 +275,10 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((segment, cardinality, offset)) = self.index_iter.next() {
-            assert!(self.values.len() >= offset, "offset out of range");
-            let data = &self.values[..(self.values.len() - offset)];
-            Some((segment, V::from_suffix(data, cardinality)))
+            Some((
+                segment,
+                read_partition_ref_value(cardinality, offset, self.values),
+            ))
         } else {
             None
         }
@@ -289,9 +311,7 @@ where
 
     fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
         if let Some((cardinality, offset)) = self.index.lookup(key) {
-            assert!(self.values.len() >= offset, "offset out of range");
-            let data = &self.values[..(self.values.len() - offset)];
-            Some(V::from_suffix(data, cardinality))
+            Some(read_partition_ref_value(cardinality, offset, self.values))
         } else {
             None
         }

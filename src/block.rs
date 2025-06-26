@@ -166,7 +166,6 @@ impl<'a> BlockRef<'a> {
         }
     }
 
-    #[cfg(test)]
     #[inline]
     pub fn last(&self) -> Option<Segment> {
         match self.resolve_bitmap() {
