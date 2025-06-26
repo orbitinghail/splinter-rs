@@ -9,6 +9,8 @@ impl PartialEq for Splinter {
     }
 }
 
+impl Eq for Splinter {}
+
 // Splinter == SplinterRef
 impl<T: AsRef<[u8]>> PartialEq<SplinterRef<T>> for Splinter {
     fn eq(&self, other: &SplinterRef<T>) -> bool {
@@ -29,6 +31,8 @@ impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> PartialEq<SplinterRef<T2>> for SplinterRe
         self.load_partitions() == other.load_partitions()
     }
 }
+
+impl<T1: AsRef<[u8]>> Eq for SplinterRef<T1> {}
 
 // SplinterRef == Splinter
 impl<T: AsRef<[u8]>> PartialEq<Splinter> for SplinterRef<T> {
@@ -56,6 +60,8 @@ impl<T: AsRef<[u8]>> PartialEq for CowSplinter<T> {
         }
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for CowSplinter<T> {}
 
 // CowSplinter == Splinter
 impl<T: AsRef<[u8]>> PartialEq<Splinter> for CowSplinter<T> {
