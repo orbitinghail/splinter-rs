@@ -99,6 +99,13 @@ impl<B: AsRef<[u8]>> CowSplinter<B> {
         }
     }
 
+    pub fn serialized_size(&self) -> usize {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref.size(),
+            CowSplinter::Owned(splinter) => splinter.serialized_size(),
+        }
+    }
+
     pub fn serialize<T: bytes::BufMut>(&self, out: &mut T) -> usize {
         match self {
             CowSplinter::Ref(splinter_ref) => {

@@ -58,6 +58,10 @@ impl SerializeContainer for Block {
         self.bitmap.has_bits_set()
     }
 
+    fn serialized_size(&self) -> usize {
+        block_size(self.cardinality())
+    }
+
     /// Serializes the block to the output buffer.
     ///
     /// Returns the block's cardinality and number of bytes written.
@@ -219,11 +223,14 @@ impl<'a> FromSuffix<'a> for BlockRef<'a> {
 }
 
 #[inline]
-pub fn block_size(cardinality: usize) -> usize {
+pub const fn block_size(cardinality: usize) -> usize {
     if cardinality == 256 {
+        // full block, omitted during serialization
         0
+    } else if cardinality >= BITMAP_SIZE {
+        BITMAP_SIZE
     } else {
-        cardinality.min(BITMAP_SIZE)
+        cardinality
     }
 }
 

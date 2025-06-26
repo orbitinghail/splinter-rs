@@ -40,6 +40,10 @@ impl Header {
 
     fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
         out.put_slice(self.as_bytes());
+        Self::serialized_size()
+    }
+
+    const fn serialized_size() -> usize {
         size_of::<Header>()
     }
 }
@@ -61,7 +65,11 @@ impl Footer {
 
     fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
         out.put_slice(self.as_bytes());
-        size_of::<Header>()
+        Self::serialized_size()
+    }
+
+    const fn serialized_size() -> usize {
+        size_of::<Footer>()
     }
 }
 
@@ -88,6 +96,11 @@ impl Splinter {
         let partition = self.partitions.get_or_init(a);
         let partition = partition.get_or_init(b);
         partition.insert(c, block);
+    }
+
+    /// Computes the serialized size of this Splinter
+    pub fn serialized_size(&self) -> usize {
+        Header::serialized_size() + self.partitions.serialized_size() + Footer::serialized_size()
     }
 
     pub fn serialize<B: bytes::BufMut>(&self, out: &mut B) -> usize {
@@ -250,6 +263,7 @@ where
         Ok(SplinterRef { data, partitions })
     }
 
+    /// Returns the size of this SplinterRef's serialized bytes
     pub fn size(&self) -> usize {
         self.data.as_ref().len()
     }
@@ -566,7 +580,13 @@ mod tests {
     #[test]
     fn test_roundtrip_sanity() {
         let assert_round_trip = |splinter: Splinter| {
+            let estimated_size = splinter.serialized_size();
             let splinter_ref = SplinterRef::from_bytes(splinter.serialize_to_bytes()).unwrap();
+            assert_eq!(
+                splinter_ref.size(),
+                estimated_size,
+                "serialized size matches estimated size"
+            );
             assert_eq!(
                 splinter.cardinality(),
                 splinter_ref.cardinality(),
@@ -586,6 +606,8 @@ mod tests {
         };
 
         assert_round_trip(mksplinter(0..0));
+        assert_round_trip(mksplinter(0..1));
+        assert_round_trip(mksplinter(u32::MAX - 10..u32::MAX));
         assert_round_trip(mksplinter(0..10));
         assert_round_trip(mksplinter(0..=255));
         assert_round_trip(mksplinter(0..=4096));

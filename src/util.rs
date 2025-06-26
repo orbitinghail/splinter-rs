@@ -20,4 +20,7 @@ pub trait SerializeContainer {
     ///
     /// Returns the cardinality of the object and number of bytes written.
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize);
+
+    /// Returns the serialized size of the container.
+    fn serialized_size(&self) -> usize;
 }
