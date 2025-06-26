@@ -24,6 +24,19 @@ where
     pub fn from_bytes(data: B) -> Result<Self, Culprit<DecodeErr>> {
         Ok(Self::Ref(SplinterRef::from_bytes(data)?))
     }
+
+    pub fn to_mut(&mut self) -> &mut Splinter {
+        match *self {
+            Self::Ref(ref splinter_ref) => {
+                *self = Self::Owned(splinter_ref.copy_to_owned());
+                match *self {
+                    Self::Ref(..) => unreachable!(),
+                    Self::Owned(ref mut owned) => owned,
+                }
+            }
+            Self::Owned(ref mut owned) => owned,
+        }
+    }
 }
 
 impl<B: AsRef<[u8]>> SplinterRead for CowSplinter<B> {
@@ -76,14 +89,6 @@ impl<B: AsRef<[u8]>> SplinterRead for CowSplinter<B> {
 impl<B: AsRef<[u8]>> SplinterWrite for CowSplinter<B> {
     /// Inserts a key into the splinter, converting it to an owned version if it was a reference.
     fn insert(&mut self, key: u32) -> bool {
-        match self {
-            CowSplinter::Ref(splinter) => {
-                let mut owned = splinter.copy_to_owned();
-                let result = owned.insert(key);
-                *self = CowSplinter::Owned(owned);
-                result
-            }
-            CowSplinter::Owned(splinter) => splinter.insert(key),
-        }
+        self.to_mut().insert(key)
     }
 }
