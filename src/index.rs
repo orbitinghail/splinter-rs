@@ -89,4 +89,14 @@ where
         // zip the segments, cardinalities, and offsets together
         izip!(segments, cardinalities, offsets)
     }
+
+    /// Returns the last segment in the index along with its cardinality and
+    /// offset if the index is non-empty
+    pub fn last(&self) -> Option<(Segment, usize, usize)> {
+        self.keys.last().and_then(|segment| {
+            let last_offset = self.len().checked_sub(1).expect("index out of sync");
+            self.get(last_offset)
+                .map(|(cardinality, offset)| (segment, cardinality, offset))
+        })
+    }
 }
