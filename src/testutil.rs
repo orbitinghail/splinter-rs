@@ -132,3 +132,74 @@ impl SetGen {
             .collect()
     }
 }
+
+/// Validate that `splinter` correctly implements [`SplinterRead`] given the
+/// expected set of values.
+pub fn harness_read<S>(splinter: &S, expected: &[u32])
+where
+    S: SplinterRead + Debug,
+{
+    assert_eq!(splinter.is_empty(), expected.is_empty(), "is_empty");
+    assert_eq!(splinter.cardinality(), expected.len(), "cardinality");
+    assert_eq!(splinter.last(), expected.last().copied(), "last");
+
+    for key in [0u32, 1, 33, 255, 256, 1024, u32::MAX] {
+        assert_eq!(
+            splinter.contains(key),
+            expected.contains(&key),
+            "contains({key})"
+        );
+    }
+
+    assert!(splinter.iter().eq(expected.iter().copied()), "iter");
+    assert!(splinter.range(..).eq(expected.iter().copied()), "range(..)");
+
+    if let (Some(&start), Some(&end)) = (expected.first(), expected.last()) {
+        assert!(
+            splinter
+                .range(start..)
+                .eq(expected.iter().copied().filter(|&v| v >= start)),
+            "range(start..)"
+        );
+        assert!(
+            splinter
+                .range(..=end)
+                .eq(expected.iter().copied().filter(|&v| v <= end)),
+            "range(..=end)"
+        );
+        assert!(
+            splinter
+                .range(start..=end)
+                .eq(expected.iter().copied().filter(|&v| v >= start && v <= end)),
+            "range(start..=end)"
+        );
+        if start < end {
+            assert!(
+                splinter
+                    .range(start..end)
+                    .eq(expected.iter().copied().filter(|&v| v >= start && v < end)),
+                "range(start..end)"
+            );
+        }
+    }
+}
+
+/// Validate that type `W` correctly implements [`SplinterWrite`] by inserting
+/// `values` and comparing the result against a baseline [`Splinter`].
+pub fn harness_write<W>(values: &[u32])
+where
+    W: SplinterWrite + SplinterRead + Default + Debug,
+{
+    let mut splinter = W::default();
+    assert!(splinter.is_empty(), "new splinter not empty");
+
+    for &key in values {
+        assert!(splinter.insert(key), "first insert {key}");
+        assert!(!splinter.insert(key), "duplicate insert {key}");
+    }
+
+    harness_read(&splinter, values);
+
+    let result: Vec<u32> = splinter.iter().collect();
+    assert_eq!(result, values, "write result");
+}
