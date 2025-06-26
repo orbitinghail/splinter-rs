@@ -1,4 +1,4 @@
-use crate::{ops::Intersection, relational::Relation};
+use crate::{cow::CowSplinter, ops::Intersection, relational::Relation};
 
 use super::{Splinter, SplinterRef};
 
@@ -61,6 +61,30 @@ impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Intersection<SplinterRef<T2>> for Splinte
             }
         }
         out
+    }
+}
+
+// CowSplinter <> Splinter
+impl<T: AsRef<[u8]>> Intersection<Splinter> for CowSplinter<T> {
+    type Output = Splinter;
+
+    fn intersection(&self, rhs: &Splinter) -> Self::Output {
+        match self {
+            CowSplinter::Owned(splinter) => splinter.intersection(rhs),
+            CowSplinter::Ref(splinter_ref) => rhs.intersection(splinter_ref),
+        }
+    }
+}
+
+// CowSplinter <> SplinterRef
+impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Intersection<SplinterRef<T2>> for CowSplinter<T1> {
+    type Output = Splinter;
+
+    fn intersection(&self, rhs: &SplinterRef<T2>) -> Self::Output {
+        match self {
+            CowSplinter::Owned(splinter) => splinter.intersection(rhs),
+            CowSplinter::Ref(splinter_ref) => splinter_ref.intersection(rhs),
+        }
     }
 }
 

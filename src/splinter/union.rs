@@ -1,4 +1,5 @@
 use crate::{
+    cow::CowSplinter,
     ops::{Merge, Union},
     util::CopyToOwned,
 };
@@ -48,6 +49,30 @@ where
         let mut out = self.copy_to_owned();
         out.merge(rhs);
         out
+    }
+}
+
+// CowSplinter <> Splinter
+impl<T1: AsRef<[u8]>> Union<Splinter> for CowSplinter<T1> {
+    type Output = Splinter;
+
+    fn union(&self, rhs: &Splinter) -> Self::Output {
+        match self {
+            CowSplinter::Owned(splinter) => splinter.union(rhs),
+            CowSplinter::Ref(splinter_ref) => rhs.union(splinter_ref),
+        }
+    }
+}
+
+// CowSplinter <> SplinterRef
+impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Union<SplinterRef<T2>> for CowSplinter<T1> {
+    type Output = Splinter;
+
+    fn union(&self, rhs: &SplinterRef<T2>) -> Self::Output {
+        match self {
+            CowSplinter::Owned(splinter) => splinter.union(rhs),
+            CowSplinter::Ref(splinter_ref) => splinter_ref.union(rhs),
+        }
     }
 }
 

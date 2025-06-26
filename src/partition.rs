@@ -14,7 +14,7 @@ use crate::{
     Segment,
     bitmap::BitmapMutExt,
     block::Block,
-    index::IndexRef,
+    index::{IndexRef, index_serialized_size},
     ops::Merge,
     relational::Relation,
     util::{CopyToOwned, FromSuffix, SerializeContainer},
@@ -138,6 +138,13 @@ where
 {
     fn should_serialize(&self) -> bool {
         self.values.values().any(|v| v.should_serialize())
+    }
+
+    fn serialized_size(&self) -> usize {
+        let index_size = index_serialized_size::<O>(self.values.len());
+        self.values
+            .iter()
+            .fold(index_size, |acc, (_, value)| acc + value.serialized_size())
     }
 
     fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {

@@ -6,6 +6,12 @@ use crate::{
     block::{BlockRef, block_size},
 };
 
+#[inline]
+pub(crate) const fn index_serialized_size<Offset: Sized>(cardinality: usize) -> usize {
+    let block_size = block_size(cardinality);
+    block_size + cardinality + (size_of::<Offset>() * cardinality)
+}
+
 #[derive(Clone)]
 pub struct IndexRef<'a, Offset> {
     keys: BlockRef<'a>,
@@ -17,14 +23,8 @@ impl<'a, Offset> IndexRef<'a, Offset>
 where
     Offset: FromBytes + Immutable + Copy + Into<u32> + 'a,
 {
-    #[inline]
-    fn serialized_size(cardinality: usize) -> usize {
-        let block_size = block_size(cardinality);
-        block_size + cardinality + (size_of::<Offset>() * cardinality)
-    }
-
     pub fn from_suffix(data: &'a [u8], cardinality: usize) -> (&'a [u8], Self) {
-        let index_size = Self::serialized_size(cardinality);
+        let index_size = index_serialized_size::<Offset>(cardinality);
         assert!(data.len() >= index_size, "data too short");
         let (data, index) = data.split_at(data.len() - index_size);
         (data, Self::from_bytes(index, cardinality))

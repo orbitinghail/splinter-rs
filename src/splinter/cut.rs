@@ -1,4 +1,4 @@
-use crate::{bitmap::BitmapExt, ops::Cut, relational::Relation};
+use crate::{bitmap::BitmapExt, cow::CowSplinter, ops::Cut, relational::Relation};
 
 use super::{Splinter, SplinterRef};
 
@@ -71,6 +71,24 @@ impl<T: AsRef<[u8]>> Cut<SplinterRef<T>> for Splinter {
         });
 
         out
+    }
+}
+
+// CowSplinter cut Splinter
+impl<T1: AsRef<[u8]>> Cut<Splinter> for CowSplinter<T1> {
+    type Output = Splinter;
+
+    fn cut(&mut self, rhs: &Splinter) -> Self::Output {
+        self.to_mut().cut(rhs)
+    }
+}
+
+// CowSplinter cut SplinterRef
+impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Cut<SplinterRef<T2>> for CowSplinter<T1> {
+    type Output = Splinter;
+
+    fn cut(&mut self, rhs: &SplinterRef<T2>) -> Self::Output {
+        self.to_mut().cut(rhs)
     }
 }
 

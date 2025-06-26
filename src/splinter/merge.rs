@@ -1,4 +1,4 @@
-use crate::ops::Merge;
+use crate::{cow::CowSplinter, ops::Merge};
 
 use super::{Splinter, SplinterRef};
 
@@ -13,6 +13,20 @@ impl Merge for Splinter {
 impl<T: AsRef<[u8]>> Merge<SplinterRef<T>> for Splinter {
     fn merge(&mut self, rhs: &SplinterRef<T>) {
         self.partitions.merge(&rhs.load_partitions());
+    }
+}
+
+// CowSplinter <> Splinter
+impl<T1: AsRef<[u8]>> Merge<Splinter> for CowSplinter<T1> {
+    fn merge(&mut self, rhs: &Splinter) {
+        self.to_mut().merge(rhs);
+    }
+}
+
+// CowSplinter <> SplinterRef
+impl<T1: AsRef<[u8]>, T2: AsRef<[u8]>> Merge<SplinterRef<T2>> for CowSplinter<T1> {
+    fn merge(&mut self, rhs: &SplinterRef<T2>) {
+        self.to_mut().merge(rhs);
     }
 }
 
