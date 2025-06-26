@@ -157,3 +157,54 @@ pub trait SplinterWrite {
     /// ```
     fn insert(&mut self, key: u32) -> bool;
 }
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::{
+        cow::CowSplinter,
+        testutil::{SetGen, harness_read, harness_write, mksplinter, mksplinter_ref},
+    };
+
+    #[test]
+    fn test_splinter_read_impls() {
+        let mut set_gen = SetGen::new(0xC0DE);
+        let sets = vec![
+            vec![],
+            vec![1],
+            (0..10).collect(),
+            set_gen.random(64),
+            set_gen.distributed(2, 2, 2, 4, 32),
+        ];
+
+        for values in sets {
+            harness_read(&mksplinter(values.clone()), &values);
+            harness_read(&mksplinter_ref(values.clone()), &values);
+
+            let cow_owned: CowSplinter<Bytes> = CowSplinter::from_owned(mksplinter(values.clone()));
+            harness_read(&cow_owned, &values);
+
+            let cow_ref: CowSplinter<Bytes> = CowSplinter::from_ref(mksplinter_ref(values.clone()));
+            harness_read(&cow_ref, &values);
+        }
+    }
+
+    #[test]
+    fn test_splinter_write_impls() {
+        let mut set_gen = SetGen::new(0xBEEF);
+        let sets = vec![
+            vec![],
+            vec![2],
+            (0..20).step_by(3).collect(),
+            set_gen.random(64),
+            set_gen.distributed(2, 1, 1, 16, 32),
+        ];
+
+        for values in sets {
+            harness_write::<Splinter>(&values);
+            harness_write::<CowSplinter<Bytes>>(&values);
+        }
+    }
+}
