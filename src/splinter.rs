@@ -216,6 +216,16 @@ pub struct SplinterRef<T> {
     partitions: usize,
 }
 
+impl<T> SplinterRef<T> {
+    pub fn inner(&self) -> &T {
+        &self.data
+    }
+
+    pub fn into_inner(self) -> T {
+        self.data
+    }
+}
+
 impl<T> SplinterRef<T>
 where
     T: AsRef<[u8]>,
@@ -242,14 +252,6 @@ where
 
     pub fn size(&self) -> usize {
         self.data.as_ref().len()
-    }
-
-    pub fn inner(&self) -> &T {
-        &self.data
-    }
-
-    pub fn into_inner(self) -> T {
-        self.data
     }
 
     pub(crate) fn load_partitions(

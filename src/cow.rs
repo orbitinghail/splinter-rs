@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use bytes::Bytes;
 use culprit::Culprit;
 use either::Either;
 
@@ -54,6 +55,15 @@ impl<B: AsRef<[u8]>> From<CowSplinter<B>> for Splinter {
     }
 }
 
+impl From<CowSplinter<Bytes>> for SplinterRef<Bytes> {
+    fn from(cow: CowSplinter<Bytes>) -> Self {
+        match cow {
+            CowSplinter::Ref(splinter_ref) => splinter_ref,
+            CowSplinter::Owned(splinter) => splinter.serialize_to_splinter_ref(),
+        }
+    }
+}
+
 impl<B> CowSplinter<B> {
     pub fn from_owned(splinter: Splinter) -> Self {
         Self::Owned(splinter)
@@ -86,6 +96,35 @@ impl<B: AsRef<[u8]>> CowSplinter<B> {
                 }
             }
             Self::Owned(ref mut owned) => owned,
+        }
+    }
+
+    pub fn serialize<T: bytes::BufMut>(&self, out: &mut T) -> usize {
+        match self {
+            CowSplinter::Ref(splinter_ref) => {
+                out.put_slice(splinter_ref.inner().as_ref());
+                splinter_ref.size()
+            }
+            CowSplinter::Owned(splinter) => splinter.serialize(out),
+        }
+    }
+}
+
+impl CowSplinter<Bytes> {
+    pub fn serialize_into_bytes<T: bytes::BufMut>(&self, out: &mut T) -> usize {
+        match self {
+            CowSplinter::Ref(splinter_ref) => {
+                out.put(splinter_ref.inner().clone());
+                splinter_ref.size()
+            }
+            CowSplinter::Owned(splinter) => splinter.serialize(out),
+        }
+    }
+
+    pub fn serialize_to_bytes(&self) -> Bytes {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref.inner().clone(),
+            CowSplinter::Owned(splinter) => splinter.serialize_to_bytes(),
         }
     }
 }
