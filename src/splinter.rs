@@ -74,12 +74,20 @@ impl Footer {
 }
 
 /// An owned, compressed bitmap for u32 keys
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Splinter {
     partitions: Partition<U32, Partition<U32, Partition<U16, Block>>>,
 }
 
+impl Default for Splinter {
+    fn default() -> Self {
+        Self::EMPTY.clone()
+    }
+}
+
 impl Splinter {
+    pub const EMPTY: Self = Self { partitions: Partition::EMPTY };
+
     pub fn from_slice(data: &[u32]) -> Self {
         let mut splinter = Self::default();
         for &key in data {

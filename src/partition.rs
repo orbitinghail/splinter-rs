@@ -45,6 +45,11 @@ where
 }
 
 impl<O, V> Partition<O, V> {
+    pub const EMPTY: Self = Self {
+        values: BTreeMap::new(),
+        _phantom: PhantomData,
+    };
+
     /// Inserts a value into the partition.
     ///
     /// # Panics
