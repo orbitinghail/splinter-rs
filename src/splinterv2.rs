@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, fmt::Debug, usize};
+use std::{collections::BTreeMap, fmt::Debug};
 
 use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
 use num::cast::AsPrimitive;
@@ -377,7 +377,7 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
         let (segment, value) = value.split();
         self.children
             .get(&segment)
-            .map_or(false, |child| child.contains(value))
+            .is_some_and(|child| child.contains(value))
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
@@ -426,7 +426,7 @@ impl<L: Level> Debug for VecPartition<L> {
 }
 
 impl<L: Level> VecPartition<L> {
-    /// Construct an VecPartition from a sorted vector of values
+    /// Construct an `VecPartition` from a sorted vector of values
     #[inline]
     pub fn from_sorted(values: Vec<L::Value>) -> Self {
         VecPartition { values }
@@ -434,7 +434,7 @@ impl<L: Level> VecPartition<L> {
 
     fn maybe_change_storage(&self) -> Option<Partition<L>> {
         if self.cardinality() == L::MAX_LEN {
-            return Some(Partition::Full);
+            Some(Partition::Full)
         } else if self.cardinality() > L::VEC_LIMIT {
             Some(Partition::Bitmap(self.iter().collect()))
         } else if self.cardinality() > L::TREE_MIN && L::PREFER_TREE {
