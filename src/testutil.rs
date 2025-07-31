@@ -83,15 +83,8 @@ impl SetGen {
     }
 
     #[track_caller]
-    pub fn distributed(
-        &mut self,
-        high: usize,
-        mid: usize,
-        low: usize,
-        block: usize,
-        expected_len: usize,
-    ) -> Vec<u32> {
-        let mut out = Vec::with_capacity(expected_len);
+    pub fn distributed(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
+        let mut out = Vec::default();
         for high in index::sample(&mut self.rng, 256, high) {
             for mid in index::sample(&mut self.rng, 256, mid) {
                 for low in index::sample(&mut self.rng, 256, low) {
@@ -104,23 +97,14 @@ impl SetGen {
             }
         }
         out.sort();
-        assert_eq!(out.len(), expected_len);
         out
     }
 
     #[track_caller]
-    pub fn dense(
-        &mut self,
-        high: usize,
-        mid: usize,
-        low: usize,
-        block: usize,
-        expected_len: usize,
-    ) -> Vec<u32> {
+    pub fn dense(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
         let out: Vec<u32> = itertools::iproduct!(0..high, 0..mid, 0..low, 0..block)
             .map(|(a, b, c, d)| u32::from_be_bytes([a as u8, b as u8, c as u8, d as u8]))
             .collect();
-        assert_eq!(out.len(), expected_len);
         out
     }
 
