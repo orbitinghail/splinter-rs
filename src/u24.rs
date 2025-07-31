@@ -40,9 +40,7 @@ enum ZeroByte {
 }
 
 /// Little-endian encoded u24
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromBytes, IntoBytes, Immutable, Default,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromBytes, IntoBytes, Immutable, Default)]
 #[repr(C, align(4))]
 #[allow(non_camel_case_types)]
 pub struct u24 {
@@ -319,6 +317,18 @@ impl Error for ParseU24Err {}
 impl From<ParseIntError> for ParseU24Err {
     fn from(err: ParseIntError) -> Self {
         Self(err.kind().clone())
+    }
+}
+
+impl PartialOrd for u24 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.into_u32().partial_cmp(&other.into_u32())
+    }
+}
+
+impl Ord for u24 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.into_u32().cmp(&other.into_u32())
     }
 }
 

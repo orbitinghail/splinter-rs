@@ -2,7 +2,7 @@ use core::fmt;
 use std::{collections::BTreeMap, fmt::Debug};
 
 use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
-use num::cast::AsPrimitive;
+use num::{PrimInt, cast::AsPrimitive};
 use zerocopy::{LE, U16, U32};
 
 use crate::u24::u24;
@@ -573,22 +573,26 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
     }
 }
 
+#[track_caller]
 fn count_unique_sorted<I, T>(iter: I) -> usize
 where
     I: IntoIterator<Item = T>,
-    T: PartialEq,
+    T: PrimInt,
 {
-    let mut iter = iter.into_iter();
-    let mut count = 1;
-    let mut prev = match iter.next() {
-        Some(val) => val,
-        None => return 0,
-    };
+    let mut iter = iter.into_iter().peekable();
+    let mut count = 0;
+    let mut max = T::zero();
 
-    for curr in iter {
-        if curr != prev {
-            count += 1;
-            prev = curr;
+    while let Some(curr) = iter.next() {
+        // panic if we see a smaller value
+        if curr < max {
+            panic!("values must be sorted");
+        }
+        max = curr;
+
+        count += 1;
+        while iter.peek() == Some(&curr) {
+            iter.next();
         }
     }
 
@@ -603,6 +607,22 @@ mod tests {
     use crate::testutil::SetGen;
 
     use super::*;
+
+    #[test]
+    fn test_count_unique_sorted() {
+        assert_eq!(count_unique_sorted(Vec::<u32>::new()), 0);
+        assert_eq!(count_unique_sorted(vec![1]), 1);
+        assert_eq!(count_unique_sorted(vec![1, 1, 1]), 1);
+        assert_eq!(count_unique_sorted(vec![1, 2, 3]), 3);
+        assert_eq!(count_unique_sorted(vec![1, 1, 2, 2, 3, 3]), 3);
+        assert_eq!(count_unique_sorted(vec![1, 2, 2, 2, 3, 4, 4]), 4);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_count_unique_sorted_panic() {
+        count_unique_sorted(vec![1, 2, 1]);
+    }
 
     #[test]
     fn test_sanity() {
@@ -726,7 +746,7 @@ mod tests {
 
         // 256 sparse blocks
         let set = set_gen.distributed(4, 8, 8, 2);
-        run_test("256 sparse blocks", set, 512, 1476, 1288);
+        run_test("256 sparse blocks", set, 512, 1212, 1288);
 
         // 512 half full blocks
         let set = set_gen.distributed(8, 8, 8, 128);
@@ -734,7 +754,7 @@ mod tests {
 
         // 512 sparse blocks
         let set = set_gen.distributed(8, 8, 8, 2);
-        run_test("512 sparse blocks", set, 1024, 3120, 2568);
+        run_test("512 sparse blocks", set, 1024, 2416, 2568);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;
@@ -765,7 +785,7 @@ mod tests {
 
         // 1 element per block; sparse mid partitions
         let set = set_gen.distributed(1, 256, 16, 1);
-        run_test("1/block; sparse mid", set, elements, 12301, 10248);
+        run_test("1/block; sparse mid", set, elements, 9485, 10248);
 
         // 1 element per block; sparse high partitions
         let set = set_gen.distributed(256, 16, 1, 1);
