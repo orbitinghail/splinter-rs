@@ -585,9 +585,7 @@ where
 
     while let Some(curr) = iter.next() {
         // panic if we see a smaller value
-        if curr < max {
-            panic!("values must be sorted");
-        }
+        assert!(curr >= max, "values must be sorted");
         max = curr;
 
         count += 1;
