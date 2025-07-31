@@ -24,6 +24,9 @@ either = "1.15"
 thiserror = "2.0"
 zerocopy = { version = "0.8", features = ["derive"] }
 itertools = "0.14"
+num = "0.4"
+static_assertions = "1.1"
+bitvec = "1.0.1"
 
 [dev-dependencies]
 criterion = "=0.7.0"
