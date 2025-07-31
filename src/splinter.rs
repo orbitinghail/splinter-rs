@@ -271,7 +271,7 @@ where
         Ok(SplinterRef { data, partitions })
     }
 
-    /// Returns the size of this SplinterRef's serialized bytes
+    /// Returns the size of this `SplinterRef`'s serialized bytes
     pub fn size(&self) -> usize {
         self.data.as_ref().len()
     }
@@ -650,7 +650,7 @@ mod tests {
         assert!(!splinter.contains(90999), "unexpected key: 90999");
     }
 
-    /// verify Splinter::range and SplinterRef::range
+    /// verify `Splinter::range` and `SplinterRef::range`
     #[test]
     pub fn test_range() {
         #[track_caller]
@@ -820,7 +820,7 @@ mod tests {
             for (&k, &v) in map.iter() {
                 if v > 1 {
                     duplicate_bytes += (v - 1) * BLOCK as u32;
-                    if top.map_or(true, |(_, max)| v > max) {
+                    if top.is_none_or(|(_, max)| v > max) {
                         top = Some((k, v));
                     }
                 }
@@ -828,8 +828,7 @@ mod tests {
 
             if let Some((bytes, count)) = top {
                 println!(
-                    "repeated 8-byte blocks: {} duplicate bytes; most common occurs {count}× (bytes {:02X?})",
-                    duplicate_bytes, bytes
+                    "repeated 8-byte blocks: {duplicate_bytes} duplicate bytes; most common occurs {count}× (bytes {bytes:02X?})"
                 );
             } else {
                 println!("no duplicated 8-byte blocks");
