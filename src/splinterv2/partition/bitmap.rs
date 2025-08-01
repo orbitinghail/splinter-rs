@@ -4,11 +4,13 @@ use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
+    encode::Encodable,
     level::Level,
     partition::Partition,
     traits::{PartitionRead, PartitionWrite, TruncateFrom},
 };
 
+#[derive(Clone)]
 pub struct BitmapPartition<L: Level> {
     bitmap: BitBox<u64, Lsb0>,
     _marker: std::marker::PhantomData<L>,
@@ -40,6 +42,12 @@ impl<L: Level> BitmapPartition<L> {
     }
 }
 
+impl<L: Level> Encodable for BitmapPartition<L> {
+    fn encoded_size(&self) -> usize {
+        L::MAX_LEN / 8
+    }
+}
+
 impl<L: Level> FromIterator<L::Value> for BitmapPartition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let mut bitmap = bitbox![u64, Lsb0; 0; L::MAX_LEN];
@@ -68,10 +76,6 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.bitmap.iter_ones().map(L::Value::truncate_from)
-    }
-
-    fn serialized_size(&self) -> usize {
-        L::MAX_LEN / 8
     }
 }
 

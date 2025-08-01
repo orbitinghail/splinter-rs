@@ -4,13 +4,14 @@ use std::{
 };
 
 use crate::splinterv2::{
-    SPARSE_THRESHOLD,
+    encode::Encodable,
     level::Level,
-    partition::Partition,
+    partition::{Partition, SPARSE_THRESHOLD},
     segment::{Segment, SplitSegment},
     traits::{PartitionRead, PartitionWrite},
 };
 
+#[derive(Clone)]
 pub struct TreePartition<L: Level> {
     children: BTreeMap<Segment, L::Down>,
     cardinality: usize,
@@ -35,6 +36,15 @@ impl<L: Level> TreePartition<L> {
         }
 
         None
+    }
+}
+
+impl<L: Level> Encodable for TreePartition<L> {
+    fn encoded_size(&self) -> usize {
+        let index = self.children.len().min(L::VEC_LIMIT);
+        let offsets = self.children.len() * std::mem::size_of::<L::Offset>();
+        let values: usize = self.children.values().map(|c| c.encoded_size()).sum();
+        index + offsets + values
     }
 }
 
@@ -87,13 +97,6 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
                 .iter()
                 .map(move |value| L::Value::unsplit(segment, value))
         })
-    }
-
-    fn serialized_size(&self) -> usize {
-        let index = self.children.len().min(L::VEC_LIMIT);
-        let offsets = self.children.len() * std::mem::size_of::<L::Offset>();
-        let values: usize = self.children.values().map(|c| c.serialized_size()).sum();
-        index + offsets + values
     }
 }
 

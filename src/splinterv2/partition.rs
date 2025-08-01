@@ -3,6 +3,7 @@ use std::fmt::{self, Debug};
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
+    encode::Encodable,
     level::Level,
     partition::{bitmap::BitmapPartition, tree::TreePartition, vec::VecPartition},
     traits::{PartitionRead, PartitionWrite, TruncateFrom},
@@ -12,11 +13,26 @@ pub mod bitmap;
 pub mod tree;
 pub mod vec;
 
+/// Tree sparsity ratio limit
+const SPARSE_THRESHOLD: f64 = 0.5;
+
+#[derive(Clone)]
 pub enum Partition<L: Level> {
     Vec(VecPartition<L>),
     Tree(TreePartition<L>),
     Bitmap(BitmapPartition<L>),
     Full,
+}
+
+impl<L: Level> Encodable for Partition<L> {
+    fn encoded_size(&self) -> usize {
+        match self {
+            Partition::Tree(partition) => partition.encoded_size(),
+            Partition::Vec(partition) => partition.encoded_size(),
+            Partition::Bitmap(partition) => partition.encoded_size(),
+            Partition::Full => 1, // TODO: this is an estimate
+        }
+    }
 }
 
 impl<L: Level> Default for Partition<L> {
@@ -73,15 +89,6 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Vec(partition) => Left(Right(partition.iter())),
             Partition::Bitmap(partition) => Right(Left(partition.iter())),
             Partition::Full => Right(Right((0..L::MAX_LEN).map(L::Value::truncate_from))),
-        }
-    }
-
-    fn serialized_size(&self) -> usize {
-        match self {
-            Partition::Tree(partition) => partition.serialized_size(),
-            Partition::Vec(partition) => partition.serialized_size(),
-            Partition::Bitmap(partition) => partition.serialized_size(),
-            Partition::Full => 1,
         }
     }
 }

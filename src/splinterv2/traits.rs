@@ -13,33 +13,6 @@ pub trait PartitionRead<L: Level> {
 
     /// returns an iterator over all values in this partition
     fn iter(&self) -> impl Iterator<Item = L::Value>;
-
-    /// returns the serialized size in bytes of this Partition
-    fn serialized_size(&self) -> usize;
-}
-
-impl<L: Level> PartitionRead<L> for () {
-    fn cardinality(&self) -> usize {
-        unreachable!("invalid splinter")
-    }
-
-    fn is_empty(&self) -> bool {
-        unreachable!("invalid splinter")
-    }
-
-    fn contains(&self, _value: L::Value) -> bool {
-        unreachable!("invalid splinter")
-    }
-
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        unreachable!("invalid splinter");
-        #[allow(unreachable_code)]
-        std::iter::empty()
-    }
-
-    fn serialized_size(&self) -> usize {
-        unreachable!("invalid splinter")
-    }
 }
 
 pub trait PartitionWrite<L: Level> {
@@ -48,17 +21,11 @@ pub trait PartitionWrite<L: Level> {
     fn insert(&mut self, value: L::Value) -> bool;
 }
 
-impl<L: Level> PartitionWrite<L> for () {
-    fn insert(&mut self, _value: L::Value) -> bool {
-        unreachable!("invalid splinter")
-    }
-}
-
 pub trait TruncateFrom<T> {
     fn truncate_from(other: T) -> Self;
 }
 
-macro_rules! impl_truncate_from {
+macro_rules! impl_truncate_from_usize {
     ($($ty:ty),*) => {
         $(
             impl TruncateFrom<usize> for $ty {
@@ -69,5 +36,4 @@ macro_rules! impl_truncate_from {
         )*
     };
 }
-
-impl_truncate_from!(u32, u24, u16, u8);
+impl_truncate_from_usize!(u32, u24, u16, u8);
