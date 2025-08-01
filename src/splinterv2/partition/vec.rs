@@ -1,12 +1,13 @@
 use std::fmt::Debug;
 
+use itertools::Itertools;
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
-    SPARSE_THRESHOLD,
     count::count_unique_sorted,
+    encode::Encodable,
     level::Level,
-    partition::Partition,
+    partition::{Partition, SPARSE_THRESHOLD},
     segment::SplitSegment,
     traits::{PartitionRead, PartitionWrite},
 };
@@ -29,9 +30,10 @@ impl<L: Level> Debug for VecPartition<L> {
 }
 
 impl<L: Level> VecPartition<L> {
-    /// Construct an `VecPartition` from a sorted vector of values
+    /// Construct an `VecPartition` from a sorted vector of unique values
+    /// SAFETY: undefined behavior if the vector is not sorted or contains duplicates
     #[inline]
-    pub fn from_sorted(values: Vec<L::Value>) -> Self {
+    pub fn from_sorted_unique_unchecked(values: Vec<L::Value>) -> Self {
         VecPartition { values }
     }
 
@@ -57,9 +59,15 @@ impl<L: Level> VecPartition<L> {
 
 impl<L: Level> FromIterator<L::Value> for VecPartition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
-        let mut values: Vec<L::Value> = iter.into_iter().collect();
-        values.sort();
-        VecPartition::from_sorted(values)
+        let values = iter.into_iter().sorted().dedup().collect_vec();
+        // SAFETY: we just sorted and deduped the iterator
+        VecPartition::from_sorted_unique_unchecked(values)
+    }
+}
+
+impl<L: Level> Encodable for VecPartition<L> {
+    fn encoded_size(&self) -> usize {
+        self.values.len() * (L::BITS / 8)
     }
 }
 
@@ -78,10 +86,6 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.values.iter().copied()
-    }
-
-    fn serialized_size(&self) -> usize {
-        self.values.len() * (L::BITS / 8)
     }
 }
 

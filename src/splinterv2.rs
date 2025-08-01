@@ -1,22 +1,23 @@
 pub mod count;
+pub mod encode;
 pub mod level;
+pub mod never;
 pub mod partition;
 pub mod segment;
 pub mod traits;
 
+pub use crate::splinterv2::encode::Encodable;
+pub use crate::splinterv2::partition::Partition;
 pub use crate::splinterv2::traits::{PartitionRead, PartitionWrite};
 
-/// Tree sparsity ratio limit
-const SPARSE_THRESHOLD: f64 = 0.5;
-
-pub type SplinterV2 = partition::Partition<level::High>;
+pub type SplinterV2 = Partition<level::High>;
 
 static_assertions::const_assert_eq!(std::mem::size_of::<SplinterV2>(), 40);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::SetGen;
+    use crate::{splinterv2::encode::Encodable, testutil::SetGen};
     use roaring::RoaringBitmap;
 
     #[test]
@@ -50,7 +51,7 @@ mod tests {
         for v in set {
             assert!(splinter.insert(v));
         }
-        dbg!(&splinter, splinter.serialized_size(), baseline_size);
+        dbg!(&splinter, splinter.encoded_size(), baseline_size);
     }
 
     #[test]
@@ -91,7 +92,7 @@ mod tests {
                 name,
                 baseline: set.len() * std::mem::size_of::<u32>(),
                 splinter: (
-                    splinter.serialized_size() + SPLINTER_HEADER_SIZE,
+                    splinter.encoded_size() + SPLINTER_HEADER_SIZE,
                     expected_splinter,
                 ),
                 roaring: (roaring.len(), expected_roaring),
