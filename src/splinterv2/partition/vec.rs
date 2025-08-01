@@ -37,7 +37,7 @@ impl<L: Level> VecPartition<L> {
         VecPartition { values }
     }
 
-    pub fn maybe_change_storage(&self) -> Option<Partition<L>> {
+    pub fn optimize(&self) -> Option<Partition<L>> {
         if self.cardinality() == L::MAX_LEN {
             Some(Partition::Full)
         } else if self.cardinality() > L::VEC_LIMIT {

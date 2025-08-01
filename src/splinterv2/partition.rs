@@ -35,6 +35,12 @@ impl<L: Level> Encodable for Partition<L> {
     }
 }
 
+impl<L: Level> Partition<L> {
+    pub fn optimize(&mut self) {
+        todo!()
+    }
+}
+
 impl<L: Level> Default for Partition<L> {
     fn default() -> Self {
         Partition::Vec(VecPartition::default())
@@ -103,15 +109,15 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
         };
 
         if inserted {
-            let new_partition = match self {
-                Partition::Tree(p) => p.maybe_change_storage(),
-                Partition::Vec(p) => p.maybe_change_storage(),
-                Partition::Bitmap(p) => p.maybe_change_storage(),
+            let optimized = match self {
+                Partition::Tree(p) => p.optimize(),
+                Partition::Vec(p) => p.optimize(),
+                Partition::Bitmap(p) => p.optimize(),
                 _ => None,
             };
 
-            if let Some(new_partition) = new_partition {
-                *self = new_partition;
+            if let Some(optimized) = optimized {
+                *self = optimized;
             }
         }
 
@@ -122,7 +128,7 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
 impl<L: Level> FromIterator<L::Value> for Partition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let partition: VecPartition<L> = iter.into_iter().collect();
-        if let Some(p) = partition.maybe_change_storage() {
+        if let Some(p) = partition.optimize() {
             p
         } else {
             Partition::Vec(partition)

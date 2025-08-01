@@ -37,7 +37,7 @@ impl<L: Level> Debug for BitmapPartition<L> {
 }
 
 impl<L: Level> BitmapPartition<L> {
-    pub fn maybe_change_storage(&self) -> Option<Partition<L>> {
+    pub fn optimize(&self) -> Option<Partition<L>> {
         (self.cardinality() == L::MAX_LEN).then_some(Partition::Full)
     }
 }
