@@ -19,7 +19,11 @@ pub struct TreePartition<L: Level> {
 }
 
 impl<L: Level> TreePartition<L> {
-    pub fn maybe_change_storage(&self) -> Option<Partition<L>> {
+    pub fn optimize_recursive(&self) -> Option<Partition<L>> {
+        todo!()
+    }
+
+    pub fn optimize(&self) -> Option<Partition<L>> {
         if self.cardinality == L::MAX_LEN {
             return Some(Partition::Full);
         } else if self.cardinality == 0 {
