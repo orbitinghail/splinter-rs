@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 
-use num::cast::AsPrimitive;
+use num::{
+    cast::AsPrimitive,
+    traits::{ConstOne, ConstZero},
+};
 use u24::u24;
 use zerocopy::{LE, U16, U32};
 
@@ -33,6 +36,8 @@ pub trait Level: Sized {
         + AsPrimitive<usize>
         + SplitSegment<Rest = <Self::LevelDown as Level>::Value>
         + TruncateFrom<usize>
+        + ConstZero
+        + ConstOne
         + Debug;
 
     const BITS: usize;

@@ -33,13 +33,17 @@ impl<L: Level> VecPartition<L> {
     /// Construct an `VecPartition` from a sorted vector of unique values
     /// SAFETY: undefined behavior if the vector is not sorted or contains duplicates
     #[inline]
-    pub fn from_sorted_unique_unchecked(values: Vec<L::Value>) -> Self {
-        VecPartition { values }
+    pub fn from_sorted_unique_unchecked(values: impl Iterator<Item = L::Value>) -> Self {
+        VecPartition { values: values.collect() }
     }
 }
 
 impl<L: Level> Optimizable<Partition<L>> for VecPartition<L> {
     fn shallow_optimize(&self) -> Option<Partition<L>> {
+        // TODO: count runs to determine if we should switch to a RunPartition
+        // We may want only enable this optimization if optimize is triggered
+        // manually, rather than during insert.
+
         if self.cardinality() == L::MAX_LEN {
             Some(Partition::Full)
         } else if self.cardinality() > L::VEC_LIMIT {
@@ -61,8 +65,8 @@ impl<L: Level> Optimizable<Partition<L>> for VecPartition<L> {
 
 impl<L: Level> FromIterator<L::Value> for VecPartition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
-        let values = iter.into_iter().sorted().dedup().collect_vec();
-        // SAFETY: we just sorted and deduped the iterator
+        let values = iter.into_iter().sorted().dedup();
+        // SAFETY: the iterator is sorted and deduped
         VecPartition::from_sorted_unique_unchecked(values)
     }
 }
