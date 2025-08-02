@@ -6,7 +6,7 @@ use std::{
 use crate::splinterv2::{
     encode::Encodable,
     level::Level,
-    partition::{Partition, SPARSE_THRESHOLD},
+    partition::{Partition, SPARSE_THRESHOLD, vec::VecPartition},
     segment::{Segment, SplitSegment},
     traits::{Optimizable, PartitionRead, PartitionWrite},
 };
@@ -36,9 +36,15 @@ impl<L: Level> Optimizable<Partition<L>> for TreePartition<L> {
             return None;
         }
 
+        // TODO: count runs to determine if we should switch to a RunPartition
+        // We may want only enable this optimization if optimize is triggered
+        // manually, rather than during insert.
+
         let sparsity_ratio = self.children.len() as f64 / self.cardinality as f64;
         if self.cardinality <= L::VEC_LIMIT && sparsity_ratio > SPARSE_THRESHOLD {
-            return Some(Partition::Vec(self.iter().collect()));
+            return Some(Partition::Vec(VecPartition::from_sorted_unique_unchecked(
+                self.iter(),
+            )));
         }
 
         if self.cardinality > L::VEC_LIMIT {

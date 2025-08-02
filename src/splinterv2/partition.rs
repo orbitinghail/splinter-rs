@@ -5,11 +5,14 @@ use num::traits::AsPrimitive;
 use crate::splinterv2::{
     encode::Encodable,
     level::Level,
-    partition::{bitmap::BitmapPartition, tree::TreePartition, vec::VecPartition},
+    partition::{
+        bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
+    },
     traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 pub mod bitmap;
+pub mod run;
 pub mod tree;
 pub mod vec;
 
@@ -21,6 +24,7 @@ pub enum Partition<L: Level> {
     Vec(VecPartition<L>),
     Tree(TreePartition<L>),
     Bitmap(BitmapPartition<L>),
+    Run(RunPartition<L>),
     Full,
 }
 
@@ -30,6 +34,7 @@ impl<L: Level> Encodable for Partition<L> {
             Partition::Tree(partition) => partition.encoded_size(),
             Partition::Vec(partition) => partition.encoded_size(),
             Partition::Bitmap(partition) => partition.encoded_size(),
+            Partition::Run(partition) => partition.encoded_size(),
             Partition::Full => 1, // TODO: this is an estimate
         }
     }
@@ -51,6 +56,7 @@ impl<L: Level> Optimizable<Partition<L>> for Partition<L> {
             Partition::Tree(p) => p.shallow_optimize(),
             Partition::Vec(p) => p.shallow_optimize(),
             Partition::Bitmap(p) => p.shallow_optimize(),
+            Partition::Run(p) => p.shallow_optimize(),
             _ => None,
         }
     }
@@ -68,6 +74,7 @@ impl<L: Level> Debug for Partition<L> {
             Partition::Tree(partition) => partition.fmt(f),
             Partition::Vec(partition) => partition.fmt(f),
             Partition::Bitmap(partition) => partition.fmt(f),
+            Partition::Run(partition) => partition.fmt(f),
             Partition::Full => write!(f, "Full"),
         }
     }
@@ -79,6 +86,7 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Tree(partition) => partition.cardinality(),
             Partition::Vec(partition) => partition.cardinality(),
             Partition::Bitmap(partition) => partition.cardinality(),
+            Partition::Run(partition) => partition.cardinality(),
             Partition::Full => L::MAX_LEN,
         }
     }
@@ -88,6 +96,7 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Tree(partition) => partition.is_empty(),
             Partition::Vec(partition) => partition.is_empty(),
             Partition::Bitmap(partition) => partition.is_empty(),
+            Partition::Run(partition) => partition.is_empty(),
             Partition::Full => false,
         }
     }
@@ -99,6 +108,7 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Tree(partition) => partition.contains(value),
             Partition::Vec(partition) => partition.contains(value),
             Partition::Bitmap(partition) => partition.contains(value),
+            Partition::Run(partition) => partition.contains(value),
             Partition::Full => true,
         }
     }
@@ -109,6 +119,7 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Tree(partition) => Left(Left(partition.iter())),
             Partition::Vec(partition) => Left(Right(partition.iter())),
             Partition::Bitmap(partition) => Right(Left(partition.iter())),
+            Partition::Run(_partition) => todo!("need a better way to encode many iters"),
             Partition::Full => Right(Right((0..L::MAX_LEN).map(L::Value::truncate_from))),
         }
     }
@@ -120,6 +131,7 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
             Partition::Tree(partition) => partition.insert(value),
             Partition::Vec(partition) => partition.insert(value),
             Partition::Bitmap(partition) => partition.insert(value),
+            Partition::Run(partition) => partition.insert(value),
             Partition::Full => false,
         };
 
