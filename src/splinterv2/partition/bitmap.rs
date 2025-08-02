@@ -7,10 +7,10 @@ use crate::splinterv2::{
     encode::Encodable,
     level::Level,
     partition::Partition,
-    traits::{PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct BitmapPartition<L: Level> {
     bitmap: BitBox<u64, Lsb0>,
     _marker: std::marker::PhantomData<L>,
@@ -36,8 +36,8 @@ impl<L: Level> Debug for BitmapPartition<L> {
     }
 }
 
-impl<L: Level> BitmapPartition<L> {
-    pub fn optimize(&self) -> Option<Partition<L>> {
+impl<L: Level> Optimizable<Partition<L>> for BitmapPartition<L> {
+    fn shallow_optimize(&self) -> Option<Partition<L>> {
         (self.cardinality() == L::MAX_LEN).then_some(Partition::Full)
     }
 }

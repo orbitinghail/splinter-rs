@@ -8,22 +8,28 @@ use crate::splinterv2::{
     level::Level,
     partition::{Partition, SPARSE_THRESHOLD},
     segment::{Segment, SplitSegment},
-    traits::{PartitionRead, PartitionWrite},
+    traits::{Optimizable, PartitionRead, PartitionWrite},
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TreePartition<L: Level> {
     children: BTreeMap<Segment, L::Down>,
     cardinality: usize,
     _marker: std::marker::PhantomData<L>,
 }
 
-impl<L: Level> TreePartition<L> {
-    pub fn optimize_recursive(&self) -> Option<Partition<L>> {
-        todo!()
+impl<L: Level> Optimizable<Partition<L>> for TreePartition<L> {
+    fn optimize_children(&mut self) {
+        for child in self.children.values_mut() {
+            if let Some(new_child) = child.shallow_optimize() {
+                *child = new_child;
+            } else {
+                child.optimize_children();
+            }
+        }
     }
 
-    pub fn optimize(&self) -> Option<Partition<L>> {
+    fn shallow_optimize(&self) -> Option<Partition<L>> {
         if self.cardinality == L::MAX_LEN {
             return Some(Partition::Full);
         } else if self.cardinality == 0 {

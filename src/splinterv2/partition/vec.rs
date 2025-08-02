@@ -9,7 +9,7 @@ use crate::splinterv2::{
     level::Level,
     partition::{Partition, SPARSE_THRESHOLD},
     segment::SplitSegment,
-    traits::{PartitionRead, PartitionWrite},
+    traits::{Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -36,8 +36,10 @@ impl<L: Level> VecPartition<L> {
     pub fn from_sorted_unique_unchecked(values: Vec<L::Value>) -> Self {
         VecPartition { values }
     }
+}
 
-    pub fn optimize(&self) -> Option<Partition<L>> {
+impl<L: Level> Optimizable<Partition<L>> for VecPartition<L> {
+    fn shallow_optimize(&self) -> Option<Partition<L>> {
         if self.cardinality() == L::MAX_LEN {
             Some(Partition::Full)
         } else if self.cardinality() > L::VEC_LIMIT {

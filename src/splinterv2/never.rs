@@ -1,9 +1,11 @@
-use crate::splinterv2::{Encodable, PartitionRead, PartitionWrite, level::Level};
+use crate::splinterv2::{
+    Encodable, PartitionRead, PartitionWrite, level::Level, traits::Optimizable,
+};
 
 /// The Never type is used to terminate the Level tree. It is never constructed
 /// or used. Attempting to construct the Never type via Default will result in a
 /// runtime exception.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Never {}
 
 impl Default for Never {
@@ -41,6 +43,16 @@ impl<L: Level> PartitionRead<L> for Never {
         unreachable!("invalid splinter");
         #[allow(unreachable_code)]
         std::iter::empty()
+    }
+}
+
+impl Optimizable<Never> for Never {
+    fn shallow_optimize(&self) -> Option<Never> {
+        unreachable!("invalid splinter")
+    }
+
+    fn optimize_children(&mut self) {
+        unreachable!("invalid splinter")
     }
 }
 
