@@ -15,7 +15,7 @@ fn run_sequence(rng: &mut impl Rng, size: usize, stride: usize) -> impl Iterator
 fn dup_sequence(rng: &mut impl Rng, size: usize, stride: usize) -> impl Iterator<Item = usize> {
     num::range_step(0, size, stride).flat_map(move |i| {
         let count = rng.random_range(0..=stride);
-        std::iter::repeat(i).take(count)
+        std::iter::repeat_n(i, count)
     })
 }
 
