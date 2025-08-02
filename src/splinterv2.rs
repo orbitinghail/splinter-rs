@@ -39,6 +39,8 @@ mod tests {
             splinter.insert(i);
         }
 
+        splinter.optimize();
+
         dbg!(splinter);
     }
 

@@ -6,7 +6,7 @@ use crate::splinterv2::{
     encode::Encodable,
     level::Level,
     partition::{bitmap::BitmapPartition, tree::TreePartition, vec::VecPartition},
-    traits::{PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 pub mod bitmap;
@@ -16,7 +16,7 @@ pub mod vec;
 /// Tree sparsity ratio limit
 const SPARSE_THRESHOLD: f64 = 0.5;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Partition<L: Level> {
     Vec(VecPartition<L>),
     Tree(TreePartition<L>),
@@ -37,7 +37,22 @@ impl<L: Level> Encodable for Partition<L> {
 
 impl<L: Level> Partition<L> {
     pub fn optimize(&mut self) {
-        todo!()
+        if let Some(partition) = self.shallow_optimize() {
+            *self = partition;
+        } else if let Partition::Tree(tree) = self {
+            tree.optimize_children();
+        }
+    }
+}
+
+impl<L: Level> Optimizable<Partition<L>> for Partition<L> {
+    fn shallow_optimize(&self) -> Option<Partition<L>> {
+        match self {
+            Partition::Tree(p) => p.shallow_optimize(),
+            Partition::Vec(p) => p.shallow_optimize(),
+            Partition::Bitmap(p) => p.shallow_optimize(),
+            _ => None,
+        }
     }
 }
 
@@ -109,14 +124,7 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
         };
 
         if inserted {
-            let optimized = match self {
-                Partition::Tree(p) => p.optimize(),
-                Partition::Vec(p) => p.optimize(),
-                Partition::Bitmap(p) => p.optimize(),
-                _ => None,
-            };
-
-            if let Some(optimized) = optimized {
+            if let Some(optimized) = self.shallow_optimize() {
                 *self = optimized;
             }
         }
@@ -128,7 +136,7 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
 impl<L: Level> FromIterator<L::Value> for Partition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let partition: VecPartition<L> = iter.into_iter().collect();
-        if let Some(p) = partition.optimize() {
+        if let Some(p) = partition.shallow_optimize() {
             p
         } else {
             Partition::Vec(partition)

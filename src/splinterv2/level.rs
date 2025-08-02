@@ -9,10 +9,10 @@ use crate::splinterv2::{
     never::Never,
     partition::Partition,
     segment::SplitSegment,
-    traits::{PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
-pub trait Level {
+pub trait Level: Sized {
     const DEBUG_NAME: &'static str;
 
     type Offset;
@@ -21,10 +21,13 @@ pub trait Level {
 
     type Down: PartitionRead<Self::LevelDown>
         + PartitionWrite<Self::LevelDown>
+        + Optimizable<Self::Down>
+        + Encodable
         + Default
         + Debug
         + Clone
-        + Encodable;
+        + PartialEq
+        + Eq;
 
     type Value: num::PrimInt
         + AsPrimitive<usize>
@@ -39,7 +42,7 @@ pub trait Level {
     const PREFER_TREE: bool = Self::BITS > 8;
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct High;
 
 impl Level for High {
@@ -52,7 +55,7 @@ impl Level for High {
     const BITS: usize = 32;
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Mid;
 
 impl Level for Mid {
@@ -65,7 +68,7 @@ impl Level for Mid {
     const BITS: usize = 24;
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Low;
 
 impl Level for Low {
@@ -78,7 +81,7 @@ impl Level for Low {
     const BITS: usize = 16;
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Block;
 
 impl Level for Block {

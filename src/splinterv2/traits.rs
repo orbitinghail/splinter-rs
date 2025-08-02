@@ -22,6 +22,7 @@ pub trait PartitionWrite<L: Level> {
     fn insert(&mut self, value: L::Value) -> bool;
 }
 
+#[doc(hidden)]
 pub trait TruncateFrom<T> {
     fn truncate_from(other: T) -> Self;
 }
@@ -30,6 +31,7 @@ macro_rules! impl_truncate_from_usize {
     ($($ty:ty),*) => {
         $(
             impl TruncateFrom<usize> for $ty {
+                #[inline(always)]
                 fn truncate_from(other: usize) -> Self {
                     other.as_()
                 }
@@ -38,3 +40,10 @@ macro_rules! impl_truncate_from_usize {
     };
 }
 impl_truncate_from_usize!(u32, u24, u16, u8);
+
+#[doc(hidden)]
+pub trait Optimizable<T> {
+    fn shallow_optimize(&self) -> Option<T>;
+
+    fn optimize_children(&mut self) {}
+}
