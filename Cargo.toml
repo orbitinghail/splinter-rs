@@ -9,6 +9,7 @@ homepage = "https://github.com/orbitinghail/splinter-rs"
 rust-version = "1.85"
 
 keywords = ["bitmap", "compression", "zero-copy"]
+categories = ["data-structures", "encoding"]
 description = "A compressed bitmap format optimized for small, sparse sets of u32s with zero-copy querying."
 
 [lints.clippy]
@@ -27,6 +28,7 @@ itertools = "0.14"
 num = "0.4"
 static_assertions = "1.1"
 bitvec = "1.0.1"
+u24 = "0.1.1"
 
 [dev-dependencies]
 criterion = "=0.7.0"

@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: 1.85
+          toolchain: stable
           components: clippy, rustfmt
 
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4

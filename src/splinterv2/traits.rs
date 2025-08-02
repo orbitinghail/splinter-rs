@@ -1,5 +1,6 @@
-use crate::{splinterv2::level::Level, u24::u24};
+use crate::splinterv2::level::Level;
 use num::cast::AsPrimitive;
+use u24::u24;
 
 pub trait PartitionRead<L: Level> {
     /// the total number of values accessible via this partition.

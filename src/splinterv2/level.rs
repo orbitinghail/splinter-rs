@@ -1,17 +1,15 @@
 use std::fmt::Debug;
 
 use num::cast::AsPrimitive;
+use u24::u24;
 use zerocopy::{LE, U16, U32};
 
-use crate::{
-    splinterv2::{
-        encode::Encodable,
-        never::Never,
-        partition::Partition,
-        segment::SplitSegment,
-        traits::{PartitionRead, PartitionWrite, TruncateFrom},
-    },
-    u24::u24,
+use crate::splinterv2::{
+    encode::Encodable,
+    never::Never,
+    partition::Partition,
+    segment::SplitSegment,
+    traits::{PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 pub trait Level {

@@ -1,5 +1,5 @@
-use crate::u24::u24;
 use num::traits::AsPrimitive;
+use u24::u24;
 
 pub type Segment = u8;
 
