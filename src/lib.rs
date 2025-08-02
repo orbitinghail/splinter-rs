@@ -19,7 +19,6 @@ mod partition;
 mod relational;
 mod splinter;
 pub mod splinterv2;
-mod u24;
 mod util;
 
 #[cfg(test)]

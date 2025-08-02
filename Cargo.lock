@@ -643,6 +643,7 @@ dependencies = [
  "roaring",
  "static_assertions",
  "thiserror",
+ "u24",
  "zerocopy",
 ]
 
@@ -697,6 +698,17 @@ checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "u24"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cf6d700cf454df7e92fceef1f8899c3c2a7567c1e37b646b2dab33ccb9b2145"
+dependencies = [
+ "num",
+ "static_assertions",
+ "zerocopy",
 ]
 
 [[package]]
