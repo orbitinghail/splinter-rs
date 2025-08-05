@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use num::{
     cast::AsPrimitive,
@@ -24,7 +24,7 @@ pub trait Level: Sized {
 
     type Down: PartitionRead<Self::LevelDown>
         + PartitionWrite<Self::LevelDown>
-        + Optimizable<Self::Down>
+        + Optimizable
         + Encodable
         + Default
         + Debug
@@ -38,11 +38,11 @@ pub trait Level: Sized {
         + TruncateFrom<usize>
         + ConstZero
         + ConstOne
-        + Debug;
+        + Debug
+        + Display;
 
     const BITS: usize;
     const MAX_LEN: usize = 1 << Self::BITS;
-    const VEC_LIMIT: usize = (Self::MAX_LEN) / Self::BITS;
     const TREE_MIN: usize = 32;
     const PREFER_TREE: bool = Self::BITS > 8;
 }

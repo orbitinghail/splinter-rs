@@ -4,9 +4,10 @@ use std::{
 };
 
 use crate::splinterv2::{
+    count::count_runs_sorted,
     encode::Encodable,
-    level::Level,
-    partition::{Partition, SPARSE_THRESHOLD, vec::VecPartition},
+    level::{Block, Level},
+    partition::{bitmap::BitmapPartition, vec::VecPartition},
     segment::{Segment, SplitSegment},
     traits::{Optimizable, PartitionRead, PartitionWrite},
 };
@@ -18,46 +19,30 @@ pub struct TreePartition<L: Level> {
     _marker: std::marker::PhantomData<L>,
 }
 
-impl<L: Level> Optimizable<Partition<L>> for TreePartition<L> {
-    fn optimize_children(&mut self) {
-        for child in self.children.values_mut() {
-            if let Some(new_child) = child.shallow_optimize() {
-                *child = new_child;
-            } else {
-                child.optimize_children();
-            }
-        }
+impl<L: Level> TreePartition<L> {
+    pub fn sparsity_ratio(&self) -> f64 {
+        self.children.len() as f64 / self.cardinality as f64
     }
 
-    fn shallow_optimize(&self) -> Option<Partition<L>> {
-        if self.cardinality == L::MAX_LEN {
-            return Some(Partition::Full);
-        } else if self.cardinality == 0 {
-            return None;
+    #[inline]
+    pub fn count_runs(&self) -> usize {
+        count_runs_sorted(self.iter())
+    }
+
+    pub fn optimize_children(&mut self) {
+        for child in self.children.values_mut() {
+            child.optimize();
         }
-
-        // TODO: count runs to determine if we should switch to a RunPartition
-        // We may want only enable this optimization if optimize is triggered
-        // manually, rather than during insert.
-
-        let sparsity_ratio = self.children.len() as f64 / self.cardinality as f64;
-        if self.cardinality <= L::VEC_LIMIT && sparsity_ratio > SPARSE_THRESHOLD {
-            return Some(Partition::Vec(VecPartition::from_sorted_unique_unchecked(
-                self.iter(),
-            )));
-        }
-
-        if self.cardinality > L::VEC_LIMIT {
-            return Some(Partition::Bitmap(self.iter().collect()));
-        }
-
-        None
     }
 }
 
 impl<L: Level> Encodable for TreePartition<L> {
     fn encoded_size(&self) -> usize {
-        let index = self.children.len().min(L::VEC_LIMIT);
+        let index = {
+            let vec_size = VecPartition::<Block>::encoded_size(self.children.len());
+            let bitmap_size = BitmapPartition::<Block>::ENCODED_SIZE;
+            vec_size.min(bitmap_size)
+        };
         let offsets = self.children.len() * std::mem::size_of::<L::Offset>();
         let values: usize = self.children.values().map(|c| c.encoded_size()).sum();
         index + offsets + values

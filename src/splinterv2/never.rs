@@ -10,49 +10,45 @@ pub enum Never {}
 
 impl Default for Never {
     fn default() -> Self {
-        unreachable!("bug: attempted to construct Never")
+        unreachable!("Never::default")
     }
 }
 
 impl Encodable for Never {
     fn encoded_size(&self) -> usize {
-        unreachable!()
+        unreachable!("Never::encoded_size")
     }
 }
 
 impl<L: Level> PartitionWrite<L> for Never {
     fn insert(&mut self, _value: L::Value) -> bool {
-        unreachable!("invalid splinter")
+        unreachable!("Never::insert")
     }
 }
 
 impl<L: Level> PartitionRead<L> for Never {
     fn cardinality(&self) -> usize {
-        unreachable!("invalid splinter")
+        unreachable!("Never::cardinality")
     }
 
     fn is_empty(&self) -> bool {
-        unreachable!("invalid splinter")
+        unreachable!("Never::is_empty")
     }
 
     fn contains(&self, _value: L::Value) -> bool {
-        unreachable!("invalid splinter")
+        unreachable!("Never::contains")
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        unreachable!("invalid splinter");
+        unreachable!("Never::iter");
         #[allow(unreachable_code)]
         std::iter::empty()
     }
 }
 
-impl Optimizable<Never> for Never {
-    fn shallow_optimize(&self) -> Option<Never> {
-        unreachable!("invalid splinter")
-    }
-
-    fn optimize_children(&mut self) {
-        unreachable!("invalid splinter")
+impl Optimizable for Never {
+    fn optimize(&mut self) {
+        unreachable!("Never::optimize")
     }
 }
 

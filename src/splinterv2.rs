@@ -17,7 +17,10 @@ static_assertions::const_assert_eq!(std::mem::size_of::<SplinterV2>(), 40);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{splinterv2::encode::Encodable, testutil::SetGen};
+    use crate::{
+        splinterv2::{encode::Encodable, traits::Optimizable},
+        testutil::SetGen,
+    };
     use roaring::RoaringBitmap;
 
     #[test]
@@ -47,13 +50,14 @@ mod tests {
     #[test]
     fn test_wat() {
         let mut set_gen = SetGen::new(0xDEADBEEF);
-        let set = set_gen.distributed(1, 256, 1, 17);
+        let set = set_gen.distributed(1, 1, 16, 256);
         let baseline_size = set.len() * 4;
-        let mut splinter = SplinterV2::default();
-        for v in set {
-            assert!(splinter.insert(v));
-        }
+
+        let mut splinter = SplinterV2::from_iter(set.iter().copied());
+        splinter.optimize();
+
         dbg!(&splinter, splinter.encoded_size(), baseline_size);
+        itertools::assert_equal(splinter.iter(), set.into_iter());
     }
 
     #[test]
@@ -85,7 +89,10 @@ mod tests {
 
             assert_eq!(set.len(), expected_set_size, "Set size mismatch");
 
-            let splinter = SplinterV2::from_iter(set.iter().copied());
+            let mut splinter = SplinterV2::from_iter(set.iter().copied());
+            splinter.optimize();
+            itertools::assert_equal(splinter.iter(), set.iter().copied());
+
             let roaring = to_roaring(set.iter().copied());
 
             const SPLINTER_HEADER_SIZE: usize = 8;
@@ -167,11 +174,11 @@ mod tests {
 
         // 32 elements per block; dense partitions
         let set = set_gen.distributed(1, 1, 128, 32);
-        run_test("32/block; dense", set, elements, 4498, 8208);
+        run_test("32/block; dense", set, elements, 4402, 8208);
 
         // 16 element per block; dense low partitions
         let set = set_gen.distributed(1, 1, 256, 16);
-        run_test("16/block; dense", set, elements, 4882, 8208);
+        run_test("16/block; dense", set, elements, 4658, 8208);
 
         // 128 elements per block; sparse mid partitions
         let set = set_gen.distributed(1, 32, 1, 128);
@@ -183,11 +190,11 @@ mod tests {
 
         // 1 element per block; sparse mid partitions
         let set = set_gen.distributed(1, 256, 16, 1);
-        run_test("1/block; sparse mid", set, elements, 9485, 10248);
+        run_test("1/block; sparse mid", set, elements, 9261, 10248);
 
         // 1 element per block; sparse high partitions
         let set = set_gen.distributed(256, 16, 1, 1);
-        run_test("1/block; sparse high", set, elements, 13576, 40968);
+        run_test("1/block; sparse high", set, elements, 13352, 40968);
 
         // 1/block; spread low
         let set = set_gen.dense(1, 16, 256, 1);
@@ -195,23 +202,23 @@ mod tests {
 
         // each partition is dense
         let set = set_gen.dense(8, 8, 8, 8);
-        run_test("dense throughout", set, elements, 6000, 2700);
+        run_test("dense throughout", set, elements, 2928, 2700);
 
         // the lowest partitions are dense
         let set = set_gen.dense(1, 1, 64, 64);
-        run_test("dense low", set, elements, 2258, 267);
+        run_test("dense low", set, elements, 306, 267);
 
         // the mid and low partitions are dense
         let set = set_gen.dense(1, 32, 16, 8);
-        run_test("dense mid/low", set, elements, 5805, 2376);
+        run_test("dense mid/low", set, elements, 2733, 2376);
 
         // fully random sets of varying sizes
         run_test("random/32", set_gen.random(32), 32, 136, 328);
         run_test("random/256", set_gen.random(256), 256, 1032, 2560);
-        run_test("random/1024", set_gen.random(1024), 1024, 4335, 10168);
-        run_test("random/4096", set_gen.random(4096), 4096, 13576, 39952);
-        run_test("random/16384", set_gen.random(16384), 16384, 50440, 148600);
-        run_test("random/65535", set_gen.random(65535), 65535, 197893, 462190);
+        run_test("random/1024", set_gen.random(1024), 1024, 4116, 10168);
+        run_test("random/4096", set_gen.random(4096), 4096, 13352, 39952);
+        run_test("random/16384", set_gen.random(16384), 16384, 50216, 148600);
+        run_test("random/65535", set_gen.random(65535), 65535, 197669, 462190);
 
         let mut fail_test = false;
 

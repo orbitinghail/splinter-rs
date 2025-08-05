@@ -4,16 +4,31 @@ use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
+    count::{count_bitmap_runs, count_unique_sorted},
     encode::Encodable,
     level::Level,
-    partition::Partition,
-    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    segment::SplitSegment,
+    traits::{PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct BitmapPartition<L: Level> {
     bitmap: BitBox<u64, Lsb0>,
     _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Level> BitmapPartition<L> {
+    pub const ENCODED_SIZE: usize = L::MAX_LEN / 8;
+
+    #[inline]
+    pub fn count_runs(&self) -> usize {
+        count_bitmap_runs(&self.bitmap)
+    }
+
+    pub fn sparsity_ratio(&self) -> f64 {
+        let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
+        unique_segments as f64 / self.cardinality() as f64
+    }
 }
 
 impl<L: Level> Default for BitmapPartition<L> {
@@ -36,15 +51,10 @@ impl<L: Level> Debug for BitmapPartition<L> {
     }
 }
 
-impl<L: Level> Optimizable<Partition<L>> for BitmapPartition<L> {
-    fn shallow_optimize(&self) -> Option<Partition<L>> {
-        (self.cardinality() == L::MAX_LEN).then_some(Partition::Full)
-    }
-}
-
 impl<L: Level> Encodable for BitmapPartition<L> {
+    #[inline]
     fn encoded_size(&self) -> usize {
-        L::MAX_LEN / 8
+        Self::ENCODED_SIZE
     }
 }
 
