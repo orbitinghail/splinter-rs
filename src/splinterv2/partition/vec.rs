@@ -4,12 +4,11 @@ use itertools::Itertools;
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
-    count::count_unique_sorted,
+    count::{count_runs_sorted, count_unique_sorted},
     encode::Encodable,
     level::Level,
-    partition::{Partition, SPARSE_THRESHOLD},
     segment::SplitSegment,
-    traits::{Optimizable, PartitionRead, PartitionWrite},
+    traits::{PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -30,36 +29,25 @@ impl<L: Level> Debug for VecPartition<L> {
 }
 
 impl<L: Level> VecPartition<L> {
-    /// Construct an `VecPartition` from a sorted vector of unique values
-    /// SAFETY: undefined behavior if the vector is not sorted or contains duplicates
     #[inline]
+    pub const fn encoded_size(cardinality: usize) -> usize {
+        cardinality * (L::BITS / 8)
+    }
+
+    /// Construct an `VecPartition` from a sorted iter of unique values
+    /// SAFETY: undefined behavior if the iter is not sorted or contains duplicates
     pub fn from_sorted_unique_unchecked(values: impl Iterator<Item = L::Value>) -> Self {
         VecPartition { values: values.collect() }
     }
-}
 
-impl<L: Level> Optimizable<Partition<L>> for VecPartition<L> {
-    fn shallow_optimize(&self) -> Option<Partition<L>> {
-        // TODO: count runs to determine if we should switch to a RunPartition
-        // We may want only enable this optimization if optimize is triggered
-        // manually, rather than during insert.
+    #[inline]
+    pub fn count_runs(&self) -> usize {
+        count_runs_sorted(self.iter())
+    }
 
-        if self.cardinality() == L::MAX_LEN {
-            Some(Partition::Full)
-        } else if self.cardinality() > L::VEC_LIMIT {
-            Some(Partition::Bitmap(self.iter().collect()))
-        } else if self.cardinality() > L::TREE_MIN && L::PREFER_TREE {
-            let unique_segments = count_unique_sorted(self.values.iter().map(|v| v.segment()));
-            let sparsity_ratio = unique_segments as f64 / self.cardinality() as f64;
-
-            if sparsity_ratio < SPARSE_THRESHOLD {
-                Some(Partition::Tree(self.iter().collect()))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+    pub fn sparsity_ratio(&self) -> f64 {
+        let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
+        unique_segments as f64 / self.cardinality() as f64
     }
 }
 
@@ -67,21 +55,24 @@ impl<L: Level> FromIterator<L::Value> for VecPartition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let values = iter.into_iter().sorted().dedup();
         // SAFETY: the iterator is sorted and deduped
-        VecPartition::from_sorted_unique_unchecked(values)
+        Self::from_sorted_unique_unchecked(values)
     }
 }
 
 impl<L: Level> Encodable for VecPartition<L> {
+    #[inline]
     fn encoded_size(&self) -> usize {
-        self.values.len() * (L::BITS / 8)
+        Self::encoded_size(self.values.len())
     }
 }
 
 impl<L: Level> PartitionRead<L> for VecPartition<L> {
+    #[inline]
     fn cardinality(&self) -> usize {
         self.values.len()
     }
 
+    #[inline]
     fn is_empty(&self) -> bool {
         self.values.is_empty()
     }

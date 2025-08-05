@@ -42,8 +42,6 @@ macro_rules! impl_truncate_from_usize {
 impl_truncate_from_usize!(u32, u24, u16, u8);
 
 #[doc(hidden)]
-pub trait Optimizable<T> {
-    fn shallow_optimize(&self) -> Option<T>;
-
-    fn optimize_children(&mut self) {}
+pub trait Optimizable {
+    fn optimize(&mut self);
 }

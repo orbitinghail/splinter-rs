@@ -1,14 +1,12 @@
 use std::{fmt::Debug, ops::RangeInclusive};
 
+use itertools::Itertools;
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
 use rangemap::{RangeInclusiveSet, StepFns};
 
 use crate::splinterv2::{
-    PartitionWrite,
-    encode::Encodable,
-    level::Level,
-    partition::Partition,
-    traits::{Optimizable, PartitionRead},
+    PartitionWrite, count::count_unique_sorted, encode::Encodable, level::Level,
+    segment::SplitSegment, traits::PartitionRead,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,9 +26,56 @@ pub struct RunPartition<L: Level> {
     runs: RangeInclusiveSet<L::Value, NumStep>,
 }
 
+impl<L: Level> RunPartition<L> {
+    #[inline]
+    pub const fn encoded_size(runs: usize) -> usize {
+        let val_size = L::BITS / 8;
+        runs * (val_size * 2)
+    }
+
+    /// Construct an `RunPartition` from a sorted iter of unique values
+    /// SAFETY: undefined behavior if the iter is not sorted or contains duplicates
+    pub fn from_sorted_unique_unchecked(mut values: impl Iterator<Item = L::Value>) -> Self {
+        let Some(first) = values.next() else {
+            return RunPartition::default();
+        };
+        let mut runs = RangeInclusiveSet::<L::Value, NumStep>::default();
+        let mut cursor = (first, first);
+        for value in values {
+            // since the input iterator is sorted and unique, we only need to
+            // check if the next value is adjacent to the current range
+            if cursor.1 + L::Value::ONE == value {
+                cursor.1 = value;
+            } else {
+                runs.insert(cursor.0..=cursor.1);
+                cursor = (value, value);
+            }
+        }
+        runs.insert(cursor.0..=cursor.1);
+        RunPartition { runs }
+    }
+
+    #[inline]
+    pub fn count_runs(&self) -> usize {
+        self.runs.len()
+    }
+
+    #[inline]
+    pub fn sparsity_ratio(&self) -> f64 {
+        let segments = self
+            .runs
+            .iter()
+            .flat_map(|r| r.start().segment()..=r.end().segment());
+        let unique_segments = count_unique_sorted(segments);
+        unique_segments as f64 / self.cardinality() as f64
+    }
+}
+
 impl<L: Level> Default for RunPartition<L> {
     fn default() -> Self {
-        RunPartition { runs: Default::default() }
+        RunPartition {
+            runs: RangeInclusiveSet::<L::Value, NumStep>::new_with_step_fns(),
+        }
     }
 }
 
@@ -43,22 +88,18 @@ where
     }
 }
 
-impl<L: Level> Optimizable<Partition<L>> for RunPartition<L> {
-    fn shallow_optimize(&self) -> Option<Partition<L>> {
-        todo!()
-    }
-}
-
 impl<L: Level> FromIterator<L::Value> for RunPartition<L> {
-    fn from_iter<I: IntoIterator<Item = L::Value>>(_iter: I) -> Self {
-        todo!()
+    fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
+        let values = iter.into_iter().sorted().dedup();
+        // SAFETY: the iterator is sorted and deduped
+        Self::from_sorted_unique_unchecked(values)
     }
 }
 
 impl<L: Level> Encodable for RunPartition<L> {
+    #[inline]
     fn encoded_size(&self) -> usize {
-        let val_size = L::BITS / 8;
-        self.runs.len() * (val_size * 2)
+        Self::encoded_size(self.runs.len())
     }
 }
 
@@ -118,5 +159,40 @@ impl<T: PrimInt + ConstOne> Iterator for RunIter<T> {
             self.start = self.start + T::ONE;
             Some(value)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::splinterv2::level::Block;
+
+    use super::*;
+
+    #[test]
+    fn test_run_partition() {
+        let mut partition = RunPartition::<Block>::default();
+        assert!(partition.insert(1));
+        assert!(partition.insert(2));
+        assert!(partition.insert(3));
+        assert!(!partition.insert(2));
+        assert_eq!(partition.cardinality(), 3);
+        assert!(partition.contains(1));
+        assert!(partition.contains(2));
+        assert!(partition.contains(3));
+        assert!(!partition.contains(4));
+        assert_eq!(partition.iter().collect::<Vec<_>>(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_run_partition_from_iter() {
+        let vals = [1, 2, 5, 7, 8, 11];
+        let partition = RunPartition::<Block>::from_sorted_unique_unchecked(vals.iter().copied());
+
+        itertools::assert_equal(
+            partition.runs.iter().cloned(),
+            [1..=2, 5..=5, 7..=8, 11..=11],
+        );
+
+        itertools::assert_equal(vals.into_iter(), partition.iter());
     }
 }

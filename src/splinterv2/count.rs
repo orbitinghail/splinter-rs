@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use bitvec::{boxed::BitBox, order::BitOrder, slice::BitSlice, store::BitStore};
 use num::{PrimInt, traits::ConstOne};
 
@@ -31,7 +29,7 @@ where
 pub fn count_runs_sorted<I, T>(iter: I) -> usize
 where
     I: IntoIterator<Item = T>,
-    T: PrimInt + ConstOne + Display,
+    T: PrimInt + ConstOne,
 {
     let mut iter = iter.into_iter().peekable();
     let mut count = 0;
@@ -44,9 +42,9 @@ where
         );
 
         count += 1;
-        curr = curr + T::ONE;
+        curr = curr.saturating_add(T::ONE);
         while iter.peek() == Some(&curr) {
-            curr = curr + T::one();
+            curr = curr.saturating_add(T::ONE);
             iter.next();
         }
     }
