@@ -29,7 +29,7 @@ pub struct RunPartition<L: Level> {
 impl<L: Level> RunPartition<L> {
     #[inline]
     pub const fn encoded_size(runs: usize) -> usize {
-        let val_size = L::BITS / 8;
+        let val_size = std::mem::size_of::<L::ValueUnaligned>();
         runs * (val_size * 2)
     }
 
@@ -100,6 +100,10 @@ impl<L: Level> Encodable for RunPartition<L> {
     #[inline]
     fn encoded_size(&self) -> usize {
         Self::encoded_size(self.runs.len())
+    }
+
+    fn encode(&self, _buf: &mut impl bytes::BufMut) {
+        todo!()
     }
 }
 

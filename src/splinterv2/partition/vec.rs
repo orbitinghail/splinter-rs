@@ -29,9 +29,9 @@ impl<L: Level> Debug for VecPartition<L> {
 }
 
 impl<L: Level> VecPartition<L> {
-    #[inline]
+    #[inline(always)]
     pub const fn encoded_size(cardinality: usize) -> usize {
-        cardinality * (L::BITS / 8)
+        cardinality * std::mem::size_of::<L::ValueUnaligned>()
     }
 
     /// Construct an `VecPartition` from a sorted iter of unique values
@@ -63,6 +63,10 @@ impl<L: Level> Encodable for VecPartition<L> {
     #[inline]
     fn encoded_size(&self) -> usize {
         Self::encoded_size(self.values.len())
+    }
+
+    fn encode(&self, _buf: &mut impl bytes::BufMut) {
+        todo!()
     }
 }
 

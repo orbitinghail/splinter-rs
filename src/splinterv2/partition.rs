@@ -22,11 +22,11 @@ const TREE_SPARSE_THRESHOLD: f64 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PartitionKind {
-    Vec,
-    Tree,
-    Bitmap,
-    Run,
     Full,
+    Bitmap,
+    Vec,
+    Run,
+    Tree,
 }
 
 impl PartitionKind {
@@ -54,21 +54,21 @@ impl PartitionKind {
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Partition<L: Level> {
-    Vec(VecPartition<L>),
-    Tree(TreePartition<L>),
-    Bitmap(BitmapPartition<L>),
-    Run(RunPartition<L>),
     Full,
+    Bitmap(BitmapPartition<L>),
+    Vec(VecPartition<L>),
+    Run(RunPartition<L>),
+    Tree(TreePartition<L>),
 }
 
 impl<L: Level> Partition<L> {
     pub fn kind(&self) -> PartitionKind {
         match self {
-            Partition::Tree(_) => PartitionKind::Tree,
-            Partition::Vec(_) => PartitionKind::Vec,
-            Partition::Bitmap(_) => PartitionKind::Bitmap,
-            Partition::Run(_) => PartitionKind::Run,
             Partition::Full => PartitionKind::Full,
+            Partition::Bitmap(_) => PartitionKind::Bitmap,
+            Partition::Vec(_) => PartitionKind::Vec,
+            Partition::Run(_) => PartitionKind::Run,
+            Partition::Tree(_) => PartitionKind::Tree,
         }
     }
 
@@ -78,38 +78,38 @@ impl<L: Level> Partition<L> {
         }
 
         *self = match kind {
-            PartitionKind::Vec => {
-                Partition::Vec(VecPartition::from_sorted_unique_unchecked(self.iter()))
-            }
-            PartitionKind::Tree => Partition::Tree(self.iter().collect()),
-            PartitionKind::Bitmap => Partition::Bitmap(self.iter().collect()),
-            PartitionKind::Run => {
-                Partition::Run(RunPartition::from_sorted_unique_unchecked(self.iter()))
-            }
             PartitionKind::Full => {
                 debug_assert_eq!(self.cardinality(), L::MAX_LEN, "Partition is not full");
                 Partition::Full
             }
+            PartitionKind::Bitmap => Partition::Bitmap(self.iter().collect()),
+            PartitionKind::Vec => {
+                Partition::Vec(VecPartition::from_sorted_unique_unchecked(self.iter()))
+            }
+            PartitionKind::Run => {
+                Partition::Run(RunPartition::from_sorted_unique_unchecked(self.iter()))
+            }
+            PartitionKind::Tree => Partition::Tree(self.iter().collect()),
         }
     }
 
     fn sparsity_ratio(&self) -> f64 {
         match self {
-            Partition::Vec(p) => p.sparsity_ratio(),
-            Partition::Tree(p) => p.sparsity_ratio(),
-            Partition::Bitmap(p) => p.sparsity_ratio(),
-            Partition::Run(p) => p.sparsity_ratio(),
             Partition::Full => 1.0,
+            Partition::Bitmap(p) => p.sparsity_ratio(),
+            Partition::Vec(p) => p.sparsity_ratio(),
+            Partition::Run(p) => p.sparsity_ratio(),
+            Partition::Tree(p) => p.sparsity_ratio(),
         }
     }
 
     fn count_runs(&self) -> usize {
         match self {
-            Partition::Vec(p) => p.count_runs(),
-            Partition::Tree(p) => p.count_runs(),
-            Partition::Bitmap(p) => p.count_runs(),
-            Partition::Run(p) => p.count_runs(),
             Partition::Full => 1,
+            Partition::Bitmap(p) => p.count_runs(),
+            Partition::Vec(p) => p.count_runs(),
+            Partition::Run(p) => p.count_runs(),
+            Partition::Tree(p) => p.count_runs(),
         }
     }
 
@@ -182,11 +182,21 @@ impl<L: Level> Optimizable for Partition<L> {
 impl<L: Level> Encodable for Partition<L> {
     fn encoded_size(&self) -> usize {
         match self {
-            Partition::Tree(partition) => partition.encoded_size(),
-            Partition::Vec(partition) => partition.encoded_size(),
-            Partition::Bitmap(partition) => partition.encoded_size(),
-            Partition::Run(partition) => partition.encoded_size(),
             Partition::Full => 1, // TODO: this is an estimate
+            Partition::Bitmap(partition) => partition.encoded_size(),
+            Partition::Vec(partition) => partition.encoded_size(),
+            Partition::Run(partition) => partition.encoded_size(),
+            Partition::Tree(partition) => partition.encoded_size(),
+        }
+    }
+
+    fn encode(&self, buf: &mut impl bytes::BufMut) {
+        match self {
+            Partition::Full => todo!(),
+            Partition::Bitmap(partition) => partition.encode(buf),
+            Partition::Vec(partition) => partition.encode(buf),
+            Partition::Run(partition) => partition.encode(buf),
+            Partition::Tree(partition) => partition.encode(buf),
         }
     }
 }
@@ -200,11 +210,11 @@ impl<L: Level> Default for Partition<L> {
 impl<L: Level> Debug for Partition<L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Partition::Tree(partition) => partition.fmt(f),
-            Partition::Vec(partition) => partition.fmt(f),
-            Partition::Bitmap(partition) => partition.fmt(f),
-            Partition::Run(partition) => partition.fmt(f),
             Partition::Full => write!(f, "Full"),
+            Partition::Bitmap(partition) => partition.fmt(f),
+            Partition::Vec(partition) => partition.fmt(f),
+            Partition::Run(partition) => partition.fmt(f),
+            Partition::Tree(partition) => partition.fmt(f),
         }
     }
 }
@@ -212,21 +222,21 @@ impl<L: Level> Debug for Partition<L> {
 impl<L: Level> PartitionRead<L> for Partition<L> {
     fn cardinality(&self) -> usize {
         match self {
-            Partition::Tree(partition) => partition.cardinality(),
-            Partition::Vec(partition) => partition.cardinality(),
-            Partition::Bitmap(partition) => partition.cardinality(),
-            Partition::Run(partition) => partition.cardinality(),
             Partition::Full => L::MAX_LEN,
+            Partition::Bitmap(partition) => partition.cardinality(),
+            Partition::Vec(partition) => partition.cardinality(),
+            Partition::Run(partition) => partition.cardinality(),
+            Partition::Tree(partition) => partition.cardinality(),
         }
     }
 
     fn is_empty(&self) -> bool {
         match self {
-            Partition::Tree(partition) => partition.is_empty(),
-            Partition::Vec(partition) => partition.is_empty(),
-            Partition::Bitmap(partition) => partition.is_empty(),
-            Partition::Run(partition) => partition.is_empty(),
             Partition::Full => false,
+            Partition::Bitmap(partition) => partition.is_empty(),
+            Partition::Vec(partition) => partition.is_empty(),
+            Partition::Run(partition) => partition.is_empty(),
+            Partition::Tree(partition) => partition.is_empty(),
         }
     }
 
@@ -234,21 +244,21 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
         debug_assert!(value.as_() < L::MAX_LEN, "value out of range");
 
         match self {
-            Partition::Tree(partition) => partition.contains(value),
-            Partition::Vec(partition) => partition.contains(value),
-            Partition::Bitmap(partition) => partition.contains(value),
-            Partition::Run(partition) => partition.contains(value),
             Partition::Full => true,
+            Partition::Bitmap(partition) => partition.contains(value),
+            Partition::Vec(partition) => partition.contains(value),
+            Partition::Run(partition) => partition.contains(value),
+            Partition::Tree(partition) => partition.contains(value),
         }
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         match self {
-            Partition::Tree(p) => Iter::Tree(p.iter()),
-            Partition::Vec(p) => Iter::Vec(p.iter()),
-            Partition::Bitmap(p) => Iter::Bitmap(p.iter()),
-            Partition::Run(p) => Iter::Run(p.iter()),
             Partition::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
+            Partition::Bitmap(p) => Iter::Bitmap(p.iter()),
+            Partition::Vec(p) => Iter::Vec(p.iter()),
+            Partition::Run(p) => Iter::Run(p.iter()),
+            Partition::Tree(p) => Iter::Tree(p.iter()),
         }
     }
 }
@@ -256,11 +266,11 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
 impl<L: Level> PartitionWrite<L> for Partition<L> {
     fn insert(&mut self, value: L::Value) -> bool {
         let inserted = match self {
-            Partition::Tree(partition) => partition.insert(value),
-            Partition::Vec(partition) => partition.insert(value),
-            Partition::Bitmap(partition) => partition.insert(value),
-            Partition::Run(partition) => partition.insert(value),
             Partition::Full => false,
+            Partition::Bitmap(partition) => partition.insert(value),
+            Partition::Vec(partition) => partition.insert(value),
+            Partition::Run(partition) => partition.insert(value),
+            Partition::Tree(partition) => partition.insert(value),
         };
 
         if inserted {
@@ -279,32 +289,32 @@ impl<L: Level> FromIterator<L::Value> for Partition<L> {
     }
 }
 
-enum Iter<TI, VI, BI, RI, FI> {
-    Tree(TI),
-    Vec(VI),
-    Bitmap(BI),
-    Run(RI),
+enum Iter<FI, BI, VI, RI, TI> {
     Full(FI),
+    Bitmap(BI),
+    Vec(VI),
+    Run(RI),
+    Tree(TI),
 }
 
 impl<
     T,
-    TI: Iterator<Item = T>,
-    VI: Iterator<Item = T>,
-    BI: Iterator<Item = T>,
-    RI: Iterator<Item = T>,
     FI: Iterator<Item = T>,
-> Iterator for Iter<TI, VI, BI, RI, FI>
+    BI: Iterator<Item = T>,
+    VI: Iterator<Item = T>,
+    RI: Iterator<Item = T>,
+    TI: Iterator<Item = T>,
+> Iterator for Iter<FI, BI, VI, RI, TI>
 {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Iter::Tree(iter) => iter.next(),
-            Iter::Vec(iter) => iter.next(),
-            Iter::Bitmap(iter) => iter.next(),
-            Iter::Run(iter) => iter.next(),
             Iter::Full(iter) => iter.next(),
+            Iter::Bitmap(iter) => iter.next(),
+            Iter::Vec(iter) => iter.next(),
+            Iter::Run(iter) => iter.next(),
+            Iter::Tree(iter) => iter.next(),
         }
     }
 }
