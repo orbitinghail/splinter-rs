@@ -18,6 +18,10 @@ impl Encodable for Never {
     fn encoded_size(&self) -> usize {
         unreachable!("Never::encoded_size")
     }
+
+    fn encode(&self, _buf: &mut impl bytes::BufMut) {
+        unreachable!("Never::encode")
+    }
 }
 
 impl<L: Level> PartitionWrite<L> for Never {
@@ -55,9 +59,10 @@ impl Optimizable for Never {
 impl Level for Never {
     const DEBUG_NAME: &'static str = "Never";
 
-    type Offset = ();
     type LevelDown = Never;
     type Down = Never;
     type Value = u8;
+    type ValueUnaligned = u8;
+
     const BITS: usize = 8;
 }

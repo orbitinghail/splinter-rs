@@ -43,9 +43,13 @@ impl<L: Level> Encodable for TreePartition<L> {
             let bitmap_size = BitmapPartition::<Block>::ENCODED_SIZE;
             vec_size.min(bitmap_size)
         };
-        let offsets = self.children.len() * std::mem::size_of::<L::Offset>();
+        let offsets = self.children.len() * std::mem::size_of::<L::ValueUnaligned>();
         let values: usize = self.children.values().map(|c| c.encoded_size()).sum();
         index + offsets + values
+    }
+
+    fn encode(&self, _buf: &mut impl bytes::BufMut) {
+        todo!()
     }
 }
 

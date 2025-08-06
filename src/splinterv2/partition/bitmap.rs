@@ -56,6 +56,10 @@ impl<L: Level> Encodable for BitmapPartition<L> {
     fn encoded_size(&self) -> usize {
         Self::ENCODED_SIZE
     }
+
+    fn encode(&self, _buf: &mut impl bytes::BufMut) {
+        todo!()
+    }
 }
 
 impl<L: Level> FromIterator<L::Value> for BitmapPartition<L> {

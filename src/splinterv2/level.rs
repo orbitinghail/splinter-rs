@@ -1,11 +1,12 @@
 use std::fmt::{Debug, Display};
 
+use ::u24::U24;
 use num::{
     cast::AsPrimitive,
     traits::{ConstOne, ConstZero},
 };
 use u24::u24;
-use zerocopy::{LE, U16, U32};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, Unaligned};
 
 use crate::splinterv2::{
     encode::Encodable,
@@ -17,8 +18,6 @@ use crate::splinterv2::{
 
 pub trait Level: Sized {
     const DEBUG_NAME: &'static str;
-
-    type Offset;
 
     type LevelDown: Level;
 
@@ -41,6 +40,16 @@ pub trait Level: Sized {
         + Debug
         + Display;
 
+    type ValueUnaligned: IntoBytes
+        + FromBytes
+        + Unaligned
+        + Immutable
+        + KnownLayout
+        + Into<Self::Value>
+        + From<Self::Value>
+        + Debug
+        + Display;
+
     const BITS: usize;
     const MAX_LEN: usize = 1 << Self::BITS;
     const TREE_MIN: usize = 32;
@@ -53,10 +62,11 @@ pub struct High;
 impl Level for High {
     const DEBUG_NAME: &'static str = "High";
 
-    type Offset = U32<LE>;
     type LevelDown = Mid;
     type Down = Partition<Self::LevelDown>;
     type Value = u32;
+    type ValueUnaligned = U32<LE>;
+
     const BITS: usize = 32;
 }
 
@@ -66,10 +76,11 @@ pub struct Mid;
 impl Level for Mid {
     const DEBUG_NAME: &'static str = "Mid";
 
-    type Offset = U32<LE>;
     type LevelDown = Low;
     type Down = Partition<Self::LevelDown>;
     type Value = u24;
+    type ValueUnaligned = U24<LE>;
+
     const BITS: usize = 24;
 }
 
@@ -79,10 +90,11 @@ pub struct Low;
 impl Level for Low {
     const DEBUG_NAME: &'static str = "Low";
 
-    type Offset = U16<LE>;
     type LevelDown = Block;
     type Down = Partition<Self::LevelDown>;
     type Value = u16;
+    type ValueUnaligned = U16<LE>;
+
     const BITS: usize = 16;
 }
 
@@ -92,9 +104,10 @@ pub struct Block;
 impl Level for Block {
     const DEBUG_NAME: &'static str = "Block";
 
-    type Offset = ();
     type LevelDown = Never;
     type Down = Never;
     type Value = u8;
+    type ValueUnaligned = u8;
+
     const BITS: usize = 8;
 }
