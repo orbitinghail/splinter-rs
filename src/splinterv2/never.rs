@@ -1,5 +1,8 @@
+use bytes::BufMut;
+
 use crate::splinterv2::{
-    Encodable, PartitionRead, PartitionWrite, level::Level, traits::Optimizable,
+    Encodable, PartitionRead, PartitionWrite, codec::encoder::Encoder, level::Level,
+    traits::Optimizable,
 };
 
 /// The Never type is used to terminate the Level tree. It is never constructed
@@ -19,7 +22,7 @@ impl Encodable for Never {
         unreachable!("Never::encoded_size")
     }
 
-    fn encode(&self, _buf: &mut impl bytes::BufMut) {
+    fn encode<B: BufMut>(&self, _encoder: &mut Encoder<B>) {
         unreachable!("Never::encode")
     }
 }

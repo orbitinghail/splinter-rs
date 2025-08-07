@@ -1,68 +1,16 @@
-//! TODO: Encoder/Encodable
-//! The idea is to build a serde style encoder which can be abstracted over
-//! various destination types, while making heavy use of `bytes::bufmut` and zerocopy.
-//!
-//! The main benefit of Splinter's tail encoding is that the offset indexes are
-//! emitted after each partition. This allows us to efficiently seek through the
-//! encoding without making copies.
-//!
-//! However, we could still put offset indexes in the beginning by reserving
-//! space ahead of time. Since cardinality is no longer expensive to compute, we
-//! should be able to easily do this with the `BufMut` API.
-//!
-//! The other benefit of tail encoding is that we can encode directly into a
-//! socket/stream. We aren't currently taking advantage of this.
+use std::ops::RangeInclusive;
 
-use std::convert::Infallible;
-
-use bytes::BufMut;
+use bitvec::{order::Lsb0, slice::BitSlice};
 use num::traits::AsPrimitive;
-use thiserror::Error;
-use zerocopy::{
-    ConvertError, FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned,
-};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::splinterv2::{
+    PartitionRead,
+    codec::DecodeErr,
     level::{Block, Level},
     partition::{bitmap::BitmapPartition, run::RunPartition, vec::VecPartition},
     segment::Segment,
 };
-
-pub trait Encodable {
-    fn encoded_size(&self) -> usize;
-
-    fn encode(&self, buf: &mut impl BufMut);
-}
-
-#[derive(Debug, Error)]
-pub enum DecodeErr {
-    #[error("not enough bytes")]
-    Length,
-
-    #[error("invalid encoding")]
-    Validity,
-}
-
-impl DecodeErr {
-    #[inline]
-    fn ensure_length_available(data: &[u8], len: usize) -> Result<(), DecodeErr> {
-        if data.len() < len {
-            Err(Self::Length)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl<S, V> From<ConvertError<Infallible, S, V>> for DecodeErr {
-    fn from(err: ConvertError<Infallible, S, V>) -> Self {
-        match err {
-            ConvertError::Alignment(_) => unreachable!("Infallible alignment"),
-            ConvertError::Size(_) => DecodeErr::Length,
-            ConvertError::Validity(_) => DecodeErr::Validity,
-        }
-    }
-}
 
 #[derive(Debug, IntoBytes, TryFromBytes, Unaligned, KnownLayout, Immutable)]
 #[repr(u8)]
@@ -81,12 +29,20 @@ pub(crate) struct EncodedRun<L: Level> {
     end: L::ValueUnaligned,
 }
 
+impl<L: Level> From<&RangeInclusive<L::Value>> for EncodedRun<L> {
+    fn from(range: &RangeInclusive<L::Value>) -> Self {
+        let start = (*range.start()).into();
+        let end = (*range.end()).into();
+        EncodedRun { start, end }
+    }
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub(crate) enum Container<'a, L: Level> {
     Full,
     Bitmap {
-        bitmap: &'a [u8],
+        bitmap: &'a BitSlice<u8, Lsb0>,
     },
     Vec {
         values: &'a [L::ValueUnaligned],
@@ -102,6 +58,12 @@ pub(crate) enum Container<'a, L: Level> {
     },
 }
 
+fn decode_len<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {
+    let (data, len) = L::ValueUnaligned::try_read_from_suffix(data)?;
+    // length is decremented when stored
+    Ok((data, len.into().as_() + 1))
+}
+
 impl<'a, L: Level> Container<'a, L> {
     pub fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
         let (data, kind) = ContainerKind::try_read_from_suffix(data)?;
@@ -112,13 +74,11 @@ impl<'a, L: Level> Container<'a, L> {
                 let len = BitmapPartition::<L>::ENCODED_SIZE;
                 DecodeErr::ensure_length_available(data, len)?;
                 let range = (data.len() - len)..data.len();
-                Ok(Container::Bitmap {
-                    bitmap: zerocopy::transmute_ref!(&data[range]),
-                })
+                let bitmap: &[u8] = zerocopy::transmute_ref!(&data[range]);
+                Ok(Container::Bitmap { bitmap: BitSlice::from_slice(bitmap) })
             }
             ContainerKind::Vec => {
-                let (data, len) = L::ValueUnaligned::try_read_from_suffix(data)?;
-                let len: usize = len.into().as_();
+                let (data, len) = decode_len::<L>(data)?;
                 DecodeErr::ensure_length_available(data, len)?;
                 let range = (data.len() - len)..data.len();
                 Ok(Container::Vec {
@@ -126,22 +86,24 @@ impl<'a, L: Level> Container<'a, L> {
                 })
             }
             ContainerKind::Run => {
-                let (data, runs) = L::ValueUnaligned::try_read_from_suffix(data)?;
-                let runs: usize = runs.into().as_();
+                let (data, runs) = decode_len::<L>(data)?;
                 let len = RunPartition::<L>::encoded_size(runs);
                 DecodeErr::ensure_length_available(data, len)?;
                 let range = (data.len() - len)..data.len();
                 Ok(Container::Run {
-                    runs: zerocopy::transmute_ref!(&data[range]),
+                    runs: <[EncodedRun<L>]>::ref_from_bytes(&data[range])?,
                 })
             }
             ContainerKind::Tree => {
-                let (data, num_children) = L::ValueUnaligned::try_read_from_suffix(data)?;
-                let num_children: usize = num_children.into().as_();
+                let (data, num_children) = decode_len::<Block>(data)?;
                 let segments_size = {
-                    let as_vec = VecPartition::<Block>::encoded_size(num_children);
-                    let as_bmp = BitmapPartition::<Block>::ENCODED_SIZE;
-                    as_vec.min(as_bmp)
+                    if num_children == 256 {
+                        0
+                    } else {
+                        let as_vec = VecPartition::<Block>::encoded_size(num_children);
+                        let as_bmp = BitmapPartition::<Block>::ENCODED_SIZE;
+                        as_vec.min(as_bmp)
+                    }
                 };
                 let offsets_size = num_children * size_of::<L::ValueUnaligned>();
 
@@ -160,5 +122,24 @@ impl<'a, L: Level> Container<'a, L> {
                 })
             }
         }
+    }
+}
+
+impl<'a, L: Level> PartitionRead<L> for Container<'a, L> {
+    fn cardinality(&self) -> usize {
+        todo!()
+    }
+
+    fn is_empty(&self) -> bool {
+        todo!()
+    }
+
+    fn contains(&self, value: <L as Level>::Value) -> bool {
+        todo!()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = <L as Level>::Value> {
+        todo!();
+        std::iter::empty()
     }
 }

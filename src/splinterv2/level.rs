@@ -9,7 +9,7 @@ use u24::u24;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, Unaligned};
 
 use crate::splinterv2::{
-    encode::Encodable,
+    codec::Encodable,
     never::Never,
     partition::Partition,
     segment::SplitSegment,

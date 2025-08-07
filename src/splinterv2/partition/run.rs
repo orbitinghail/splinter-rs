@@ -1,12 +1,17 @@
 use std::{fmt::Debug, ops::RangeInclusive};
 
+use bytes::BufMut;
 use itertools::Itertools;
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
 use rangemap::{RangeInclusiveSet, StepFns};
 
 use crate::splinterv2::{
-    PartitionWrite, count::count_unique_sorted, encode::Encodable, level::Level,
-    segment::SplitSegment, traits::PartitionRead,
+    PartitionWrite,
+    codec::{Encodable, encoder::Encoder},
+    count::count_unique_sorted,
+    level::Level,
+    segment::SplitSegment,
+    traits::PartitionRead,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,8 +107,8 @@ impl<L: Level> Encodable for RunPartition<L> {
         Self::encoded_size(self.runs.len())
     }
 
-    fn encode(&self, _buf: &mut impl bytes::BufMut) {
-        todo!()
+    fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
+        encoder.put_run_container::<L>(self.runs.iter());
     }
 }
 

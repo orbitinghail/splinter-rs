@@ -3,13 +3,16 @@ use std::{
     fmt::{self, Debug},
 };
 
+use bytes::BufMut;
+
 use crate::splinterv2::{
+    Partition,
+    codec::{Encodable, encoder::Encoder},
     count::count_runs_sorted,
-    encode::Encodable,
     level::{Block, Level},
     partition::{bitmap::BitmapPartition, vec::VecPartition},
     segment::{Segment, SplitSegment},
-    traits::{Optimizable, PartitionRead, PartitionWrite},
+    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -39,17 +42,46 @@ impl<L: Level> TreePartition<L> {
 impl<L: Level> Encodable for TreePartition<L> {
     fn encoded_size(&self) -> usize {
         let index = {
-            let vec_size = VecPartition::<Block>::encoded_size(self.children.len());
-            let bitmap_size = BitmapPartition::<Block>::ENCODED_SIZE;
-            vec_size.min(bitmap_size)
+            if self.children.len() == 256 {
+                0
+            } else {
+                let vec_size = VecPartition::<Block>::encoded_size(self.children.len());
+                let bitmap_size = BitmapPartition::<Block>::ENCODED_SIZE;
+                vec_size.min(bitmap_size)
+            }
         };
         let offsets = self.children.len() * std::mem::size_of::<L::ValueUnaligned>();
         let values: usize = self.children.values().map(|c| c.encoded_size()).sum();
         index + offsets + values
     }
 
-    fn encode(&self, _buf: &mut impl bytes::BufMut) {
-        todo!()
+    fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
+        let num_children = self.children.len();
+
+        let mut segments = {
+            if num_children == 256 {
+                Partition::<Block>::Full
+            } else {
+                let as_vec = VecPartition::<Block>::encoded_size(num_children);
+                let as_bmp = BitmapPartition::<Block>::ENCODED_SIZE;
+                if as_vec <= as_bmp {
+                    Partition::<Block>::Vec(Default::default())
+                } else {
+                    Partition::<Block>::Bitmap(Default::default())
+                }
+            }
+        };
+        let mut offsets = Vec::with_capacity(num_children);
+
+        for (segment, child) in self.children.iter() {
+            child.encode(encoder);
+            let offset = L::Value::truncate_from(encoder.bytes_written());
+            let offset: L::ValueUnaligned = offset.into();
+            offsets.push(offset);
+            segments.insert(*segment);
+        }
+
+        encoder.put_tree_container::<L>(segments, offsets);
     }
 }
 

@@ -1,10 +1,11 @@
 use std::fmt::{self, Debug};
 
+use bytes::BufMut;
 use itertools::Itertools;
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
-    encode::Encodable,
+    codec::{Encodable, encoder::Encoder},
     level::Level,
     partition::{
         bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
@@ -190,13 +191,13 @@ impl<L: Level> Encodable for Partition<L> {
         }
     }
 
-    fn encode(&self, buf: &mut impl bytes::BufMut) {
+    fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
         match self {
-            Partition::Full => todo!(),
-            Partition::Bitmap(partition) => partition.encode(buf),
-            Partition::Vec(partition) => partition.encode(buf),
-            Partition::Run(partition) => partition.encode(buf),
-            Partition::Tree(partition) => partition.encode(buf),
+            Partition::Full => encoder.put_full_container(),
+            Partition::Bitmap(partition) => partition.encode(encoder),
+            Partition::Vec(partition) => partition.encode(encoder),
+            Partition::Run(partition) => partition.encode(encoder),
+            Partition::Tree(partition) => partition.encode(encoder),
         }
     }
 }

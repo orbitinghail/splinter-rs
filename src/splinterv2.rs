@@ -1,12 +1,12 @@
+pub mod codec;
 pub mod count;
-pub mod encode;
 pub mod level;
 pub mod never;
 pub mod partition;
 pub mod segment;
 pub mod traits;
 
-pub use crate::splinterv2::encode::Encodable;
+pub use crate::splinterv2::codec::Encodable;
 pub use crate::splinterv2::partition::Partition;
 pub use crate::splinterv2::traits::{PartitionRead, PartitionWrite};
 
@@ -18,7 +18,7 @@ static_assertions::const_assert_eq!(std::mem::size_of::<SplinterV2>(), 40);
 mod tests {
     use super::*;
     use crate::{
-        splinterv2::{encode::Encodable, traits::Optimizable},
+        splinterv2::{codec::Encodable, traits::Optimizable},
         testutil::SetGen,
     };
     use roaring::RoaringBitmap;

@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
+use bytes::BufMut;
 use itertools::Itertools;
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
+    codec::{Encodable, encoder::Encoder},
     count::{count_runs_sorted, count_unique_sorted},
-    encode::Encodable,
     level::Level,
     segment::SplitSegment,
     traits::{PartitionRead, PartitionWrite},
@@ -49,6 +50,10 @@ impl<L: Level> VecPartition<L> {
         let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
         unique_segments as f64 / self.cardinality() as f64
     }
+
+    pub(crate) fn values(&self) -> &[L::Value] {
+        &self.values
+    }
 }
 
 impl<L: Level> FromIterator<L::Value> for VecPartition<L> {
@@ -65,8 +70,8 @@ impl<L: Level> Encodable for VecPartition<L> {
         Self::encoded_size(self.values.len())
     }
 
-    fn encode(&self, _buf: &mut impl bytes::BufMut) {
-        todo!()
+    fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
+        encoder.put_vec_container::<L>(&self.values);
     }
 }
 

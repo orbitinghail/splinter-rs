@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
 use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
+use bytes::BufMut;
 use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
+    codec::{Encodable, encoder::Encoder},
     count::{count_bitmap_runs, count_unique_sorted},
-    encode::Encodable,
     level::Level,
     segment::SplitSegment,
     traits::{PartitionRead, PartitionWrite, TruncateFrom},
@@ -28,6 +29,11 @@ impl<L: Level> BitmapPartition<L> {
     pub fn sparsity_ratio(&self) -> f64 {
         let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
         unique_segments as f64 / self.cardinality() as f64
+    }
+
+    #[inline]
+    pub(crate) fn as_bitbox(&self) -> &BitBox<u64, Lsb0> {
+        &self.bitmap
     }
 }
 
@@ -57,8 +63,8 @@ impl<L: Level> Encodable for BitmapPartition<L> {
         Self::ENCODED_SIZE
     }
 
-    fn encode(&self, _buf: &mut impl bytes::BufMut) {
-        todo!()
+    fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
+        encoder.put_bitmap_container(&self.bitmap);
     }
 }
 
