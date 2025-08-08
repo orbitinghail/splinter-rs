@@ -3,7 +3,9 @@ use std::fmt::{self, Debug};
 use bytes::BufMut;
 use itertools::Itertools;
 use num::traits::AsPrimitive;
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
+use crate::MultiIter;
 use crate::splinterv2::{
     codec::{Encodable, encoder::Encoder},
     level::Level,
@@ -21,34 +23,28 @@ pub mod vec;
 /// Tree sparsity ratio limit
 const TREE_SPARSE_THRESHOLD: f64 = 0.5;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, IntoBytes, TryFromBytes, Unaligned, KnownLayout, Immutable,
+)]
+#[repr(u8)]
 pub enum PartitionKind {
-    Full,
-    Bitmap,
-    Vec,
-    Run,
-    Tree,
+    Empty = 0x00,
+    Full = 0x01,
+    Bitmap = 0x02,
+    Vec = 0x03,
+    Run = 0x04,
+    Tree = 0x05,
 }
 
 impl PartitionKind {
-    /// Pick the best `PartitionKind` based on cardinality
-    pub fn pick_cardinality<L: Level>(cardinality: usize) -> Self {
-        if cardinality == L::MAX_LEN {
-            return PartitionKind::Full;
-        } else if cardinality == 0 {
-            return if L::PREFER_TREE {
-                PartitionKind::Tree
-            } else {
-                PartitionKind::Vec
-            };
-        }
-
-        let vec_encoded_size = VecPartition::<L>::encoded_size(cardinality);
-        let bitmap_encoded_size = BitmapPartition::<L>::ENCODED_SIZE;
-        if vec_encoded_size < bitmap_encoded_size {
-            PartitionKind::Vec
-        } else {
-            PartitionKind::Bitmap
+    pub fn build<L: Level>(self) -> Partition<L> {
+        match self {
+            PartitionKind::Empty => Partition::default(),
+            PartitionKind::Full => Partition::Full,
+            PartitionKind::Bitmap => Partition::Bitmap(Default::default()),
+            PartitionKind::Vec => Partition::Vec(Default::default()),
+            PartitionKind::Run => Partition::Run(Default::default()),
+            PartitionKind::Tree => Partition::Tree(Default::default()),
         }
     }
 }
@@ -79,6 +75,10 @@ impl<L: Level> Partition<L> {
         }
 
         *self = match kind {
+            PartitionKind::Empty => {
+                debug_assert_eq!(self.cardinality(), 0, "Partition is not empty");
+                Partition::default()
+            }
             PartitionKind::Full => {
                 debug_assert_eq!(self.cardinality(), L::MAX_LEN, "Partition is not full");
                 Partition::Full
@@ -182,18 +182,20 @@ impl<L: Level> Optimizable for Partition<L> {
 
 impl<L: Level> Encodable for Partition<L> {
     fn encoded_size(&self) -> usize {
-        match self {
-            Partition::Full => 1, // TODO: this is an estimate
+        let inner_size = match self {
+            Partition::Full => 0,
             Partition::Bitmap(partition) => partition.encoded_size(),
             Partition::Vec(partition) => partition.encoded_size(),
             Partition::Run(partition) => partition.encoded_size(),
             Partition::Tree(partition) => partition.encoded_size(),
-        }
+        };
+        // +1 for PartitionKind
+        inner_size + 1
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
         match self {
-            Partition::Full => encoder.put_full_container(),
+            Partition::Full => encoder.put_full_partition(),
             Partition::Bitmap(partition) => partition.encode(encoder),
             Partition::Vec(partition) => partition.encode(encoder),
             Partition::Run(partition) => partition.encode(encoder),
@@ -262,6 +264,26 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Tree(p) => Iter::Tree(p.iter()),
         }
     }
+
+    fn rank(&self, value: L::Value) -> usize {
+        match self {
+            Partition::Full => value.as_() + 1,
+            Partition::Bitmap(p) => p.rank(value),
+            Partition::Vec(p) => p.rank(value),
+            Partition::Run(p) => p.rank(value),
+            Partition::Tree(p) => p.rank(value),
+        }
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        match self {
+            Partition::Full => Some(L::Value::truncate_from(idx)),
+            Partition::Bitmap(p) => p.select(idx),
+            Partition::Vec(p) => p.select(idx),
+            Partition::Run(p) => p.select(idx),
+            Partition::Tree(p) => p.select(idx),
+        }
+    }
 }
 
 impl<L: Level> PartitionWrite<L> for Partition<L> {
@@ -290,32 +312,4 @@ impl<L: Level> FromIterator<L::Value> for Partition<L> {
     }
 }
 
-enum Iter<FI, BI, VI, RI, TI> {
-    Full(FI),
-    Bitmap(BI),
-    Vec(VI),
-    Run(RI),
-    Tree(TI),
-}
-
-impl<
-    T,
-    FI: Iterator<Item = T>,
-    BI: Iterator<Item = T>,
-    VI: Iterator<Item = T>,
-    RI: Iterator<Item = T>,
-    TI: Iterator<Item = T>,
-> Iterator for Iter<FI, BI, VI, RI, TI>
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Iter::Full(iter) => iter.next(),
-            Iter::Bitmap(iter) => iter.next(),
-            Iter::Vec(iter) => iter.next(),
-            Iter::Run(iter) => iter.next(),
-            Iter::Tree(iter) => iter.next(),
-        }
-    }
-}
+MultiIter!(Iter, Full, Bitmap, Vec, Run, Tree);

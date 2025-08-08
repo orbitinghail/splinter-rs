@@ -1,7 +1,7 @@
 use std::{fmt::Debug, ops::RangeInclusive};
 
 use bytes::BufMut;
-use itertools::Itertools;
+use itertools::{FoldWhile, Itertools};
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
 use rangemap::{RangeInclusiveSet, StepFns};
 
@@ -11,7 +11,7 @@ use crate::splinterv2::{
     count::count_unique_sorted,
     level::Level,
     segment::SplitSegment,
-    traits::PartitionRead,
+    traits::{PartitionRead, TruncateFrom},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,69 @@ impl<T: PrimInt + ConstOne> StepFns<T> for NumStep {
     fn sub_one(start: &T) -> T {
         *start - T::ONE
     }
+}
+
+pub(crate) trait Run<L: Level> {
+    fn len(&self) -> usize;
+    fn rank(&self, v: L::Value) -> usize;
+    fn select(&self, idx: usize) -> Option<L::Value>;
+    fn last(&self) -> L::Value;
+}
+
+impl<L: Level> Run<L> for &RangeInclusive<L::Value> {
+    #[inline]
+    fn len(&self) -> usize {
+        (*self.end() - *self.start() + L::Value::ONE).as_()
+    }
+
+    #[inline]
+    fn rank(&self, v: L::Value) -> usize {
+        (v.min(*self.end()) - *self.start() + L::Value::ONE).as_()
+    }
+
+    #[inline]
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        let n = *self.start() + L::Value::truncate_from(idx);
+        (n <= *self.end()).then_some(n)
+    }
+
+    #[inline]
+    fn last(&self) -> L::Value {
+        *self.end()
+    }
+}
+
+pub(crate) fn run_rank<L, I, R>(iter: I, value: L::Value) -> usize
+where
+    L: Level,
+    I: IntoIterator<Item = R>,
+    R: Run<L>,
+{
+    iter.into_iter()
+        .fold_while(0, |acc, run| {
+            if value <= run.last() {
+                FoldWhile::Continue(acc + run.rank(value))
+            } else {
+                return FoldWhile::Done(acc);
+            }
+        })
+        .into_inner()
+}
+
+pub(crate) fn run_select<L, I, R>(iter: I, mut n: usize) -> Option<L::Value>
+where
+    L: Level,
+    I: IntoIterator<Item = R>,
+    R: Run<L>,
+{
+    for run in iter.into_iter() {
+        let len = run.len();
+        if n < len {
+            return run.select(n);
+        }
+        n -= len;
+    }
+    None
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -108,16 +171,17 @@ impl<L: Level> Encodable for RunPartition<L> {
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        encoder.put_run_container::<L>(self.runs.iter());
+        if self.is_empty() {
+            encoder.put_empty_partition();
+        } else {
+            encoder.put_run_partition::<L>(self.runs.iter());
+        }
     }
 }
 
 impl<L: Level> PartitionRead<L> for RunPartition<L> {
     fn cardinality(&self) -> usize {
-        self.runs
-            .iter()
-            .map(|run| (*run.end() - *run.start() + L::Value::ONE).as_())
-            .sum()
+        self.runs.iter().map(|run| Run::<L>::len(&run)).sum()
     }
 
     fn is_empty(&self) -> bool {
@@ -128,8 +192,16 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
         self.runs.contains(&value)
     }
 
-    fn iter(&self) -> impl Iterator<Item = <L as Level>::Value> {
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.runs.iter().flat_map(RunIter::from)
+    }
+
+    fn rank(&self, value: <L as Level>::Value) -> usize {
+        run_rank::<L, _, _>(self.runs.iter(), value)
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        run_select::<L, _, _>(self.runs.iter(), idx)
     }
 }
 
@@ -146,9 +218,15 @@ impl<L: Level> PartitionWrite<L> for RunPartition<L> {
     }
 }
 
-struct RunIter<T> {
+pub(crate) struct RunIter<T> {
     start: T,
     end: T,
+}
+
+impl<T> RunIter<T> {
+    pub fn new(start: T, end: T) -> Self {
+        Self { start, end }
+    }
 }
 
 impl<T: Copy> From<&RangeInclusive<T>> for RunIter<T> {

@@ -14,6 +14,15 @@ pub trait PartitionRead<L: Level> {
 
     /// returns an iterator over all values in this partition
     fn iter(&self) -> impl Iterator<Item = L::Value>;
+
+    /// returns the number of values contained in this partition up to and
+    /// including the value.
+    /// inverse of `Self::select`
+    fn rank(&self, value: L::Value) -> usize;
+
+    /// returns the value at position `idx`.
+    /// inverse of `Self::rank`
+    fn select(&self, idx: usize) -> Option<L::Value>;
 }
 
 pub trait PartitionWrite<L: Level> {

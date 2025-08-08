@@ -64,7 +64,11 @@ impl<L: Level> Encodable for BitmapPartition<L> {
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        encoder.put_bitmap_container(&self.bitmap);
+        if self.is_empty() {
+            encoder.put_empty_partition();
+        } else {
+            encoder.put_bitmap_partition(&self.bitmap);
+        }
     }
 }
 
@@ -96,6 +100,18 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.bitmap.iter_ones().map(L::Value::truncate_from)
+    }
+
+    fn rank(&self, value: <L as Level>::Value) -> usize {
+        let prefix = self.bitmap.get(0..=value.as_());
+        prefix.unwrap().count_ones()
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        self.bitmap
+            .iter_ones()
+            .nth(idx)
+            .map(L::Value::truncate_from)
     }
 }
 

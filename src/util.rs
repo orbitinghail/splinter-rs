@@ -24,3 +24,25 @@ pub trait SerializeContainer {
     /// Returns the serialized size of the container.
     fn serialized_size(&self) -> usize;
 }
+
+#[macro_export]
+macro_rules! MultiIter {
+    ($type:ident, $($name:ident),+) => {
+        pub(crate) enum $type<$($name),+> {
+            $($name($name)),+
+        }
+
+        impl<
+            T, $($name: Iterator<Item=T>),+
+        > Iterator for $type<$($name),+>
+        {
+            type Item = T;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    $(Self::$name(iter) => iter.next(),)+
+                }
+            }
+        }
+    };
+}
