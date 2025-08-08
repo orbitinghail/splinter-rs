@@ -51,6 +51,14 @@ impl<L: Level> PartitionRead<L> for Never {
         #[allow(unreachable_code)]
         std::iter::empty()
     }
+
+    fn rank(&self, _value: L::Value) -> usize {
+        unreachable!("Never::rank")
+    }
+
+    fn select(&self, _idx: usize) -> Option<L::Value> {
+        unreachable!("Never::select")
+    }
 }
 
 impl Optimizable for Never {

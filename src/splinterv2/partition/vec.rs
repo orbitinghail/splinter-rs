@@ -50,10 +50,6 @@ impl<L: Level> VecPartition<L> {
         let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
         unique_segments as f64 / self.cardinality() as f64
     }
-
-    pub(crate) fn values(&self) -> &[L::Value] {
-        &self.values
-    }
 }
 
 impl<L: Level> FromIterator<L::Value> for VecPartition<L> {
@@ -71,7 +67,11 @@ impl<L: Level> Encodable for VecPartition<L> {
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        encoder.put_vec_container::<L>(&self.values);
+        if self.is_empty() {
+            encoder.put_empty_partition();
+        } else {
+            encoder.put_vec_partition::<L>(&self.values);
+        }
     }
 }
 
@@ -92,6 +92,17 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.values.iter().copied()
+    }
+
+    fn rank(&self, value: L::Value) -> usize {
+        match self.values.binary_search(&value) {
+            Ok(index) => index + 1,
+            Err(index) => index,
+        }
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        self.values.get(idx).copied()
     }
 }
 

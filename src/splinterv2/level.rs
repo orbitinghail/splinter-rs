@@ -38,7 +38,8 @@ pub trait Level: Sized {
         + ConstZero
         + ConstOne
         + Debug
-        + Display;
+        + Display
+        + Copy;
 
     type ValueUnaligned: IntoBytes
         + FromBytes
@@ -47,8 +48,10 @@ pub trait Level: Sized {
         + KnownLayout
         + Into<Self::Value>
         + From<Self::Value>
+        + Ord
         + Debug
-        + Display;
+        + Display
+        + Copy;
 
     const BITS: usize;
     const MAX_LEN: usize = 1 << Self::BITS;

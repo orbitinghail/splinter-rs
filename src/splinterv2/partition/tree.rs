@@ -4,15 +4,14 @@ use std::{
 };
 
 use bytes::BufMut;
+use itertools::{FoldWhile, Itertools};
 
 use crate::splinterv2::{
-    Partition,
-    codec::{Encodable, encoder::Encoder},
+    codec::{Encodable, encoder::Encoder, tree_ref::TreeIndexBuilder},
     count::count_runs_sorted,
-    level::{Block, Level},
-    partition::{bitmap::BitmapPartition, vec::VecPartition},
+    level::Level,
     segment::{Segment, SplitSegment},
-    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -41,47 +40,22 @@ impl<L: Level> TreePartition<L> {
 
 impl<L: Level> Encodable for TreePartition<L> {
     fn encoded_size(&self) -> usize {
-        let index = {
-            if self.children.len() == 256 {
-                0
-            } else {
-                let vec_size = VecPartition::<Block>::encoded_size(self.children.len());
-                let bitmap_size = BitmapPartition::<Block>::ENCODED_SIZE;
-                vec_size.min(bitmap_size)
-            }
-        };
-        let offsets = self.children.len() * std::mem::size_of::<L::ValueUnaligned>();
+        let index_size = TreeIndexBuilder::<L>::encoded_size(self.children.len());
         let values: usize = self.children.values().map(|c| c.encoded_size()).sum();
-        index + offsets + values
+        index_size + values
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        let num_children = self.children.len();
-
-        let mut segments = {
-            if num_children == 256 {
-                Partition::<Block>::Full
-            } else {
-                let as_vec = VecPartition::<Block>::encoded_size(num_children);
-                let as_bmp = BitmapPartition::<Block>::ENCODED_SIZE;
-                if as_vec <= as_bmp {
-                    Partition::<Block>::Vec(Default::default())
-                } else {
-                    Partition::<Block>::Bitmap(Default::default())
-                }
+        if self.is_empty() {
+            encoder.put_empty_partition();
+        } else {
+            let mut index = TreeIndexBuilder::<L>::new(self.children.len());
+            for (&segment, child) in self.children.iter() {
+                child.encode(encoder);
+                index.push(segment, encoder.bytes_written());
             }
-        };
-        let mut offsets = Vec::with_capacity(num_children);
-
-        for (segment, child) in self.children.iter() {
-            child.encode(encoder);
-            let offset = L::Value::truncate_from(encoder.bytes_written());
-            let offset: L::ValueUnaligned = offset.into();
-            offsets.push(offset);
-            segments.insert(*segment);
+            encoder.put_tree_index(index);
         }
-
-        encoder.put_tree_container::<L>(segments, offsets);
     }
 }
 
@@ -134,6 +108,31 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
                 .iter()
                 .map(move |value| L::Value::unsplit(segment, value))
         })
+    }
+
+    fn rank(&self, value: <L as Level>::Value) -> usize {
+        let (segment, value) = value.split();
+        self.children
+            .iter()
+            .fold_while(0, move |acc, (&child_segment, child)| {
+                if child_segment <= segment {
+                    FoldWhile::Continue(acc + child.rank(value))
+                } else {
+                    FoldWhile::Done(acc)
+                }
+            })
+            .into_inner()
+    }
+
+    fn select(&self, mut n: usize) -> Option<L::Value> {
+        for (&segment, child) in self.children.iter() {
+            let len = child.cardinality();
+            if n < len {
+                return child.select(n).map(|v| L::Value::unsplit(segment, v));
+            }
+            n -= len;
+        }
+        None
     }
 }
 

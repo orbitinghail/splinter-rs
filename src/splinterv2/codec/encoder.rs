@@ -5,9 +5,10 @@ use bytes::BufMut;
 use zerocopy::{IntoBytes, transmute_ref};
 
 use crate::splinterv2::{
-    Partition,
-    codec::container::{ContainerKind, EncodedRun},
+    Partition, PartitionRead,
+    codec::{partition_ref::EncodedRun, tree_ref::TreeIndexBuilder},
     level::{Block, Level},
+    partition::PartitionKind,
     traits::TruncateFrom,
 };
 
@@ -33,26 +34,31 @@ impl<B: BufMut> Encoder<B> {
         self.start_offset - self.buf.remaining_mut()
     }
 
-    /// Encode a completely Full container into the buffer.
-    pub fn put_full_container(&mut self) {
-        self.buf.put_u8(ContainerKind::Full as u8);
+    /// Encode a completely Empty partition into the buffer.
+    pub fn put_empty_partition(&mut self) {
+        self.buf.put_u8(PartitionKind::Empty as u8);
     }
 
-    /// Encode a Bitmap container into the buffer.
-    pub fn put_bitmap_container(&mut self, bitmap: &BitBox<u64, Lsb0>) {
+    /// Encode a completely Full partition into the buffer.
+    pub fn put_full_partition(&mut self) {
+        self.buf.put_u8(PartitionKind::Full as u8);
+    }
+
+    /// Encode a Bitmap partition into the buffer.
+    pub fn put_bitmap_partition(&mut self, bitmap: &BitBox<u64, Lsb0>) {
         self.put_bitmap_raw(bitmap);
-        self.buf.put_u8(ContainerKind::Bitmap as u8);
+        self.buf.put_u8(PartitionKind::Bitmap as u8);
     }
 
-    /// Encode a Vec container into the buffer.
-    pub fn put_vec_container<L: Level>(&mut self, values: &[L::Value]) {
-        self.put_vec_raw::<L>(values);
+    /// Encode a Vec partition into the buffer.
+    pub fn put_vec_partition<L: Level>(&mut self, values: &[L::Value]) {
+        self.put_iter::<L>(values.iter().copied());
         self.put_length::<L>(values.len());
-        self.buf.put_u8(ContainerKind::Vec as u8);
+        self.buf.put_u8(PartitionKind::Vec as u8);
     }
 
-    /// Encode a Run container into the buffer.
-    pub fn put_run_container<'a, L: Level>(
+    /// Encode a Run partition into the buffer.
+    pub fn put_run_partition<'a, L: Level>(
         &mut self,
         runs: impl Iterator<Item = &'a RangeInclusive<L::Value>>,
     ) {
@@ -63,24 +69,22 @@ impl<B: BufMut> Encoder<B> {
             num_runs += 1;
         }
         self.put_length::<L>(num_runs);
-        self.buf.put_u8(ContainerKind::Run as u8);
+        self.buf.put_u8(PartitionKind::Run as u8);
     }
 
-    /// Encode a Tree container into the buffer.
-    pub fn put_tree_container<L: Level>(
-        &mut self,
-        segments: Partition<Block>,
-        offsets: Vec<L::ValueUnaligned>,
-    ) {
+    /// Encode a Tree partition into the buffer.
+    pub fn put_tree_index<L: Level>(&mut self, tree_index_builder: TreeIndexBuilder<L>) {
+        let (num_children, segments, offsets) = tree_index_builder.build();
         match segments {
             Partition::Full => {}
             Partition::Bitmap(p) => self.put_bitmap_raw(p.as_bitbox()),
-            Partition::Vec(p) => self.put_vec_raw::<Block>(p.values()),
+            Partition::Vec(p) => self.put_iter::<Block>(p.iter()),
             Partition::Run(_) | Partition::Tree(_) => unreachable!(),
         }
-        self.buf.put_slice(offsets.as_bytes());
-        self.put_length::<L>(offsets.len());
-        self.buf.put_u8(ContainerKind::Tree as u8);
+
+        self.put_iter::<L>(offsets);
+        self.put_length::<L>(num_children);
+        self.buf.put_u8(PartitionKind::Tree as u8);
     }
 
     #[inline]
@@ -102,9 +106,9 @@ impl<B: BufMut> Encoder<B> {
         self.buf.put_slice(raw.as_bytes());
     }
 
-    pub fn put_vec_raw<L: Level>(&mut self, values: &[L::Value]) {
+    pub fn put_iter<L: Level>(&mut self, values: impl Iterator<Item = L::Value>) {
         for value in values {
-            self.put_value::<L>(*value);
+            self.put_value::<L>(value);
         }
     }
 }
