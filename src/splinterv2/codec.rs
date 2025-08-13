@@ -74,7 +74,6 @@ mod tests {
     fn test_encode_decode() {
         // NOTES:
         //
-        // - implement PartitionRead for Container
         // - write round trip test for many different partition types
 
         // struct T {
