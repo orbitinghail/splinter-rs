@@ -76,7 +76,7 @@ pub(super) fn decode_len<L: Level>(data: &[u8]) -> Result<(&[u8], usize), Decode
     Ok((data, len.into().as_() + 1))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum NonRecursivePartitionRef<'a, L: Level> {
     Empty,
     Full,
@@ -189,7 +189,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum PartitionRef<'a, L: Level> {
     NonRecursive(NonRecursivePartitionRef<'a, L>),
     Tree(TreeRef<'a, L>),
@@ -256,3 +256,32 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
 }
 
 MultiIter!(Iter, Empty, Full, Bitmap, Vec, Run);
+
+impl<'a, L: Level> IntoIterator for NonRecursivePartitionRef<'a, L> {
+    type Item = L::Value;
+
+    type IntoIter = Box<dyn Iterator<Item = L::Value> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Self::Empty => Box::new(std::iter::empty()),
+            Self::Full => Box::new((0..L::MAX_LEN).map(L::Value::truncate_from)),
+            Self::Bitmap { bitmap } => Box::new(bitmap.iter_ones().map(L::Value::truncate_from)),
+            Self::Vec { values } => Box::new(values.iter().map(|&v| v.into())),
+            Self::Run { runs } => Box::new(runs.iter().flat_map(|run| run.iter())),
+        }
+    }
+}
+
+impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
+    type Item = L::Value;
+
+    type IntoIter = Box<dyn Iterator<Item = L::Value> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Self::NonRecursive(p) => p.into_iter(),
+            Self::Tree(tree_ref) => tree_ref.into_iter(),
+        }
+    }
+}

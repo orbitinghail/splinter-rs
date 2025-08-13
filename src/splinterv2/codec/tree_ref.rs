@@ -1,3 +1,4 @@
+use itertools::{FoldWhile, Itertools};
 use num::traits::AsPrimitive;
 use std::marker::PhantomData;
 
@@ -13,7 +14,7 @@ use crate::splinterv2::{
     traits::TruncateFrom,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TreeRef<'a, L: Level> {
     num_children: usize,
     segments: NonRecursivePartitionRef<'a, Block>,
@@ -78,36 +79,61 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        /*
-        Checkpoint!
-
-        Ok so the issue with returning an iterator here is the need to hold
-        onto a ref to the child as well as a ref to the child's iterator state.
-        However, since child.iter() returns impl Iterator, constructing a
-        concrete Iter here is tricky.
-
-        Some ideas:
-        1. just try harder! maybe after a break I'll figure out a way to express this
-        2. use Box<dyn Iterator>, or some similar dyn reference.
-            -> issue with this is a lot of nested allocations and vtable chasing
-            when iterating a full tree. it should be possible to get this all on
-            the stack...
-        3. switch from iter to a visitor pattern
-
-        Keep in mind that we also need to eventually implement iter_range as
-        well as the various bitwise ops like union, cut, etc.
-        */
-
-        todo!();
-        std::iter::empty()
+        self.segments.iter().enumerate().flat_map(|(idx, segment)| {
+            let iter = self.load_child(idx).into_iter();
+            iter.map(move |v| L::Value::unsplit(segment, v))
+        })
     }
 
     fn rank(&self, value: <L as Level>::Value) -> usize {
-        todo!()
+        let (segment, value) = value.split();
+        self.segments
+            .iter()
+            .enumerate()
+            .fold_while(0, |acc, (idx, child_segment)| {
+                if child_segment <= segment {
+                    let child = self.load_child(idx);
+                    FoldWhile::Continue(acc + child.rank(value))
+                } else {
+                    FoldWhile::Done(acc)
+                }
+            })
+            .into_inner()
     }
 
-    fn select(&self, idx: usize) -> Option<L::Value> {
-        todo!()
+    fn select(&self, mut n: usize) -> Option<L::Value> {
+        let iter = self
+            .segments
+            .iter()
+            .enumerate()
+            .map(|(idx, segment)| (segment, self.load_child(idx)));
+        for (segment, child) in iter {
+            let len = child.cardinality();
+            if n < len {
+                return child.select(n).map(|v| L::Value::unsplit(segment, v));
+            }
+            n -= len;
+        }
+        None
+    }
+}
+
+impl<'a, L: Level + 'a> IntoIterator for TreeRef<'a, L> {
+    type Item = L::Value;
+
+    type IntoIter = Box<dyn Iterator<Item = L::Value> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(
+            self.segments
+                .clone()
+                .into_iter()
+                .enumerate()
+                .flat_map(move |(idx, segment)| {
+                    let iter = self.load_child(idx).into_iter();
+                    iter.map(move |v| L::Value::unsplit(segment, v))
+                }),
+        )
     }
 }
 
@@ -169,37 +195,3 @@ impl<L: Level> TreeIndexBuilder<L> {
         (num_children, self.segments, offsets)
     }
 }
-
-// struct Iter<'a, L: Level> {
-//     inner: &'a TreeRef<'a, L>,
-//     cursor: usize,
-//     child: Option<(Segment, PartitionRef<'a, L::LevelDown>)>,
-// }
-
-// impl<'a, L> Iterator for Iter<'a, L>
-// where
-//     L: Level,
-//     I: Iterator<Item = <L::LevelDown as Level>::Value>,
-// {
-//     type Item = L::Value;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.cursor >= self.inner.num_children {
-//             return None;
-//         }
-
-//         if let Some((segment, child)) = &mut self.child {
-//             if let Some(next) = child.next() {
-//                 return Some(L::Value::unsplit(*segment, next));
-//             }
-//         }
-
-//         // get next child
-//         let segment = self.inner.segments.select(self.cursor).unwrap();
-//         let child = self.inner.load_child(self.cursor);
-//         self.cursor += 1;
-//         let next = child.next().map(|n| L::Value::unsplit(segment, n));
-//         self.child = Some((segment, child));
-//         next
-//     }
-// }

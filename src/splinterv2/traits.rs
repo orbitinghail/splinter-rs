@@ -16,12 +16,10 @@ pub trait PartitionRead<L: Level> {
     fn iter(&self) -> impl Iterator<Item = L::Value>;
 
     /// returns the number of values contained in this partition up to and
-    /// including the value.
-    /// inverse of `Self::select`
+    /// including the value. inverse of `Self::select`.
     fn rank(&self, value: L::Value) -> usize;
 
-    /// returns the value at position `idx`.
-    /// inverse of `Self::rank`
+    /// returns the value at position `idx`. inverse of `Self::rank`.
     fn select(&self, idx: usize) -> Option<L::Value>;
 }
 
