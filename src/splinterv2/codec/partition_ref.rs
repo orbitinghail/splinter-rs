@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use either::Either;
-use num::traits::{AsPrimitive, Bounded, ConstOne};
+use num::traits::{AsPrimitive, Bounded};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{
@@ -32,7 +32,7 @@ pub(crate) struct EncodedRun<L: Level> {
 
 impl<L: Level> EncodedRun<L> {
     pub fn len(&self) -> usize {
-        (self.end.into() - self.start.into() + L::Value::ONE).as_()
+        self.end.into().as_() - self.start.into().as_() + 1
     }
 
     pub fn contains(&self, value: L::ValueUnaligned) -> bool {
@@ -53,12 +53,13 @@ impl<L: Level> From<&RangeInclusive<L::Value>> for EncodedRun<L> {
 }
 
 impl<L: Level> Run<L> for &EncodedRun<L> {
+    #[inline]
     fn len(&self) -> usize {
         EncodedRun::len(self)
     }
 
     fn rank(&self, v: L::Value) -> usize {
-        (v.min(self.end.into()) - self.start.into() + L::Value::ONE).as_()
+        v.min(self.end.into()).as_() - self.start.into().as_() + 1
     }
 
     fn select(&self, idx: usize) -> Option<L::Value> {
@@ -66,6 +67,12 @@ impl<L: Level> Run<L> for &EncodedRun<L> {
         (n <= self.end.into()).then_some(n)
     }
 
+    #[inline]
+    fn first(&self) -> L::Value {
+        self.start.into()
+    }
+
+    #[inline]
     fn last(&self) -> L::Value {
         self.end.into()
     }
