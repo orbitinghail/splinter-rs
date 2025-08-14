@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::RangeInclusive};
+use std::{fmt::Debug, mem::size_of, ops::RangeInclusive};
 
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
@@ -105,8 +105,9 @@ pub struct RunPartition<L: Level> {
 impl<L: Level> RunPartition<L> {
     #[inline]
     pub const fn encoded_size(runs: usize) -> usize {
-        let val_size = std::mem::size_of::<L::ValueUnaligned>();
-        runs * (val_size * 2)
+        let vsize = size_of::<L::ValueUnaligned>();
+        // runs + len
+        (runs * vsize * 2) + vsize
     }
 
     /// Construct an `RunPartition` from a sorted iter of unique values
@@ -179,11 +180,7 @@ impl<L: Level> Encodable for RunPartition<L> {
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        if self.is_empty() {
-            encoder.put_empty_partition();
-        } else {
-            encoder.put_run_partition::<L>(self.runs.iter());
-        }
+        encoder.put_run_partition::<L>(self.runs.iter());
     }
 }
 

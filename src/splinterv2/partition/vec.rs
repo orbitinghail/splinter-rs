@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, mem::size_of};
 
 use bytes::BufMut;
 use itertools::Itertools;
@@ -32,7 +32,9 @@ impl<L: Level> Debug for VecPartition<L> {
 impl<L: Level> VecPartition<L> {
     #[inline(always)]
     pub const fn encoded_size(cardinality: usize) -> usize {
-        cardinality * std::mem::size_of::<L::ValueUnaligned>()
+        // values + length
+        let vsize = size_of::<L::ValueUnaligned>();
+        (cardinality * vsize) + vsize
     }
 
     /// Construct an `VecPartition` from a sorted iter of unique values
@@ -67,11 +69,7 @@ impl<L: Level> Encodable for VecPartition<L> {
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        if self.is_empty() {
-            encoder.put_empty_partition();
-        } else {
-            encoder.put_vec_partition::<L>(&self.values);
-        }
+        encoder.put_vec_partition::<L>(&self.values);
     }
 }
 

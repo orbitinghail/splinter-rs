@@ -1,6 +1,6 @@
 use itertools::{FoldWhile, Itertools};
 use num::traits::AsPrimitive;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::size_of};
 use zerocopy::FromBytes;
 
 use crate::splinterv2::{
@@ -10,7 +10,7 @@ use crate::splinterv2::{
         partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len},
     },
     level::{Block, Level},
-    partition::{PartitionKind, bitmap::BitmapPartition, vec::VecPartition},
+    partition::{PartitionKind, bitmap::BitmapPartition},
     segment::{Segment, SplitSegment},
     traits::TruncateFrom,
 };
@@ -173,12 +173,12 @@ impl<L: Level> TreeIndexBuilder<L> {
     pub const fn encoded_size(num_children: usize) -> usize {
         let (segments_size, _) = Self::pick_segments_store(num_children);
         let offsets_size = Self::offsets_size(num_children);
-        // +1 for num_children
-        1 + segments_size + offsets_size
+        // offsets + segments + num_children
+        offsets_size + segments_size + 1
     }
 
     const fn offsets_size(num_children: usize) -> usize {
-        num_children * std::mem::size_of::<L::ValueUnaligned>()
+        num_children * size_of::<L::ValueUnaligned>()
     }
 
     /// Calculate the encoded size and partition kind for the segments store
@@ -186,10 +186,9 @@ impl<L: Level> TreeIndexBuilder<L> {
         if num_children == Block::MAX_LEN {
             (0, PartitionKind::Full)
         } else {
-            let as_vec = VecPartition::<Block>::encoded_size(num_children);
             let as_bmp = BitmapPartition::<Block>::ENCODED_SIZE;
-            if as_vec <= as_bmp {
-                (as_vec, PartitionKind::Vec)
+            if num_children <= as_bmp {
+                (num_children, PartitionKind::Vec)
             } else {
                 (as_bmp, PartitionKind::Bitmap)
             }

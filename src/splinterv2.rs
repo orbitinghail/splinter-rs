@@ -6,20 +6,164 @@ pub mod partition;
 pub mod segment;
 pub mod traits;
 
+use std::fmt::Debug;
+use std::ops::Deref;
+
+use bytes::Bytes;
+use zerocopy::FromBytes;
+
+use crate::splinterv2::codec::DecodeErr;
 pub use crate::splinterv2::codec::Encodable;
+use crate::splinterv2::codec::partition_ref::PartitionRef;
+use crate::splinterv2::codec::{encoder::Encoder, footer::Footer};
+use crate::splinterv2::level::High;
 pub use crate::splinterv2::partition::Partition;
+use crate::splinterv2::traits::Optimizable;
 pub use crate::splinterv2::traits::{PartitionRead, PartitionWrite};
 
-pub type SplinterV2 = Partition<level::High>;
+#[derive(Clone, PartialEq, Eq, Default, Debug)]
+pub struct SplinterV2(Partition<High>);
 
 static_assertions::const_assert_eq!(std::mem::size_of::<SplinterV2>(), 40);
+
+impl SplinterV2 {
+    pub fn encode_to_splinter_ref(&self) -> SplinterRefV2<Bytes> {
+        SplinterRefV2 { data: self.encode_to_bytes() }
+    }
+}
+
+impl FromIterator<u32> for SplinterV2 {
+    fn from_iter<I: IntoIterator<Item = u32>>(iter: I) -> Self {
+        Self(Partition::<High>::from_iter(iter))
+    }
+}
+
+impl PartitionRead<High> for SplinterV2 {
+    fn cardinality(&self) -> usize {
+        self.0.cardinality()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn contains(&self, value: u32) -> bool {
+        self.0.contains(value)
+    }
+
+    fn rank(&self, value: u32) -> usize {
+        self.0.rank(value)
+    }
+
+    fn select(&self, idx: usize) -> Option<u32> {
+        self.0.select(idx)
+    }
+
+    fn last(&self) -> Option<u32> {
+        self.0.last()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = u32> {
+        self.0.iter()
+    }
+}
+
+impl PartitionWrite<High> for SplinterV2 {
+    fn insert(&mut self, value: u32) -> bool {
+        self.0.insert(value)
+    }
+}
+
+impl Encodable for SplinterV2 {
+    fn encoded_size(&self) -> usize {
+        self.0.encoded_size() + std::mem::size_of::<Footer>()
+    }
+
+    fn encode<B: bytes::BufMut>(&self, encoder: &mut Encoder<B>) {
+        self.0.encode(encoder);
+        encoder.write_footer();
+    }
+}
+
+impl Optimizable for SplinterV2 {
+    fn optimize(&mut self) {
+        self.0.optimize();
+    }
+}
+
+pub struct SplinterRefV2<B> {
+    data: B,
+}
+
+impl<B: Deref<Target = [u8]>> Debug for SplinterRefV2<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SplinterRefV2")
+            .field(&self.load_unchecked())
+            .finish()
+    }
+}
+
+impl<B: Deref<Target = [u8]>> SplinterRefV2<B> {
+    pub fn from_bytes(data: B) -> Result<Self, DecodeErr> {
+        if data.len() < Footer::SIZE {
+            return Err(DecodeErr::Length);
+        }
+        let (partitions, footer) = data.split_at(data.len() - Footer::SIZE);
+        Footer::ref_from_bytes(footer)?.validate(partitions)?;
+        PartitionRef::<High>::from_suffix(partitions)?;
+        Ok(Self { data })
+    }
+
+    pub fn inner(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn into_inner(self) -> B {
+        self.data
+    }
+
+    fn load_unchecked(&self) -> PartitionRef<'_, High> {
+        let without_footer = &self.data[..(self.data.len() - Footer::SIZE)];
+        PartitionRef::from_suffix(without_footer).unwrap()
+    }
+}
+
+impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRefV2<B> {
+    fn cardinality(&self) -> usize {
+        self.load_unchecked().cardinality()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.load_unchecked().is_empty()
+    }
+
+    fn contains(&self, value: u32) -> bool {
+        self.load_unchecked().contains(value)
+    }
+
+    fn rank(&self, value: u32) -> usize {
+        self.load_unchecked().rank(value)
+    }
+
+    fn select(&self, idx: usize) -> Option<u32> {
+        self.load_unchecked().select(idx)
+    }
+
+    fn last(&self) -> Option<u32> {
+        self.load_unchecked().last()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = u32> {
+        self.load_unchecked().into_iter()
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         splinterv2::{codec::Encodable, traits::Optimizable},
-        testutil::SetGen,
+        testutil::{SetGen, analyze_compression_patterns},
     };
     use roaring::RoaringBitmap;
 
@@ -76,6 +220,9 @@ mod tests {
             //        (actual, expected)
             splinter: (usize, usize),
             roaring: (usize, usize),
+
+            splinter_lz4: usize,
+            roaring_lz4: usize,
         }
 
         let mut reports = vec![];
@@ -85,26 +232,41 @@ mod tests {
                             expected_set_size: usize,
                             expected_splinter: usize,
                             expected_roaring: usize| {
+            println!("-------------------------------------");
             println!("running test: {name}");
 
             assert_eq!(set.len(), expected_set_size, "Set size mismatch");
 
-            let mut splinter = SplinterV2::from_iter(set.iter().copied());
+            let mut splinter = SplinterV2::from_iter(set.clone());
             splinter.optimize();
             itertools::assert_equal(splinter.iter(), set.iter().copied());
 
+            let splinter = splinter.encode_to_bytes();
             let roaring = to_roaring(set.iter().copied());
 
-            const SPLINTER_HEADER_SIZE: usize = 8;
+            analyze_compression_patterns(&splinter);
+
+            let splinter_lz4 = lz4::block::compress(&splinter, None, false).unwrap();
+            let roaring_lz4 = lz4::block::compress(&roaring, None, false).unwrap();
+
+            // verify round trip
+            assert_eq!(
+                splinter,
+                lz4::block::decompress(&splinter_lz4, Some(splinter.len() as i32)).unwrap()
+            );
+            assert_eq!(
+                roaring,
+                lz4::block::decompress(&roaring_lz4, Some(roaring.len() as i32)).unwrap()
+            );
 
             reports.push(Report {
                 name,
                 baseline: set.len() * std::mem::size_of::<u32>(),
-                splinter: (
-                    splinter.encoded_size() + SPLINTER_HEADER_SIZE,
-                    expected_splinter,
-                ),
+                splinter: (splinter.len(), expected_splinter),
                 roaring: (roaring.len(), expected_roaring),
+
+                splinter_lz4: splinter_lz4.len(),
+                roaring_lz4: roaring_lz4.len(),
             });
         };
 
@@ -259,6 +421,34 @@ mod tests {
                     "ok"
                 }
             );
+            let diff = report.splinter_lz4 as f64 / report.splinter.0 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Splinter LZ4",
+                report.splinter_lz4,
+                report.splinter_lz4,
+                diff,
+                if report.splinter.0 <= report.splinter_lz4 {
+                    ">"
+                } else {
+                    "<"
+                }
+            );
+            let diff = report.roaring_lz4 as f64 / report.splinter_lz4 as f64;
+            println!(
+                "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
+                "",
+                "Roaring LZ4",
+                report.roaring_lz4,
+                report.roaring_lz4,
+                diff,
+                if report.splinter_lz4 <= report.roaring_lz4 {
+                    "ok"
+                } else {
+                    "<"
+                }
+            );
             let diff = report.baseline as f64 / report.splinter.0 as f64;
             println!(
                 "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
@@ -275,6 +465,15 @@ mod tests {
                 }
             );
         }
+
+        // calculate average compression ratio (splinter_lz4 / splinter)
+        let avg_ratio = reports
+            .iter()
+            .map(|r| r.splinter_lz4 as f64 / r.splinter.0 as f64)
+            .sum::<f64>()
+            / reports.len() as f64;
+
+        println!("average compression ratio (splinter_lz4 / splinter): {avg_ratio:.2}");
 
         assert!(!fail_test, "compression test failed");
     }
