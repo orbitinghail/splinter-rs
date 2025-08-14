@@ -42,20 +42,17 @@ impl<L: Level> Encodable for TreePartition<L> {
     fn encoded_size(&self) -> usize {
         let index_size = TreeIndexBuilder::<L>::encoded_size(self.children.len());
         let values: usize = self.children.values().map(|c| c.encoded_size()).sum();
-        index_size + values
+        // values + index
+        values + index_size
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        if self.is_empty() {
-            encoder.put_empty_partition();
-        } else {
-            let mut index = TreeIndexBuilder::<L>::new(self.children.len());
-            for (&segment, child) in self.children.iter() {
-                child.encode(encoder);
-                index.push(segment, encoder.bytes_written());
-            }
-            encoder.put_tree_index(index);
+        let mut index = TreeIndexBuilder::<L>::new(self.children.len());
+        for (&segment, child) in self.children.iter() {
+            child.encode(encoder);
+            index.push(segment, encoder.bytes_written());
         }
+        encoder.put_tree_index(index);
     }
 }
 

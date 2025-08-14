@@ -14,69 +14,11 @@ use crate::{
         partition::{
             PartitionKind,
             bitmap::BitmapPartition,
-            run::{Run, RunIter, RunPartition, run_rank, run_select},
-            vec::VecPartition,
+            run::{Run, RunIter, run_rank, run_select},
         },
         traits::TruncateFrom,
     },
 };
-
-#[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable)]
-#[repr(C)]
-pub(crate) struct EncodedRun<L: Level> {
-    /// inclusive start
-    start: L::ValueUnaligned,
-    /// inclusive end
-    end: L::ValueUnaligned,
-}
-
-impl<L: Level> EncodedRun<L> {
-    pub fn len(&self) -> usize {
-        self.end.into().as_() - self.start.into().as_() + 1
-    }
-
-    pub fn contains(&self, value: L::ValueUnaligned) -> bool {
-        self.start <= value && value <= self.end
-    }
-
-    pub fn iter(&self) -> RunIter<L::Value> {
-        RunIter::new(self.start.into(), self.end.into())
-    }
-}
-
-impl<L: Level> From<&RangeInclusive<L::Value>> for EncodedRun<L> {
-    fn from(range: &RangeInclusive<L::Value>) -> Self {
-        let start = (*range.start()).into();
-        let end = (*range.end()).into();
-        EncodedRun { start, end }
-    }
-}
-
-impl<L: Level> Run<L> for &EncodedRun<L> {
-    #[inline]
-    fn len(&self) -> usize {
-        EncodedRun::len(self)
-    }
-
-    fn rank(&self, v: L::Value) -> usize {
-        v.min(self.end.into()).as_() - self.start.into().as_() + 1
-    }
-
-    fn select(&self, idx: usize) -> Option<L::Value> {
-        let n = self.start.into() + L::Value::truncate_from(idx);
-        (n <= self.end.into()).then_some(n)
-    }
-
-    #[inline]
-    fn first(&self) -> L::Value {
-        self.start.into()
-    }
-
-    #[inline]
-    fn last(&self) -> L::Value {
-        self.end.into()
-    }
-}
 
 pub(super) fn decode_len<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {
     let (data, len) = L::ValueUnaligned::try_read_from_suffix(data)?;
@@ -108,7 +50,7 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
             }
             PartitionKind::Vec => {
                 let (data, len) = decode_len::<L>(data)?;
-                let bytes = VecPartition::<L>::encoded_size(len);
+                let bytes = len * size_of::<L::ValueUnaligned>();
                 DecodeErr::ensure_bytes_available(data, bytes)?;
                 let range = (data.len() - bytes)..data.len();
                 Ok(Self::Vec {
@@ -117,7 +59,7 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
             }
             PartitionKind::Run => {
                 let (data, runs) = decode_len::<L>(data)?;
-                let bytes = RunPartition::<L>::encoded_size(runs);
+                let bytes = runs * size_of::<L::ValueUnaligned>() * 2;
                 DecodeErr::ensure_bytes_available(data, bytes)?;
                 let range = (data.len() - bytes)..data.len();
                 Ok(Self::Run {
@@ -161,7 +103,7 @@ impl<'a> NonRecursivePartitionRef<'a, Block> {
                 })
             }
             PartitionKind::Vec => {
-                let bytes = VecPartition::<Block>::encoded_size(num_children);
+                let bytes = num_children * size_of::<<Block as Level>::ValueUnaligned>();
                 DecodeErr::ensure_bytes_available(data, bytes)?;
                 let range = (data.len() - bytes)..data.len();
                 Ok(Self::Vec {
@@ -365,5 +307,62 @@ impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
             Self::NonRecursive(p) => p.into_iter(),
             Self::Tree(tree_ref) => tree_ref.into_iter(),
         }
+    }
+}
+
+#[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable)]
+#[repr(C)]
+pub(crate) struct EncodedRun<L: Level> {
+    /// inclusive start
+    start: L::ValueUnaligned,
+    /// inclusive end
+    end: L::ValueUnaligned,
+}
+
+impl<L: Level> EncodedRun<L> {
+    pub fn len(&self) -> usize {
+        self.end.into().as_() - self.start.into().as_() + 1
+    }
+
+    pub fn contains(&self, value: L::ValueUnaligned) -> bool {
+        self.start <= value && value <= self.end
+    }
+
+    pub fn iter(&self) -> RunIter<L::Value> {
+        RunIter::new(self.start.into(), self.end.into())
+    }
+}
+
+impl<L: Level> From<&RangeInclusive<L::Value>> for EncodedRun<L> {
+    fn from(range: &RangeInclusive<L::Value>) -> Self {
+        let start = (*range.start()).into();
+        let end = (*range.end()).into();
+        EncodedRun { start, end }
+    }
+}
+
+impl<L: Level> Run<L> for &EncodedRun<L> {
+    #[inline]
+    fn len(&self) -> usize {
+        EncodedRun::len(self)
+    }
+
+    fn rank(&self, v: L::Value) -> usize {
+        v.min(self.end.into()).as_() - self.start.into().as_() + 1
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        let n = self.start.into() + L::Value::truncate_from(idx);
+        (n <= self.end.into()).then_some(n)
+    }
+
+    #[inline]
+    fn first(&self) -> L::Value {
+        self.start.into()
+    }
+
+    #[inline]
+    fn last(&self) -> L::Value {
+        self.end.into()
     }
 }

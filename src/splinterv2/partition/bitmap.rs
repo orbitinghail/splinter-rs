@@ -64,11 +64,7 @@ impl<L: Level> Encodable for BitmapPartition<L> {
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        if self.is_empty() {
-            encoder.put_empty_partition();
-        } else {
-            encoder.put_bitmap_partition(&self.bitmap);
-        }
+        encoder.put_bitmap_partition(&self.bitmap);
     }
 }
 

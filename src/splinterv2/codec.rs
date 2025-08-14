@@ -13,13 +13,14 @@
 //! The other benefit of tail encoding is that we can encode directly into a
 //! socket/stream. We aren't currently taking advantage of this.
 
-use bytes::BufMut;
+use bytes::{BufMut, Bytes, BytesMut};
 use thiserror::Error;
-use zerocopy::ConvertError;
+use zerocopy::{ConvertError, SizeError};
 
 use crate::splinterv2::codec::encoder::Encoder;
 
 pub mod encoder;
+pub mod footer;
 pub mod partition_ref;
 pub mod tree_ref;
 
@@ -27,6 +28,13 @@ pub trait Encodable {
     fn encoded_size(&self) -> usize;
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>);
+
+    fn encode_to_bytes(&self) -> Bytes {
+        let size = self.encoded_size();
+        let mut encoder = Encoder::new(BytesMut::with_capacity(size));
+        self.encode(&mut encoder);
+        encoder.into_inner().freeze()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -36,6 +44,12 @@ pub enum DecodeErr {
 
     #[error("invalid encoding")]
     Validity,
+
+    #[error("unknown magic value")]
+    Magic,
+
+    #[error("invalid checksum")]
+    Checksum,
 }
 
 impl DecodeErr {
@@ -46,6 +60,12 @@ impl DecodeErr {
         } else {
             Ok(())
         }
+    }
+}
+
+impl<S, D> From<SizeError<S, D>> for DecodeErr {
+    fn from(_: SizeError<S, D>) -> Self {
+        DecodeErr::Length
     }
 }
 
@@ -61,18 +81,17 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 
 #[cfg(test)]
 mod tests {
-    use bytes::BytesMut;
     use itertools::Itertools;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
     use crate::{
         splinterv2::{
-            Encodable, SplinterV2,
-            codec::{encoder::Encoder, partition_ref::PartitionRef},
-            level::{High, Level, Low},
+            Encodable, SplinterRefV2, SplinterV2,
+            codec::partition_ref::PartitionRef,
+            level::{Level, Low},
             partition::PartitionKind,
-            traits::TruncateFrom,
+            traits::{Optimizable, TruncateFrom},
         },
         testutil::{SetGenV2, mkpartition, test_partition_read},
     };
@@ -107,9 +126,13 @@ mod tests {
                 println!("Testing partition kind: {kind:?} with set {i}");
 
                 let partition = mkpartition::<Low>(kind, &set);
-                let mut encoder = Encoder::new(BytesMut::default());
-                partition.encode(&mut encoder);
-                let buf = encoder.into_inner();
+                let buf = partition.encode_to_bytes();
+                assert_eq!(
+                    partition.encoded_size(),
+                    buf.len(),
+                    "encoded_size doesn't match actual size"
+                );
+
                 let partition_ref = PartitionRef::<'_, Low>::from_suffix(&buf).unwrap();
 
                 assert_eq!(partition_ref.kind(), kind);
@@ -121,11 +144,15 @@ mod tests {
     #[quickcheck]
     fn test_encode_decode_quickcheck(values: Vec<u32>) -> TestResult {
         let expected = values.iter().copied().sorted().dedup().collect_vec();
-        let splinter = SplinterV2::from_iter(values);
-        let mut encoder = Encoder::new(BytesMut::default());
-        splinter.encode(&mut encoder);
-        let buf = encoder.into_inner();
-        let splinter_ref = PartitionRef::<'_, High>::from_suffix(&buf).unwrap();
+        let mut splinter = SplinterV2::from_iter(values);
+        splinter.optimize();
+        let buf = splinter.encode_to_bytes();
+        assert_eq!(
+            buf.len(),
+            splinter.encoded_size(),
+            "encoded_size doesn't match actual size"
+        );
+        let splinter_ref = SplinterRefV2::from_bytes(buf).unwrap();
 
         test_partition_read(&splinter_ref, &expected);
 

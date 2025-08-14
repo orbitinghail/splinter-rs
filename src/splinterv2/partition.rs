@@ -207,24 +207,47 @@ impl<L: Level> Optimizable for Partition<L> {
 
 impl<L: Level> Encodable for Partition<L> {
     fn encoded_size(&self) -> usize {
-        let inner_size = match self {
-            Partition::Full => 0,
-            Partition::Bitmap(partition) => partition.encoded_size(),
-            Partition::Vec(partition) => partition.encoded_size(),
-            Partition::Run(partition) => partition.encoded_size(),
-            Partition::Tree(partition) => partition.encoded_size(),
-        };
-        // +1 for PartitionKind
-        inner_size + 1
+        if self.is_empty() {
+            // PartitionKind::Empty
+            1
+        } else {
+            let inner_size = match self {
+                Partition::Full => 0,
+                Partition::Bitmap(partition) => partition.encoded_size(),
+                Partition::Vec(partition) => partition.encoded_size(),
+                Partition::Run(partition) => partition.encoded_size(),
+                Partition::Tree(partition) => partition.encoded_size(),
+            };
+            // inner + PartitionKind
+            inner_size + 1
+        }
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        match self {
-            Partition::Full => encoder.put_full_partition(),
-            Partition::Bitmap(partition) => partition.encode(encoder),
-            Partition::Vec(partition) => partition.encode(encoder),
-            Partition::Run(partition) => partition.encode(encoder),
-            Partition::Tree(partition) => partition.encode(encoder),
+        if self.is_empty() {
+            encoder.put_kind(PartitionKind::Empty);
+        } else {
+            match self {
+                Partition::Full => {
+                    encoder.put_kind(PartitionKind::Full);
+                }
+                Partition::Bitmap(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Bitmap);
+                }
+                Partition::Vec(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Vec);
+                }
+                Partition::Run(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Run);
+                }
+                Partition::Tree(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Tree);
+                }
+            }
         }
     }
 }
