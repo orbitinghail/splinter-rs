@@ -81,6 +81,14 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        splinterv2::{
+            codec::footer::{Footer, SPLINTER_MAGIC},
+            level::Block,
+        },
+        testutil::{mkpartition_buf, mksplinterv2_buf, mksplinterv2_manual},
+    };
+    use assert_matches::assert_matches;
     use itertools::Itertools;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
@@ -88,7 +96,7 @@ mod tests {
     use crate::{
         splinterv2::{
             Encodable, SplinterRefV2, SplinterV2,
-            codec::partition_ref::PartitionRef,
+            codec::{DecodeErr, partition_ref::PartitionRef},
             level::{Level, Low},
             partition::PartitionKind,
             traits::{Optimizable, TruncateFrom},
@@ -157,5 +165,116 @@ mod tests {
         test_partition_read(&splinter_ref, &expected);
 
         TestResult::passed()
+    }
+
+    #[test]
+    fn test_length_corruption() {
+        for i in 0..Footer::SIZE {
+            let truncated = [0].repeat(i);
+            assert_matches!(
+                SplinterRefV2::from_bytes(truncated),
+                Err(DecodeErr::Length),
+                "Failed for truncated buffer of size {}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_corrupted_root_partition_kind() {
+        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+
+        // Buffer with just footer size but corrupted partition kind
+        let footer_offset = buf.len() - Footer::SIZE;
+        let partitions = &mut buf[0..footer_offset];
+        partitions[partitions.len() - 1] = 10;
+        let corrupted = mksplinterv2_manual(partitions);
+
+        assert_matches!(
+            SplinterRefV2::from_bytes(corrupted),
+            Err(DecodeErr::Validity)
+        );
+    }
+
+    #[test]
+    fn test_corrupted_magic() {
+        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+
+        let magic_offset = buf.len() - SPLINTER_MAGIC.len();
+        buf[magic_offset..].copy_from_slice(&[0].repeat(4));
+
+        assert_matches!(SplinterRefV2::from_bytes(buf), Err(DecodeErr::Magic));
+    }
+
+    #[test]
+    fn test_corrupted_data() {
+        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+        buf[0] = 123;
+        assert_matches!(SplinterRefV2::from_bytes(buf), Err(DecodeErr::Checksum));
+    }
+
+    #[test]
+    fn test_corrupted_checksum() {
+        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+        let checksum_offset = buf.len() - Footer::SIZE;
+        buf[checksum_offset] = 123;
+        assert_matches!(SplinterRefV2::from_bytes(buf), Err(DecodeErr::Checksum));
+    }
+
+    #[test]
+    fn test_corrupted_vec_partition() {
+        let mut buf = mkpartition_buf::<Block>(PartitionKind::Vec, &[1, 2, 3]);
+
+        //                            1     2     3   len  kind
+        assert_eq!(buf.as_ref(), &[0x01, 0x02, 0x03, 0x02, 0x03]);
+
+        // corrupt the length
+        buf[3] = 5;
+
+        assert_matches!(
+            PartitionRef::<Block>::from_suffix(&buf),
+            Err(DecodeErr::Length)
+        );
+    }
+
+    #[test]
+    fn test_corrupted_run_partition() {
+        let mut buf = mkpartition_buf::<Block>(PartitionKind::Run, &[1, 2, 3]);
+
+        //                            1     3   len  kind
+        assert_eq!(buf.as_ref(), &[0x01, 0x03, 0x00, 0x04]);
+
+        // corrupt the length
+        buf[2] = 5;
+
+        assert_matches!(
+            PartitionRef::<Block>::from_suffix(&buf),
+            Err(DecodeErr::Length)
+        );
+    }
+
+    #[test]
+    fn test_corrupted_tree_partition() {
+        let mut buf = mkpartition_buf::<Low>(PartitionKind::Tree, &[1, 2]);
+
+        assert_eq!(
+            buf.as_ref(),
+            &[
+                // Vec partition
+                // 1     2   len  kind
+                0x01, 0x02, 0x01, 0x03,
+                // Tree partition
+                // offsets (u16), segments, len, kind
+                0x00, 0x00, 0x00, 0x00, 0x05
+            ]
+        );
+
+        // corrupt the tree len
+        buf[7] = 5;
+
+        assert_matches!(
+            PartitionRef::<Block>::from_suffix(&buf),
+            Err(DecodeErr::Length)
+        );
     }
 }
