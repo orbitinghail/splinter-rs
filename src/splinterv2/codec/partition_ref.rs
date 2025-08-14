@@ -27,7 +27,8 @@ pub(super) fn decode_len<L: Level>(data: &[u8]) -> Result<(&[u8], usize), Decode
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum NonRecursivePartitionRef<'a, L: Level> {
+#[doc(hidden)]
+pub enum NonRecursivePartitionRef<'a, L: Level> {
     Empty,
     Full,
     Bitmap { bitmap: &'a BitSlice<u8, Lsb0> },
@@ -199,7 +200,8 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum PartitionRef<'a, L: Level> {
+#[doc(hidden)]
+pub enum PartitionRef<'a, L: Level> {
     NonRecursive(NonRecursivePartitionRef<'a, L>),
     Tree(TreeRef<'a, L>),
 }
@@ -312,7 +314,8 @@ impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
 
 #[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable)]
 #[repr(C)]
-pub(crate) struct EncodedRun<L: Level> {
+#[doc(hidden)]
+pub struct EncodedRun<L: Level> {
     /// inclusive start
     start: L::ValueUnaligned,
     /// inclusive end
@@ -338,6 +341,12 @@ impl<L: Level> From<&RangeInclusive<L::Value>> for EncodedRun<L> {
         let start = (*range.start()).into();
         let end = (*range.end()).into();
         EncodedRun { start, end }
+    }
+}
+
+impl<L: Level> PartialEq<RangeInclusive<L::Value>> for EncodedRun<L> {
+    fn eq(&self, other: &RangeInclusive<L::Value>) -> bool {
+        self.start.into() == *other.start() && self.end.into() == *other.end()
     }
 }
 

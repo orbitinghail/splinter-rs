@@ -9,7 +9,7 @@ use u24::u24;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, Unaligned};
 
 use crate::splinterv2::{
-    codec::Encodable,
+    codec::{Encodable, partition_ref::PartitionRef},
     never::Never,
     partition::Partition,
     segment::SplitSegment,
@@ -29,6 +29,7 @@ pub trait Level: Sized {
         + Debug
         + Clone
         + PartialEq
+        + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
         + Eq;
 
     type Value: num::PrimInt

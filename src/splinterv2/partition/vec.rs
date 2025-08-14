@@ -12,7 +12,7 @@ use crate::splinterv2::{
     traits::{PartitionRead, PartitionWrite},
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 pub struct VecPartition<L: Level> {
     values: Vec<L::Value>,
 }
@@ -120,5 +120,18 @@ impl<L: Level> PartitionWrite<L> for VecPartition<L> {
                 true
             }
         }
+    }
+}
+
+impl<L: Level> PartialEq for VecPartition<L> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+
+impl<L: Level> PartialEq<[L::ValueUnaligned]> for VecPartition<L> {
+    fn eq(&self, other: &[L::ValueUnaligned]) -> bool {
+        itertools::equal(self.iter(), other.iter().map(|&v| v.into()))
     }
 }

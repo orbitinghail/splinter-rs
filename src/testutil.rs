@@ -9,8 +9,11 @@ use zerocopy::IntoBytes;
 use crate::{
     Splinter, SplinterRead, SplinterRef, SplinterWrite,
     splinterv2::{
-        Encodable, Partition, PartitionRead, SplinterV2, codec::footer::Footer, level::Level,
-        partition::PartitionKind, traits::TruncateFrom,
+        Encodable, PartitionRead, SplinterV2,
+        codec::footer::Footer,
+        level::Level,
+        partition::{Partition, PartitionKind},
+        traits::TruncateFrom,
     },
     util::CopyToOwned,
 };
