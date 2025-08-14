@@ -1,14 +1,16 @@
 use std::{fmt::Debug, marker::PhantomData, ops::Bound};
 
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use itertools::{Itertools, assert_equal};
 use num::{CheckedAdd, Saturating, traits::ConstOne};
 use rand::{Rng, SeedableRng, seq::index};
+use zerocopy::IntoBytes;
 
 use crate::{
     Splinter, SplinterRead, SplinterRef, SplinterWrite,
     splinterv2::{
-        Partition, PartitionRead, level::Level, partition::PartitionKind, traits::TruncateFrom,
+        Encodable, Partition, PartitionRead, SplinterV2, codec::footer::Footer, level::Level,
+        partition::PartitionKind, traits::TruncateFrom,
     },
     util::CopyToOwned,
 };
@@ -340,14 +342,6 @@ impl<L: Level> SetGenV2<L> {
     }
 }
 
-pub fn mkpartition<L: Level>(kind: PartitionKind, values: &[L::Value]) -> Partition<L> {
-    let mut p = kind.build();
-    for &v in values {
-        p.raw_insert(v);
-    }
-    p
-}
-
 /// Validate that a type correctly implements [`PartitionRead`] given the
 /// expected set of values. expected must be sorted.
 pub fn test_partition_read<L, S>(splinter: &S, expected: &[L::Value])
@@ -425,4 +419,44 @@ where
             }
         }
     }
+}
+
+pub fn mkchecksum(data: &[u8]) -> u64 {
+    let mut c = crc64fast_nvme::Digest::new();
+    c.write(&data);
+    c.sum64()
+}
+
+/// appends a valid SplinterV2 Footer to data and returns it as Bytes
+pub fn mksplinterv2_manual(data: &[u8]) -> Bytes {
+    let mut buf = BytesMut::with_capacity(data.len() + Footer::SIZE);
+    buf.put_slice(data);
+    buf.put_slice(Footer::from_checksum(mkchecksum(data)).as_bytes());
+    buf.freeze()
+}
+
+pub fn mkpartition<L: Level>(kind: PartitionKind, values: &[L::Value]) -> Partition<L> {
+    let mut p = kind.build();
+    for &v in values {
+        p.raw_insert(v);
+    }
+    p
+}
+
+pub fn mkpartition_buf<L: Level>(kind: PartitionKind, values: &[L::Value]) -> BytesMut {
+    mkpartition::<L>(kind, values)
+        .encode_to_bytes()
+        .try_into_mut()
+        .unwrap()
+}
+
+pub fn mksplinterv2(values: &[u32]) -> SplinterV2 {
+    SplinterV2::from_iter(values.iter().copied())
+}
+
+pub fn mksplinterv2_buf(values: &[u32]) -> BytesMut {
+    mksplinterv2(values)
+        .encode_to_bytes()
+        .try_into_mut()
+        .unwrap()
 }

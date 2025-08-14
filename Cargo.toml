@@ -33,6 +33,7 @@ rangemap = "1.6.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.1.0"
 crc64fast-nvme = "1.2.0"
+assert_matches = "1.5.0"
 
 [dev-dependencies]
 criterion = "=0.7.0"
