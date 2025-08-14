@@ -268,6 +268,27 @@ pub fn analyze_compression_patterns(data: &[u8]) {
     println!("analysis complete");
 }
 
+pub fn ratio_to_marks(ratio: f64) -> String {
+    let magnitude = if ratio >= 1.0 { ratio } else { 1.0 / ratio };
+    let marks = if magnitude >= 4.0 {
+        4
+    } else if magnitude >= 2.5 {
+        3
+    } else if magnitude >= 1.6 {
+        2
+    } else if magnitude >= 1.1 {
+        1
+    } else {
+        0
+    };
+    if marks == 0 {
+        "ok".into()
+    } else {
+        let mark = if ratio > 1.0 { "+" } else { "-" };
+        mark.repeat(marks)
+    }
+}
+
 pub struct SetGenV2<L> {
     rng: rand::rngs::StdRng,
     _phantom: PhantomData<L>,

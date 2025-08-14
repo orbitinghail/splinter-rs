@@ -163,7 +163,7 @@ mod tests {
     use super::*;
     use crate::{
         splinterv2::{codec::Encodable, traits::Optimizable},
-        testutil::{SetGen, analyze_compression_patterns},
+        testutil::{SetGen, analyze_compression_patterns, ratio_to_marks},
     };
     use roaring::RoaringBitmap;
 
@@ -404,23 +404,19 @@ mod tests {
                     "FAIL"
                 }
             );
+
             let diff = report.roaring.0 as f64 / report.splinter.0 as f64;
+            let ok_status = if report.roaring.0 != report.roaring.1 {
+                fail_test = true;
+                "FAIL".into()
+            } else {
+                ratio_to_marks(diff)
+            };
             println!(
                 "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
-                "",
-                "Roaring",
-                report.roaring.0,
-                report.roaring.1,
-                diff,
-                if report.roaring.0 != report.roaring.1 {
-                    fail_test = true;
-                    "FAIL"
-                } else if diff < 1.0 {
-                    "<"
-                } else {
-                    "ok"
-                }
+                "", "Roaring", report.roaring.0, report.roaring.1, diff, ok_status
             );
+
             let diff = report.splinter_lz4 as f64 / report.splinter.0 as f64;
             println!(
                 "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
@@ -429,12 +425,9 @@ mod tests {
                 report.splinter_lz4,
                 report.splinter_lz4,
                 diff,
-                if report.splinter.0 <= report.splinter_lz4 {
-                    ">"
-                } else {
-                    "<"
-                }
+                ratio_to_marks(diff)
             );
+
             let diff = report.roaring_lz4 as f64 / report.splinter_lz4 as f64;
             println!(
                 "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
@@ -443,12 +436,9 @@ mod tests {
                 report.roaring_lz4,
                 report.roaring_lz4,
                 diff,
-                if report.splinter_lz4 <= report.roaring_lz4 {
-                    "ok"
-                } else {
-                    "<"
-                }
+                ratio_to_marks(diff)
             );
+
             let diff = report.baseline as f64 / report.splinter.0 as f64;
             println!(
                 "{:30} {:12} {:6} {:10} {:>10.2} {:>10}",
@@ -457,12 +447,7 @@ mod tests {
                 report.baseline,
                 report.baseline,
                 diff,
-                if report.splinter.0 <= report.baseline {
-                    "ok"
-                } else {
-                    // we don't fail the test, just report for informational purposes;
-                    "<"
-                }
+                ratio_to_marks(diff)
             );
         }
 
