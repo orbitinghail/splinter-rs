@@ -30,24 +30,30 @@ pub(crate) trait Run<L: Level> {
     fn len(&self) -> usize;
     fn rank(&self, v: L::Value) -> usize;
     fn select(&self, idx: usize) -> Option<L::Value>;
+    fn first(&self) -> L::Value;
     fn last(&self) -> L::Value;
 }
 
 impl<L: Level> Run<L> for RangeInclusive<L::Value> {
     #[inline]
     fn len(&self) -> usize {
-        (*self.end() - *self.start() + L::Value::ONE).as_()
+        self.end().as_() - self.start().as_() + 1
     }
 
     #[inline]
     fn rank(&self, v: L::Value) -> usize {
-        (v.min(*self.end()) - *self.start() + L::Value::ONE).as_()
+        v.min(*self.end()).as_() - self.start().as_() + 1
     }
 
     #[inline]
     fn select(&self, idx: usize) -> Option<L::Value> {
         let n = *self.start() + L::Value::truncate_from(idx);
         (n <= *self.end()).then_some(n)
+    }
+
+    #[inline]
+    fn first(&self) -> L::Value {
+        *self.start()
     }
 
     #[inline]
@@ -64,10 +70,12 @@ where
 {
     iter.into_iter()
         .fold_while(0, |acc, run| {
-            if value <= run.last() {
-                FoldWhile::Continue(acc + run.rank(value))
-            } else {
+            if value < run.first() {
                 FoldWhile::Done(acc)
+            } else if value <= run.last() {
+                FoldWhile::Done(acc + run.rank(value))
+            } else {
+                FoldWhile::Continue(acc + run.rank(value))
             }
         })
         .into_inner()
@@ -225,17 +233,22 @@ impl<L: Level> PartitionWrite<L> for RunPartition<L> {
 pub(crate) struct RunIter<T> {
     start: T,
     end: T,
+    exhausted: bool,
 }
 
 impl<T> RunIter<T> {
     pub fn new(start: T, end: T) -> Self {
-        Self { start, end }
+        Self { start, end, exhausted: false }
     }
 }
 
 impl<T: Copy> From<&RangeInclusive<T>> for RunIter<T> {
     fn from(range: &RangeInclusive<T>) -> Self {
-        Self { start: *range.start(), end: *range.end() }
+        Self {
+            start: *range.start(),
+            end: *range.end(),
+            exhausted: false,
+        }
     }
 }
 
@@ -243,13 +256,18 @@ impl<T: PrimInt + ConstOne> Iterator for RunIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.start > self.end {
-            None
-        } else {
-            let value = self.start;
-            self.start = self.start + T::ONE;
-            Some(value)
+        if self.exhausted {
+            return None;
         }
+
+        let is_iterating = self.start < self.end;
+        Some(if is_iterating {
+            let next = self.start + T::ONE;
+            std::mem::replace(&mut self.start, next)
+        } else {
+            self.exhausted = true;
+            self.start
+        })
     }
 }
 

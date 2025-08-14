@@ -107,7 +107,9 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
         self.children
             .iter()
             .fold_while(0, move |acc, (&child_segment, child)| {
-                if child_segment <= segment {
+                if child_segment < segment {
+                    FoldWhile::Continue(acc + child.cardinality())
+                } else if child_segment == segment {
                     FoldWhile::Continue(acc + child.rank(value))
                 } else {
                     FoldWhile::Done(acc)

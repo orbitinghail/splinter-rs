@@ -349,6 +349,7 @@ mod tests {
         splinterv2::{
             Partition, PartitionRead, SplinterV2,
             level::{High, Level, Low},
+            traits::TruncateFrom,
         },
         testutil::{SetGenV2, mkpartition, test_partition_read},
     };
@@ -383,17 +384,28 @@ mod tests {
         ];
         let sets = &[
             vec![],
+            vec![0],
+            vec![0, 1],
+            vec![0, u16::MAX],
+            vec![u16::MAX],
             setgen.random(8),
             setgen.random(4096),
             setgen.runs(4096, 0.01),
             setgen.runs(4096, 0.2),
             setgen.runs(4096, 0.5),
             setgen.runs(4096, 0.9),
+            (0..Low::MAX_LEN)
+                .map(|v| <Low as Level>::Value::truncate_from(v))
+                .collect_vec(),
         ];
 
         for kind in kinds {
             for (i, set) in sets.iter().enumerate() {
                 println!("Testing partition kind: {kind:?} with set {i}");
+
+                if kind == PartitionKind::Tree && i == 5 {
+                    println!("break")
+                }
 
                 let partition = mkpartition::<Low>(kind, &set);
                 test_partition_read(&partition, &set);

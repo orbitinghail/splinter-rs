@@ -88,7 +88,10 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
             .iter()
             .enumerate()
             .fold_while(0, |acc, (idx, child_segment)| {
-                if child_segment <= segment {
+                if child_segment < segment {
+                    let child = self.load_child(idx);
+                    FoldWhile::Continue(acc + child.cardinality())
+                } else if child_segment == segment {
                     let child = self.load_child(idx);
                     FoldWhile::Continue(acc + child.rank(value))
                 } else {

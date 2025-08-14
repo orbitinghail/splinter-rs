@@ -15,10 +15,10 @@ pub trait PartitionRead<L: Level> {
     fn contains(&self, value: L::Value) -> bool;
 
     /// returns the number of values contained in this partition up to and
-    /// including the value. inverse of `Self::select`.
+    /// including the value.
     fn rank(&self, value: L::Value) -> usize;
 
-    /// returns the value at position `idx`. inverse of `Self::rank`.
+    /// returns the value at position `idx`.
     fn select(&self, idx: usize) -> Option<L::Value>;
 
     /// returns the last value in the partition
