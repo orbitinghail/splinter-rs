@@ -58,7 +58,11 @@ impl<'a, L: Level> TreeRef<'a, L> {
         PartitionRef::from_suffix(&self.children[..offset]).unwrap()
     }
 
-    fn children(&'a self) -> impl Iterator<Item = PartitionRef<'a, L::LevelDown>> + 'a {
+    pub(crate) fn segments(&self) -> impl Iterator<Item = Segment> {
+        self.segments.iter()
+    }
+
+    pub(crate) fn children(&'a self) -> impl Iterator<Item = PartitionRef<'a, L::LevelDown>> + 'a {
         (0..self.num_children).map(|idx| self.load_child(idx))
     }
 }

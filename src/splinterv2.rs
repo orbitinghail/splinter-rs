@@ -2,6 +2,7 @@ pub mod codec;
 pub mod count;
 pub mod level;
 pub mod never;
+pub mod ops;
 pub mod partition;
 pub mod segment;
 pub mod traits;
@@ -12,14 +13,14 @@ use std::ops::Deref;
 use bytes::Bytes;
 use zerocopy::FromBytes;
 
-use crate::splinterv2::codec::DecodeErr;
+use crate::splinterv2::{
+    codec::{DecodeErr, encoder::Encoder, footer::Footer, partition_ref::PartitionRef},
+    level::High,
+    partition::Partition,
+};
+
 pub use crate::splinterv2::codec::Encodable;
-use crate::splinterv2::codec::partition_ref::PartitionRef;
-use crate::splinterv2::codec::{encoder::Encoder, footer::Footer};
-use crate::splinterv2::level::High;
-pub use crate::splinterv2::partition::Partition;
-use crate::splinterv2::traits::Optimizable;
-pub use crate::splinterv2::traits::{PartitionRead, PartitionWrite};
+pub use crate::splinterv2::traits::{Optimizable, PartitionRead, PartitionWrite};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct SplinterV2(Partition<High>);
@@ -155,6 +156,20 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRefV2<B> {
 
     fn iter(&self) -> impl Iterator<Item = u32> {
         self.load_unchecked().into_iter()
+    }
+}
+
+impl<B: Deref<Target = [u8]>> PartialEq<SplinterRefV2<B>> for SplinterV2 {
+    #[inline]
+    fn eq(&self, other: &SplinterRefV2<B>) -> bool {
+        self.0 == other.load_unchecked()
+    }
+}
+
+impl<B: Deref<Target = [u8]>> PartialEq<SplinterV2> for SplinterRefV2<B> {
+    #[inline]
+    fn eq(&self, other: &SplinterV2) -> bool {
+        other == self
     }
 }
 

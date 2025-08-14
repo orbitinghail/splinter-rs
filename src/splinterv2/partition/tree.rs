@@ -7,14 +7,18 @@ use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
 
 use crate::splinterv2::{
-    codec::{Encodable, encoder::Encoder, tree_ref::TreeIndexBuilder},
+    codec::{
+        Encodable,
+        encoder::Encoder,
+        tree_ref::{TreeIndexBuilder, TreeRef},
+    },
     count::count_runs_sorted,
     level::Level,
     segment::{Segment, SplitSegment},
     traits::{Optimizable, PartitionRead, PartitionWrite},
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 pub struct TreePartition<L: Level> {
     children: BTreeMap<Segment, L::Down>,
     cardinality: usize,
@@ -152,5 +156,26 @@ impl<L: Level> PartitionWrite<L> for TreePartition<L> {
         } else {
             false
         }
+    }
+}
+
+impl<L: Level> PartialEq for TreePartition<L> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.children == other.children
+    }
+}
+
+impl<L: Level> PartialEq<TreeRef<'_, L>> for TreePartition<L> {
+    #[inline]
+    fn eq(&self, other: &TreeRef<'_, L>) -> bool {
+        // we want to fast path compare segments, and then recurse to comparing
+        // each child
+        itertools::equal(self.children.keys().copied(), other.segments())
+            && self
+                .children
+                .values()
+                .zip(other.children())
+                .all(|(a, b)| *a == b)
     }
 }

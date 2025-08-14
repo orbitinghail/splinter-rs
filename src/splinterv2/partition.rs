@@ -60,7 +60,7 @@ impl PartitionKind {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 pub enum Partition<L: Level> {
     Full,
     Bitmap(BitmapPartition<L>),

@@ -64,7 +64,7 @@ macro_rules! impl_truncate_from_usize {
 }
 impl_truncate_from_usize!(u32, u24, u16, u8);
 
-#[doc(hidden)]
 pub trait Optimizable {
+    /// Optimize memory usage. Should be run after batch inserts or before serialization.
     fn optimize(&mut self);
 }

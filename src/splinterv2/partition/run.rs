@@ -7,7 +7,7 @@ use rangemap::{RangeInclusiveSet, StepFns};
 
 use crate::splinterv2::{
     PartitionWrite,
-    codec::{Encodable, encoder::Encoder},
+    codec::{Encodable, encoder::Encoder, partition_ref::EncodedRun},
     count::count_unique_sorted,
     level::Level,
     segment::SplitSegment,
@@ -97,7 +97,7 @@ where
     None
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 pub struct RunPartition<L: Level> {
     runs: RangeInclusiveSet<L::Value, NumStep>,
 }
@@ -227,7 +227,8 @@ impl<L: Level> PartitionWrite<L> for RunPartition<L> {
     }
 }
 
-pub(crate) struct RunIter<T> {
+#[doc(hidden)]
+pub struct RunIter<T> {
     start: T,
     end: T,
     exhausted: bool,
@@ -265,6 +266,19 @@ impl<T: PrimInt + ConstOne> Iterator for RunIter<T> {
             self.exhausted = true;
             self.start
         })
+    }
+}
+
+impl<L: Level> PartialEq for RunPartition<L> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.runs == other.runs
+    }
+}
+
+impl<L: Level> PartialEq<[EncodedRun<L>]> for RunPartition<L> {
+    fn eq(&self, other: &[EncodedRun<L>]) -> bool {
+        itertools::equal(other.iter(), self.runs.iter())
     }
 }
 

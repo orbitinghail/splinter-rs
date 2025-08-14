@@ -1,6 +1,12 @@
 use std::fmt::Debug;
 
-use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
+use bitvec::{
+    bitbox,
+    boxed::BitBox,
+    order::{BitOrder, Lsb0},
+    slice::BitSlice,
+    store::BitStore,
+};
 use bytes::BufMut;
 use num::traits::AsPrimitive;
 
@@ -12,7 +18,7 @@ use crate::splinterv2::{
     traits::{PartitionRead, PartitionWrite, TruncateFrom},
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 pub struct BitmapPartition<L: Level> {
     bitmap: BitBox<u64, Lsb0>,
     _marker: std::marker::PhantomData<L>,
@@ -124,5 +130,23 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
             .get_mut(value.as_())
             .expect("value out of range");
         !bit.replace(true)
+    }
+}
+
+impl<L: Level> PartialEq for BitmapPartition<L> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.bitmap == other.bitmap
+    }
+}
+
+impl<L, T, O> PartialEq<BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    fn eq(&self, other: &BitSlice<T, O>) -> bool {
+        self.bitmap.as_bitslice() == other
     }
 }

@@ -1,7 +1,9 @@
 use bytes::BufMut;
 
 use crate::splinterv2::{
-    Encodable, PartitionRead, PartitionWrite, codec::encoder::Encoder, level::Level,
+    Encodable, PartitionRead, PartitionWrite,
+    codec::{encoder::Encoder, partition_ref::PartitionRef},
+    level::Level,
     traits::Optimizable,
 };
 
@@ -80,4 +82,10 @@ impl Level for Never {
     type ValueUnaligned = u8;
 
     const BITS: usize = 8;
+}
+
+impl<L: Level> PartialEq<PartitionRef<'_, L>> for Never {
+    fn eq(&self, _other: &PartitionRef<'_, L>) -> bool {
+        unreachable!("Never::eq")
+    }
 }
