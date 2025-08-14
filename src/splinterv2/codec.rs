@@ -40,7 +40,7 @@ pub enum DecodeErr {
 
 impl DecodeErr {
     #[inline]
-    fn ensure_length_available(data: &[u8], len: usize) -> Result<(), DecodeErr> {
+    fn ensure_bytes_available(data: &[u8], len: usize) -> Result<(), DecodeErr> {
         if data.len() < len {
             Err(Self::Length)
         } else {
@@ -62,19 +62,22 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
 
     use crate::{
         splinterv2::{
-            Encodable,
+            Encodable, SplinterV2,
             codec::{encoder::Encoder, partition_ref::PartitionRef},
-            level::Low,
+            level::{High, Low},
             partition::PartitionKind,
         },
         testutil::{SetGenV2, mkpartition, test_partition_read},
     };
 
     #[test]
-    fn test_encode_decode() {
+    fn test_encode_decode_direct() {
         let mut setgen = SetGenV2::<Low>::new(0xDEADBEEF);
         let kinds = [
             PartitionKind::Bitmap,
@@ -83,7 +86,7 @@ mod tests {
             PartitionKind::Tree,
         ];
         let sets = &[
-            vec![],
+            vec![0],
             setgen.random(8),
             setgen.random(4096),
             setgen.runs(4096, 0.01),
@@ -106,5 +109,19 @@ mod tests {
                 test_partition_read(&partition_ref, &set);
             }
         }
+    }
+
+    #[quickcheck]
+    fn test_encode_decode_quickcheck(values: Vec<u32>) -> TestResult {
+        let expected = values.iter().copied().sorted().dedup().collect_vec();
+        let splinter = SplinterV2::from_iter(values);
+        let mut encoder = Encoder::new(BytesMut::default());
+        splinter.encode(&mut encoder);
+        let buf = encoder.into_inner();
+        let splinter_ref = PartitionRef::<'_, High>::from_suffix(&buf).unwrap();
+
+        test_partition_read(&splinter_ref, &expected);
+
+        TestResult::passed()
     }
 }

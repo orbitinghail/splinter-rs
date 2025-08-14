@@ -1,6 +1,7 @@
 use itertools::{FoldWhile, Itertools};
 use num::traits::AsPrimitive;
 use std::marker::PhantomData;
+use zerocopy::FromBytes;
 
 use crate::splinterv2::{
     Partition, PartitionRead, PartitionWrite,
@@ -30,8 +31,7 @@ impl<'a, L: Level> TreeRef<'a, L> {
             TreeIndexBuilder::<L>::pick_segments_store(num_children);
         let offsets_size = TreeIndexBuilder::<L>::offsets_size(num_children);
 
-        DecodeErr::ensure_length_available(data, segments_size)?;
-        DecodeErr::ensure_length_available(data, offsets_size)?;
+        DecodeErr::ensure_bytes_available(data, segments_size + offsets_size)?;
 
         let segments_range = (data.len() - segments_size)..data.len();
         let offsets_range = (segments_range.start - offsets_size)..segments_range.start;
@@ -39,11 +39,15 @@ impl<'a, L: Level> TreeRef<'a, L> {
 
         Ok(Self {
             num_children,
-            segments: NonRecursivePartitionRef::from_suffix_with_kind(
+            segments: NonRecursivePartitionRef::tree_segments_from_suffix(
                 segments_kind,
+                num_children,
                 &data[segments_range],
             )?,
-            offsets: zerocopy::transmute_ref!(&data[offsets_range]),
+            offsets: <[L::ValueUnaligned]>::ref_from_bytes_with_elems(
+                &data[offsets_range],
+                num_children,
+            )?,
             children: &data[data_range],
         })
     }
@@ -71,7 +75,7 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
     fn contains(&self, value: L::Value) -> bool {
         let (segment, value) = value.split();
         if self.segments.contains(segment) {
-            let rank = self.segments.rank(segment);
+            let rank = self.segments.rank(segment) - 1;
             self.load_child(rank).contains(value)
         } else {
             false

@@ -10,11 +10,12 @@ use crate::{
     splinterv2::{
         PartitionRead,
         codec::{DecodeErr, tree_ref::TreeRef},
-        level::Level,
+        level::{Block, Level},
         partition::{
             PartitionKind,
             bitmap::BitmapPartition,
             run::{Run, RunIter, RunPartition, run_rank, run_select},
+            vec::VecPartition,
         },
         traits::TruncateFrom,
     },
@@ -91,25 +92,27 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
             PartitionKind::Empty => Ok(Self::Empty),
             PartitionKind::Full => Ok(Self::Full),
             PartitionKind::Bitmap => {
-                let len = BitmapPartition::<L>::ENCODED_SIZE;
-                DecodeErr::ensure_length_available(data, len)?;
-                let range = (data.len() - len)..data.len();
-                let bitmap: &[u8] = zerocopy::transmute_ref!(&data[range]);
-                Ok(Self::Bitmap { bitmap: BitSlice::from_slice(bitmap) })
+                let bytes = BitmapPartition::<L>::ENCODED_SIZE;
+                DecodeErr::ensure_bytes_available(data, bytes)?;
+                let range = (data.len() - bytes)..data.len();
+                Ok(Self::Bitmap {
+                    bitmap: BitSlice::from_slice(&data[range]),
+                })
             }
             PartitionKind::Vec => {
                 let (data, len) = decode_len::<L>(data)?;
-                DecodeErr::ensure_length_available(data, len)?;
-                let range = (data.len() - len)..data.len();
+                let bytes = VecPartition::<L>::encoded_size(len);
+                DecodeErr::ensure_bytes_available(data, bytes)?;
+                let range = (data.len() - bytes)..data.len();
                 Ok(Self::Vec {
-                    values: zerocopy::transmute_ref!(&data[range]),
+                    values: <[L::ValueUnaligned]>::ref_from_bytes_with_elems(&data[range], len)?,
                 })
             }
             PartitionKind::Run => {
                 let (data, runs) = decode_len::<L>(data)?;
-                let len = RunPartition::<L>::encoded_size(runs);
-                DecodeErr::ensure_length_available(data, len)?;
-                let range = (data.len() - len)..data.len();
+                let bytes = RunPartition::<L>::encoded_size(runs);
+                DecodeErr::ensure_bytes_available(data, bytes)?;
+                let range = (data.len() - bytes)..data.len();
                 Ok(Self::Run {
                     runs: <[EncodedRun<L>]>::ref_from_bytes(&data[range])?,
                 })
@@ -126,6 +129,42 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
             Self::Bitmap { .. } => PartitionKind::Bitmap,
             Self::Vec { .. } => PartitionKind::Vec,
             Self::Run { .. } => PartitionKind::Run,
+        }
+    }
+}
+
+impl<'a> NonRecursivePartitionRef<'a, Block> {
+    pub(crate) fn tree_segments_from_suffix(
+        kind: PartitionKind,
+        num_children: usize,
+        data: &'a [u8],
+    ) -> Result<Self, DecodeErr> {
+        match kind {
+            PartitionKind::Full => Ok(Self::Full),
+            PartitionKind::Bitmap => {
+                assert!(
+                    num_children > 32 && num_children < 256,
+                    "num_children out of range"
+                );
+                let bytes = BitmapPartition::<Block>::ENCODED_SIZE;
+                DecodeErr::ensure_bytes_available(data, bytes)?;
+                let range = (data.len() - bytes)..data.len();
+                Ok(Self::Bitmap {
+                    bitmap: BitSlice::from_slice(&data[range]),
+                })
+            }
+            PartitionKind::Vec => {
+                let bytes = VecPartition::<Block>::encoded_size(num_children);
+                DecodeErr::ensure_bytes_available(data, bytes)?;
+                let range = (data.len() - bytes)..data.len();
+                Ok(Self::Vec {
+                    values: <[<Block as Level>::ValueUnaligned]>::ref_from_bytes_with_elems(
+                        &data[range],
+                        num_children,
+                    )?,
+                })
+            }
+            _ => unreachable!("tree segments must be one of Full, Bitmap, or Vec"),
         }
     }
 }
@@ -155,7 +194,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
         match self {
             Self::Empty => false,
             Self::Full => true,
-            Self::Bitmap { bitmap } => bitmap.get(value.as_()).is_some(),
+            Self::Bitmap { bitmap } => *bitmap.get(value.as_()).unwrap(),
             Self::Vec { values } => values.binary_search(&value.into()).is_ok(),
             Self::Run { runs } => runs.iter().any(|run| run.contains(value.into())),
         }

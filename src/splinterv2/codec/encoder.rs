@@ -75,6 +75,10 @@ impl<B: BufMut> Encoder<B> {
     /// Encode a Tree partition into the buffer.
     pub fn put_tree_index<L: Level>(&mut self, tree_index_builder: TreeIndexBuilder<L>) {
         let (num_children, segments, offsets) = tree_index_builder.build();
+        assert!(num_children <= Block::MAX_LEN, "num_children out of range");
+
+        self.put_iter::<L>(offsets);
+
         match segments {
             Partition::Full => {}
             Partition::Bitmap(p) => self.put_bitmap_raw(p.as_bitbox()),
@@ -82,8 +86,7 @@ impl<B: BufMut> Encoder<B> {
             Partition::Run(_) | Partition::Tree(_) => unreachable!(),
         }
 
-        self.put_iter::<L>(offsets);
-        self.put_length::<L>(num_children);
+        self.put_length::<Block>(num_children);
         self.buf.put_u8(PartitionKind::Tree as u8);
     }
 
@@ -95,8 +98,8 @@ impl<B: BufMut> Encoder<B> {
     }
 
     #[inline]
-    fn put_value<L: Level>(&mut self, len: L::Value) {
-        self.buf.put_slice(L::ValueUnaligned::from(len).as_bytes());
+    fn put_value<L: Level>(&mut self, v: L::Value) {
+        self.buf.put_slice(L::ValueUnaligned::from(v).as_bytes());
     }
 
     fn put_bitmap_raw(&mut self, bitmap: &BitBox<u64, Lsb0>) {
