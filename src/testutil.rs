@@ -1,10 +1,17 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData, ops::Bound};
 
 use bytes::Bytes;
-use itertools::Itertools;
-use rand::{SeedableRng, seq::index};
+use itertools::{Itertools, assert_equal};
+use num::{CheckedAdd, Saturating, traits::ConstOne};
+use rand::{Rng, SeedableRng, seq::index};
 
-use crate::{Splinter, SplinterRead, SplinterRef, SplinterWrite, util::CopyToOwned};
+use crate::{
+    Splinter, SplinterRead, SplinterRef, SplinterWrite,
+    splinterv2::{
+        Partition, PartitionRead, level::Level, partition::PartitionKind, traits::TruncateFrom,
+    },
+    util::CopyToOwned,
+};
 
 pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
     let mut splinter = Splinter::default();
@@ -82,7 +89,6 @@ impl SetGen {
         Self { rng }
     }
 
-    #[track_caller]
     pub fn distributed(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
         let mut out = Vec::default();
         for high in index::sample(&mut self.rng, 256, high) {
@@ -100,7 +106,6 @@ impl SetGen {
         out
     }
 
-    #[track_caller]
     pub fn dense(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
         let out: Vec<u32> = itertools::iproduct!(0..high, 0..mid, 0..low, 0..block)
             .map(|(a, b, c, d)| u32::from_be_bytes([a as u8, b as u8, c as u8, d as u8]))
@@ -261,4 +266,139 @@ pub fn analyze_compression_patterns(data: &[u8]) {
     }
 
     println!("analysis complete");
+}
+
+pub struct SetGenV2<L> {
+    rng: rand::rngs::StdRng,
+    _phantom: PhantomData<L>,
+}
+
+impl<L: Level> SetGenV2<L> {
+    pub fn new(seed: u64) -> Self {
+        let rng = rand::rngs::StdRng::seed_from_u64(seed);
+        Self { rng, _phantom: PhantomData }
+    }
+
+    pub fn random(&mut self, len: usize) -> Vec<L::Value> {
+        index::sample(&mut self.rng, L::MAX_LEN - 1, len)
+            .into_iter()
+            .map(L::Value::truncate_from)
+            .sorted()
+            .collect()
+    }
+
+    /// Generate a random set of values such that the probability any two values
+    /// are sequential is `stickyness`.
+    pub fn runs(&mut self, len: usize, stickyness: f64) -> Vec<L::Value> {
+        let s = stickyness.clamp(0.0, 1.0);
+        let mut out = Vec::with_capacity(len);
+        if len == 0 {
+            return out;
+        }
+        // Allow worst-case growth of ~2 per step to avoid overflow.
+        let max_start =
+            (L::MAX_LEN - 1).saturating_sub(2usize.saturating_mul(len.saturating_sub(1)));
+        let mut cur = self.rng.random_range(0..=max_start);
+        out.push(L::Value::truncate_from(cur));
+
+        for _ in 1..len {
+            if self.rng.random_bool(s) {
+                cur = cur.saturating_add(1);
+            } else {
+                // Non-sequential: jump by >=2. Use a geometric(0.5) tail for gaps.
+                let mut k = 0;
+                while !self.rng.random_bool(0.5) {
+                    k += 1;
+                }
+                let gap = 2 + k; // 2,3,4,... with decreasing probability
+                cur = cur.saturating_add(gap);
+            }
+            out.push(L::Value::truncate_from(cur));
+        }
+        out
+    }
+}
+
+pub fn mkpartition<L: Level>(kind: PartitionKind, values: &[L::Value]) -> Partition<L> {
+    let mut p = kind.build();
+    for &v in values {
+        p.raw_insert(v);
+    }
+    p
+}
+
+/// Validate that a type correctly implements [`PartitionRead`] given the
+/// expected set of values. expected must be sorted.
+pub fn test_partition_read<L, S>(splinter: &S, expected: &[L::Value])
+where
+    L: Level,
+    S: PartitionRead<L> + Debug,
+{
+    assert_eq!(splinter.is_empty(), expected.is_empty(), "is_empty");
+    assert_eq!(splinter.cardinality(), expected.len(), "cardinality");
+    assert_eq!(splinter.last(), expected.last().copied(), "last");
+
+    for &exp in expected {
+        assert!(splinter.contains(exp), "contains({exp})");
+    }
+
+    if let Some(not_exp) = expected
+        .last()
+        .copied()
+        .and_then(|v| v.checked_add(&L::Value::ONE))
+    {
+        assert!(!splinter.contains(not_exp), "not contains({not_exp})");
+    }
+
+    assert_equal(splinter.iter(), expected.iter().copied());
+
+    if let (Some(&start), Some(&end)) = (expected.first(), expected.last()) {
+        let mid = start.saturating_add(end) / L::Value::truncate_from(2);
+
+        let starts = [
+            Bound::Unbounded,
+            Bound::Included(start),
+            Bound::Excluded(start),
+            Bound::Included(mid),
+            Bound::Excluded(mid),
+        ];
+        let ends = [
+            Bound::Unbounded,
+            Bound::Included(end),
+            Bound::Excluded(end),
+            Bound::Included(mid),
+            Bound::Excluded(mid),
+        ];
+
+        for start in starts {
+            for end in ends {
+                let expected_range = expected.iter().copied().filter(|&v| {
+                    (match start {
+                        Bound::Included(start) => start <= v,
+                        Bound::Excluded(start) => start < v,
+                        Bound::Unbounded => true,
+                    }) && (match end {
+                        Bound::Included(end) => v <= end,
+                        Bound::Excluded(end) => v < end,
+                        Bound::Unbounded => true,
+                    })
+                });
+                let splinter_range = splinter.range((start, end));
+                assert_equal(splinter_range, expected_range);
+            }
+        }
+    }
+}
+
+impl quickcheck::Arbitrary for PartitionKind {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        g.choose(&[
+            PartitionKind::Bitmap,
+            PartitionKind::Vec,
+            PartitionKind::Run,
+            PartitionKind::Tree,
+        ])
+        .copied()
+        .unwrap()
+    }
 }

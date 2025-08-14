@@ -68,7 +68,7 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
         self.num_children == 0
     }
 
-    fn contains(&self, value: <L as Level>::Value) -> bool {
+    fn contains(&self, value: L::Value) -> bool {
         let (segment, value) = value.split();
         if self.segments.contains(segment) {
             let rank = self.segments.rank(segment);
@@ -78,14 +78,7 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.segments.iter().enumerate().flat_map(|(idx, segment)| {
-            let iter = self.load_child(idx).into_iter();
-            iter.map(move |v| L::Value::unsplit(segment, v))
-        })
-    }
-
-    fn rank(&self, value: <L as Level>::Value) -> usize {
+    fn rank(&self, value: L::Value) -> usize {
         let (segment, value) = value.split();
         self.segments
             .iter()
@@ -115,6 +108,23 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
             n -= len;
         }
         None
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        if self.num_children > 0 {
+            let segment = self.segments.last().unwrap();
+            let child = self.load_child(self.num_children - 1);
+            child.last().map(|v| L::Value::unsplit(segment, v))
+        } else {
+            None
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        self.segments.iter().enumerate().flat_map(|(idx, segment)| {
+            let iter = self.load_child(idx).into_iter();
+            iter.map(move |v| L::Value::unsplit(segment, v))
+        })
     }
 }
 

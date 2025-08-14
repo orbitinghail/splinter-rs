@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use bitvec::{order::Lsb0, slice::BitSlice};
 use either::Either;
-use num::traits::{AsPrimitive, ConstOne};
+use num::traits::{AsPrimitive, Bounded, ConstOne};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{
@@ -117,6 +117,17 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
             PartitionKind::Tree => unreachable!("non-recursive"),
         }
     }
+
+    #[cfg(test)]
+    pub fn kind(&self) -> PartitionKind {
+        match self {
+            Self::Empty => PartitionKind::default(),
+            Self::Full => PartitionKind::Full,
+            Self::Bitmap { .. } => PartitionKind::Bitmap,
+            Self::Vec { .. } => PartitionKind::Vec,
+            Self::Run { .. } => PartitionKind::Run,
+        }
+    }
 }
 
 impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
@@ -150,18 +161,6 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        match self {
-            Self::Empty => Iter::Empty(std::iter::empty()),
-            Self::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
-            Self::Bitmap { bitmap } => {
-                Iter::Bitmap(bitmap.iter_ones().map(L::Value::truncate_from))
-            }
-            Self::Vec { values } => Iter::Vec(values.iter().map(|&v| v.into())),
-            Self::Run { runs } => Iter::Run(runs.iter().flat_map(|run| run.iter())),
-        }
-    }
-
     fn rank(&self, value: L::Value) -> usize {
         match self {
             Self::Empty => 0,
@@ -187,6 +186,28 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             Self::Run { runs } => run_select(runs.iter(), idx),
         }
     }
+
+    fn last(&self) -> Option<L::Value> {
+        match self {
+            Self::Empty => None,
+            Self::Full => Some(L::Value::max_value()),
+            Self::Bitmap { bitmap } => bitmap.last_one().map(L::Value::truncate_from),
+            Self::Vec { values } => values.last().map(|&v| v.into()),
+            Self::Run { runs } => runs.last().map(|run| run.end.into()),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        match self {
+            Self::Empty => Iter::Empty(std::iter::empty()),
+            Self::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
+            Self::Bitmap { bitmap } => {
+                Iter::Bitmap(bitmap.iter_ones().map(L::Value::truncate_from))
+            }
+            Self::Vec { values } => Iter::Vec(values.iter().map(|&v| v.into())),
+            Self::Run { runs } => Iter::Run(runs.iter().flat_map(|run| run.iter())),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +228,14 @@ impl<'a, L: Level> PartitionRef<'a, L> {
             kind => Ok(Self::NonRecursive(
                 NonRecursivePartitionRef::from_suffix_with_kind(kind, data)?,
             )),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn kind(&self) -> PartitionKind {
+        match self {
+            Self::NonRecursive(p) => p.kind(),
+            Self::Tree(_) => PartitionKind::Tree,
         }
     }
 }
@@ -233,13 +262,6 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        match self {
-            Self::NonRecursive(p) => Either::Left(p.iter()),
-            Self::Tree(p) => Either::Right(p.iter()),
-        }
-    }
-
     fn rank(&self, value: L::Value) -> usize {
         match self {
             Self::NonRecursive(p) => p.rank(value),
@@ -251,6 +273,20 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
         match self {
             Self::NonRecursive(p) => p.select(idx),
             Self::Tree(p) => p.select(idx),
+        }
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        match self {
+            Self::NonRecursive(p) => p.last(),
+            Self::Tree(p) => p.last(),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        match self {
+            Self::NonRecursive(p) => Either::Left(p.iter()),
+            Self::Tree(p) => Either::Right(p.iter()),
         }
     }
 }

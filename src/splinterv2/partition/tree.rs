@@ -102,15 +102,7 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
             .is_some_and(|child| child.contains(value))
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.children.iter().flat_map(|(&segment, child)| {
-            child
-                .iter()
-                .map(move |value| L::Value::unsplit(segment, value))
-        })
-    }
-
-    fn rank(&self, value: <L as Level>::Value) -> usize {
+    fn rank(&self, value: L::Value) -> usize {
         let (segment, value) = value.split();
         self.children
             .iter()
@@ -133,6 +125,22 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
             n -= len;
         }
         None
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        if let Some((&segment, child)) = self.children.last_key_value() {
+            child.last().map(|v| L::Value::unsplit(segment, v))
+        } else {
+            None
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        self.children.iter().flat_map(|(&segment, child)| {
+            child
+                .iter()
+                .map(move |value| L::Value::unsplit(segment, value))
+        })
     }
 }
 

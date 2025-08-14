@@ -46,18 +46,22 @@ impl<L: Level> PartitionRead<L> for Never {
         unreachable!("Never::contains")
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        unreachable!("Never::iter");
-        #[allow(unreachable_code)]
-        std::iter::empty()
-    }
-
     fn rank(&self, _value: L::Value) -> usize {
         unreachable!("Never::rank")
     }
 
     fn select(&self, _idx: usize) -> Option<L::Value> {
         unreachable!("Never::select")
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        unreachable!("Never::last")
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        unreachable!("Never::iter");
+        #[allow(unreachable_code)]
+        std::iter::empty()
     }
 }
 

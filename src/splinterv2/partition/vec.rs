@@ -90,10 +90,6 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
         self.values.binary_search(&value).is_ok()
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.values.iter().copied()
-    }
-
     fn rank(&self, value: L::Value) -> usize {
         match self.values.binary_search(&value) {
             Ok(index) => index + 1,
@@ -103,6 +99,14 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
 
     fn select(&self, idx: usize) -> Option<L::Value> {
         self.values.get(idx).copied()
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        self.values.last().copied()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        self.values.iter().copied()
     }
 }
 

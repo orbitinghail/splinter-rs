@@ -1,3 +1,5 @@
+use std::ops::RangeBounds;
+
 use crate::splinterv2::level::Level;
 use num::cast::AsPrimitive;
 use u24::u24;
@@ -12,15 +14,29 @@ pub trait PartitionRead<L: Level> {
     /// returns true if this partition contains the given value
     fn contains(&self, value: L::Value) -> bool;
 
-    /// returns an iterator over all values in this partition
-    fn iter(&self) -> impl Iterator<Item = L::Value>;
-
     /// returns the number of values contained in this partition up to and
     /// including the value. inverse of `Self::select`.
     fn rank(&self, value: L::Value) -> usize;
 
     /// returns the value at position `idx`. inverse of `Self::rank`.
     fn select(&self, idx: usize) -> Option<L::Value>;
+
+    /// returns the last value in the partition
+    fn last(&self) -> Option<L::Value>;
+
+    /// returns an iterator over all values in this partition
+    fn iter(&self) -> impl Iterator<Item = L::Value>;
+
+    /// returns an iterator over all values in this partition restricted by the provided range.
+    fn range<R>(&self, range: R) -> impl Iterator<Item = L::Value>
+    where
+        R: RangeBounds<L::Value> + Clone,
+    {
+        let r2 = range.clone();
+        self.iter()
+            .skip_while(move |s| !range.contains(s))
+            .take_while(move |s| r2.contains(s))
+    }
 }
 
 pub trait PartitionWrite<L: Level> {
