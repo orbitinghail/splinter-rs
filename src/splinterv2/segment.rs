@@ -5,13 +5,14 @@ pub type Segment = u8;
 
 pub trait SplitSegment {
     type Rest;
+
     fn segment(self) -> Segment;
     fn split(self) -> (Segment, Self::Rest);
     fn unsplit(segment: Segment, rest: Self::Rest) -> Self;
 }
 
 macro_rules! impl_split {
-    ($(($ty:ty,  $rest:ty)),*) => {
+    ($(($ty:ty, $rest:ty)),*) => {
         $(
             impl SplitSegment for $ty {
                 type Rest = $rest;
@@ -40,6 +41,7 @@ impl_split!((u32, u24), (u24, u16), (u16, u8));
 
 impl SplitSegment for u8 {
     type Rest = u8;
+
     fn segment(self) -> Segment {
         unreachable!()
     }

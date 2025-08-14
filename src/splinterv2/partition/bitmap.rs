@@ -95,14 +95,12 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
     }
 
     fn contains(&self, value: L::Value) -> bool {
-        self.bitmap.get(value.as_()).is_some()
+        // SAFETY: self.bitmap can store L::MAX_LEN bits, and L::Value is
+        // restricted to [0, L::MAX_LEN)
+        *unsafe { self.bitmap.get_unchecked(value.as_()) }
     }
 
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.bitmap.iter_ones().map(L::Value::truncate_from)
-    }
-
-    fn rank(&self, value: <L as Level>::Value) -> usize {
+    fn rank(&self, value: L::Value) -> usize {
         let prefix = self.bitmap.get(0..=value.as_());
         prefix.unwrap().count_ones()
     }
@@ -112,6 +110,14 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
             .iter_ones()
             .nth(idx)
             .map(L::Value::truncate_from)
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        self.bitmap.last_one().map(L::Value::truncate_from)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        self.bitmap.iter_ones().map(L::Value::truncate_from)
     }
 }
 

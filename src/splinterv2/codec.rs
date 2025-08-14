@@ -63,49 +63,48 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 mod tests {
     use bytes::BytesMut;
 
-    use crate::splinterv2::{
-        Encodable,
-        codec::{encoder::Encoder, partition_ref::PartitionRef},
-        level::{Block, Level},
-        partition::vec::VecPartition,
+    use crate::{
+        splinterv2::{
+            Encodable,
+            codec::{encoder::Encoder, partition_ref::PartitionRef},
+            level::Low,
+            partition::PartitionKind,
+        },
+        testutil::{SetGenV2, mkpartition, test_partition_read},
     };
 
     #[test]
     fn test_encode_decode() {
-        // NOTES:
-        //
-        // - write round trip test for many different partition types
+        let mut setgen = SetGenV2::<Low>::new(0xDEADBEEF);
+        let kinds = [
+            PartitionKind::Bitmap,
+            PartitionKind::Vec,
+            PartitionKind::Run,
+            PartitionKind::Tree,
+        ];
+        let sets = &[
+            vec![],
+            setgen.random(8),
+            setgen.random(4096),
+            setgen.runs(4096, 0.01),
+            setgen.runs(4096, 0.2),
+            setgen.runs(4096, 0.5),
+            setgen.runs(4096, 0.9),
+        ];
 
-        // struct T {
-        //     partition: Partition,
-        //     check: fn(Container<'_, L>),
-        // }
+        for kind in kinds {
+            for (i, set) in sets.iter().enumerate() {
+                println!("Testing partition kind: {kind:?} with set {i}");
 
-        // let partition = Partition::Full;
-        // let mut encoder = Encoder::new(BytesMut::default());
-        // partition.encode(&mut encoder);
-        // let buf = encoder.into_inner();
-        // let container = Container::<'_, Block>::from_suffix(&buf).unwrap();
+                let partition = mkpartition::<Low>(kind, &set);
+                let mut encoder = Encoder::new(BytesMut::default());
+                partition.encode(&mut encoder);
+                let buf = encoder.into_inner();
+                let partition_ref = PartitionRef::<'_, Low>::from_suffix(&buf).unwrap();
 
-        // let Container::Vec { values } = container else {
-        //     panic!("Unexpected container type");
-        // };
-
-        // assert_eq!(values, vec![1, 3, 5, 7]);
+                assert_eq!(partition_ref.kind(), kind);
+                test_partition_read(&partition_ref, &set);
+            }
+        }
     }
-
-    // #[test]
-    // fn test_encode_decode_vec() {
-    //     let partition = VecPartition::<Block>::from_iter([1, 3, 5, 7]);
-    //     let mut encoder = Encoder::new(BytesMut::default());
-    //     partition.encode(&mut encoder);
-    //     let buf = encoder.into_inner();
-    //     let container = PartitionRef::<'_, Block>::from_suffix(&buf).unwrap();
-
-    //     let PartitionRef::Vec { values } = container else {
-    //         panic!("Unexpected container type");
-    //     };
-
-    //     assert_eq!(values, vec![1, 3, 5, 7]);
-    // }
 }

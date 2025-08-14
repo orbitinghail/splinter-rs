@@ -2,7 +2,7 @@ use std::fmt::{self, Debug};
 
 use bytes::BufMut;
 use itertools::Itertools;
-use num::traits::AsPrimitive;
+use num::traits::{AsPrimitive, Bounded};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::MultiIter;
@@ -24,10 +24,21 @@ pub mod vec;
 const TREE_SPARSE_THRESHOLD: f64 = 0.5;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, IntoBytes, TryFromBytes, Unaligned, KnownLayout, Immutable,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    IntoBytes,
+    TryFromBytes,
+    Unaligned,
+    KnownLayout,
+    Immutable,
+    Default,
 )]
 #[repr(u8)]
 pub enum PartitionKind {
+    #[default]
     Empty = 0x00,
     Full = 0x01,
     Bitmap = 0x02,
@@ -69,7 +80,7 @@ impl<L: Level> Partition<L> {
         }
     }
 
-    fn to_kind(&mut self, kind: PartitionKind) {
+    fn switch_kind(&mut self, kind: PartitionKind) {
         if self.kind() == kind {
             return;
         }
@@ -166,6 +177,20 @@ impl<L: Level> Partition<L> {
 
         self.kind()
     }
+
+    /// Insert a value into the partition without optimizing the partition's
+    /// storage choice. You should run `Self::optimize` on this partition
+    /// afterwards.
+    /// Returns `true` if the insertion occurred, otherwise `false`.
+    pub fn raw_insert(&mut self, value: L::Value) -> bool {
+        match self {
+            Partition::Full => false,
+            Partition::Bitmap(partition) => partition.insert(value),
+            Partition::Vec(partition) => partition.insert(value),
+            Partition::Run(partition) => partition.insert(value),
+            Partition::Tree(partition) => partition.insert(value),
+        }
+    }
 }
 
 impl<L: Level> Optimizable for Partition<L> {
@@ -173,7 +198,7 @@ impl<L: Level> Optimizable for Partition<L> {
         let this = &mut *self;
         let optimized = this.optimize_kind(false);
         if optimized != this.kind() {
-            this.to_kind(optimized);
+            this.switch_kind(optimized);
         } else if let Partition::Tree(tree) = this {
             tree.optimize_children();
         }
@@ -244,24 +269,12 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
     }
 
     fn contains(&self, value: L::Value) -> bool {
-        debug_assert!(value.as_() < L::MAX_LEN, "value out of range");
-
         match self {
             Partition::Full => true,
             Partition::Bitmap(partition) => partition.contains(value),
             Partition::Vec(partition) => partition.contains(value),
             Partition::Run(partition) => partition.contains(value),
             Partition::Tree(partition) => partition.contains(value),
-        }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = L::Value> {
-        match self {
-            Partition::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
-            Partition::Bitmap(p) => Iter::Bitmap(p.iter()),
-            Partition::Vec(p) => Iter::Vec(p.iter()),
-            Partition::Run(p) => Iter::Run(p.iter()),
-            Partition::Tree(p) => Iter::Tree(p.iter()),
         }
     }
 
@@ -284,22 +297,34 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Tree(p) => p.select(idx),
         }
     }
+
+    fn last(&self) -> Option<L::Value> {
+        match self {
+            Partition::Full => Some(L::Value::max_value()),
+            Partition::Bitmap(p) => p.last(),
+            Partition::Vec(p) => p.last(),
+            Partition::Run(p) => p.last(),
+            Partition::Tree(p) => p.last(),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        match self {
+            Partition::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
+            Partition::Bitmap(p) => Iter::Bitmap(p.iter()),
+            Partition::Vec(p) => Iter::Vec(p.iter()),
+            Partition::Run(p) => Iter::Run(p.iter()),
+            Partition::Tree(p) => Iter::Tree(p.iter()),
+        }
+    }
 }
 
 impl<L: Level> PartitionWrite<L> for Partition<L> {
     fn insert(&mut self, value: L::Value) -> bool {
-        let inserted = match self {
-            Partition::Full => false,
-            Partition::Bitmap(partition) => partition.insert(value),
-            Partition::Vec(partition) => partition.insert(value),
-            Partition::Run(partition) => partition.insert(value),
-            Partition::Tree(partition) => partition.insert(value),
-        };
-
+        let inserted = self.raw_insert(value);
         if inserted {
-            self.to_kind(self.optimize_kind(true));
+            self.switch_kind(self.optimize_kind(true));
         }
-
         inserted
     }
 }
@@ -307,9 +332,79 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
 impl<L: Level> FromIterator<L::Value> for Partition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let mut partition = Partition::Vec(iter.into_iter().collect());
-        partition.to_kind(partition.optimize_kind(true));
+        partition.switch_kind(partition.optimize_kind(true));
         partition
     }
 }
 
 MultiIter!(Iter, Full, Bitmap, Vec, Run, Tree);
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        splinterv2::{
+            Partition, PartitionRead, SplinterV2,
+            level::{High, Level, Low},
+        },
+        testutil::{SetGenV2, mkpartition, test_partition_read},
+    };
+
+    use super::PartitionKind;
+
+    #[test]
+    fn test_partition_full() {
+        let splinter = Partition::<High>::Full;
+        assert!(!splinter.is_empty(), "not empty");
+        assert_eq!(
+            splinter.cardinality(),
+            <High as Level>::MAX_LEN,
+            "cardinality"
+        );
+        assert_eq!(
+            splinter.last(),
+            Some(<High as Level>::Value::max_value()),
+            "last"
+        );
+    }
+
+    #[test]
+    fn test_partitions_direct() {
+        let mut setgen = SetGenV2::<Low>::new(0xDEADBEEF);
+
+        let kinds = [
+            PartitionKind::Bitmap,
+            PartitionKind::Vec,
+            PartitionKind::Run,
+            PartitionKind::Tree,
+        ];
+        let sets = &[
+            vec![],
+            setgen.random(8),
+            setgen.random(4096),
+            setgen.runs(4096, 0.01),
+            setgen.runs(4096, 0.2),
+            setgen.runs(4096, 0.5),
+            setgen.runs(4096, 0.9),
+        ];
+
+        for kind in kinds {
+            for (i, set) in sets.iter().enumerate() {
+                println!("Testing partition kind: {kind:?} with set {i}");
+
+                let partition = mkpartition::<Low>(kind, &set);
+                test_partition_read(&partition, &set);
+            }
+        }
+    }
+
+    #[quickcheck]
+    fn test_partitions_quickcheck(values: Vec<u32>) -> TestResult {
+        let expected = values.iter().copied().sorted().dedup().collect_vec();
+        test_partition_read(&SplinterV2::from_iter(values), &expected);
+        TestResult::passed()
+    }
+}

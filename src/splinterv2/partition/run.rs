@@ -33,7 +33,7 @@ pub(crate) trait Run<L: Level> {
     fn last(&self) -> L::Value;
 }
 
-impl<L: Level> Run<L> for &RangeInclusive<L::Value> {
+impl<L: Level> Run<L> for RangeInclusive<L::Value> {
     #[inline]
     fn len(&self) -> usize {
         (*self.end() - *self.start() + L::Value::ONE).as_()
@@ -67,7 +67,7 @@ where
             if value <= run.last() {
                 FoldWhile::Continue(acc + run.rank(value))
             } else {
-                return FoldWhile::Done(acc);
+                FoldWhile::Done(acc)
             }
         })
         .into_inner()
@@ -181,32 +181,36 @@ impl<L: Level> Encodable for RunPartition<L> {
 
 impl<L: Level> PartitionRead<L> for RunPartition<L> {
     fn cardinality(&self) -> usize {
-        self.runs.iter().map(|run| Run::<L>::len(&run)).sum()
+        self.runs.iter().map(|run| Run::<L>::len(run)).sum()
     }
 
     fn is_empty(&self) -> bool {
         self.runs.is_empty()
     }
 
-    fn contains(&self, value: <L as Level>::Value) -> bool {
+    fn contains(&self, value: L::Value) -> bool {
         self.runs.contains(&value)
+    }
+
+    fn rank(&self, value: L::Value) -> usize {
+        run_rank::<L, _, _>(self.runs.iter().cloned(), value)
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        run_select::<L, _, _>(self.runs.iter().cloned(), idx)
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        self.runs.last().map(|r| r.end()).copied()
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.runs.iter().flat_map(RunIter::from)
     }
-
-    fn rank(&self, value: <L as Level>::Value) -> usize {
-        run_rank::<L, _, _>(self.runs.iter(), value)
-    }
-
-    fn select(&self, idx: usize) -> Option<L::Value> {
-        run_select::<L, _, _>(self.runs.iter(), idx)
-    }
 }
 
 impl<L: Level> PartitionWrite<L> for RunPartition<L> {
-    fn insert(&mut self, value: <L as Level>::Value) -> bool {
+    fn insert(&mut self, value: L::Value) -> bool {
         // TODO: ideally self.runs.insert would return some signal when it
         // changes the underlying btree
         if self.runs.contains(&value) {
