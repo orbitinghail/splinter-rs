@@ -3,13 +3,16 @@ use std::{fmt::Debug, mem::size_of};
 use bytes::BufMut;
 use itertools::Itertools;
 
-use crate::splinterv2::{
-    codec::{Encodable, encoder::Encoder},
-    count::{count_runs_sorted, count_unique_sorted},
-    level::Level,
-    partition::Partition,
-    segment::SplitSegment,
-    traits::{Cut, Merge, PartitionRead, PartitionWrite},
+use crate::{
+    splinterv2::{
+        codec::{Encodable, encoder::Encoder},
+        count::{count_runs_sorted, count_unique_sorted},
+        level::Level,
+        partition::Partition,
+        segment::SplitSegment,
+        traits::{Cut, Merge, PartitionRead, PartitionWrite},
+    },
+    util::find_next_sorted,
 };
 
 #[derive(Clone, Eq)]
@@ -157,12 +160,12 @@ impl<L: Level> Cut<Partition<L>> for VecPartition<L> {
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &Partition<L>) -> Self::Out {
-        let mut other = rhs.iter();
+        let mut other = rhs.iter().peekable();
 
         let mut intersection = Partition::default();
         for v in self
             .values
-            .extract_if(.., |val| other.find(|v| v == val).is_some())
+            .extract_if(.., |val| find_next_sorted(&mut other, val).is_some())
         {
             intersection.raw_insert(v);
         }
