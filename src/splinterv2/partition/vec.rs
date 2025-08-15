@@ -2,14 +2,14 @@ use std::{fmt::Debug, mem::size_of};
 
 use bytes::BufMut;
 use itertools::Itertools;
-use num::traits::AsPrimitive;
 
 use crate::splinterv2::{
     codec::{Encodable, encoder::Encoder},
     count::{count_runs_sorted, count_unique_sorted},
     level::Level,
+    partition::Partition,
     segment::SplitSegment,
-    traits::{PartitionRead, PartitionWrite},
+    traits::{Cut, Merge, PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, Eq)]
@@ -110,7 +110,6 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
 
 impl<L: Level> PartitionWrite<L> for VecPartition<L> {
     fn insert(&mut self, value: L::Value) -> bool {
-        assert!(value.as_() < L::MAX_LEN, "value out of range");
         match self.values.binary_search(&value) {
             // value already exists
             Ok(_) => false,
@@ -119,6 +118,18 @@ impl<L: Level> PartitionWrite<L> for VecPartition<L> {
                 self.values.insert(index, value);
                 true
             }
+        }
+    }
+
+    fn remove(&mut self, value: L::Value) -> bool {
+        match self.values.binary_search(&value) {
+            // value exists, remove it
+            Ok(index) => {
+                self.values.remove(index);
+                true
+            }
+            // value doesn't exist
+            Err(_) => false,
         }
     }
 }
@@ -133,5 +144,28 @@ impl<L: Level> PartialEq for VecPartition<L> {
 impl<L: Level> PartialEq<[L::ValueUnaligned]> for VecPartition<L> {
     fn eq(&self, other: &[L::ValueUnaligned]) -> bool {
         itertools::equal(self.iter(), other.iter().map(|&v| v.into()))
+    }
+}
+
+impl<L: Level> Merge for VecPartition<L> {
+    fn merge(&mut self, rhs: &Self) {
+        self.values = self.iter().merge(rhs.iter()).dedup().collect_vec();
+    }
+}
+
+impl<L: Level> Cut<Partition<L>> for VecPartition<L> {
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &Partition<L>) -> Self::Out {
+        let mut other = rhs.iter();
+
+        let mut intersection = Partition::default();
+        for v in self
+            .values
+            .extract_if(.., |val| other.find(|v| v == val).is_some())
+        {
+            intersection.raw_insert(v);
+        }
+        intersection
     }
 }

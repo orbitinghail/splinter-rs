@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, btree_map::Entry},
     fmt::{self, Debug},
 };
 
@@ -14,8 +14,9 @@ use crate::splinterv2::{
     },
     count::count_runs_sorted,
     level::Level,
+    partition::Partition,
     segment::{Segment, SplitSegment},
-    traits::{Optimizable, PartitionRead, PartitionWrite},
+    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, Eq)]
@@ -39,6 +40,10 @@ impl<L: Level> TreePartition<L> {
         for child in self.children.values_mut() {
             child.optimize();
         }
+    }
+
+    fn refresh_cardinality(&mut self) {
+        self.cardinality = self.children.values().map(|c| c.cardinality()).sum();
     }
 }
 
@@ -157,6 +162,23 @@ impl<L: Level> PartitionWrite<L> for TreePartition<L> {
             false
         }
     }
+
+    fn remove(&mut self, value: L::Value) -> bool {
+        let (segment, value) = value.split();
+        match self.children.entry(segment) {
+            Entry::Vacant(_) => (),
+            Entry::Occupied(mut child) => {
+                if child.get_mut().remove(value) {
+                    if child.get().is_empty() {
+                        child.remove();
+                    }
+                    self.cardinality -= 1;
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 impl<L: Level> PartialEq for TreePartition<L> {
@@ -177,5 +199,36 @@ impl<L: Level> PartialEq<TreeRef<'_, L>> for TreePartition<L> {
                 .values()
                 .zip(other.children())
                 .all(|(a, b)| *a == b)
+    }
+}
+
+impl<L: Level> Merge for TreePartition<L> {
+    fn merge(&mut self, rhs: &Self) {
+        for (&segment, child) in rhs.children.iter() {
+            self.children.entry(segment).or_default().merge(child);
+        }
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> Cut for TreePartition<L> {
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &Self) -> Partition<L> {
+        let mut intersection = Self::default();
+
+        for (segment, child) in self.children.iter_mut() {
+            if let Some(other) = rhs.children.get(segment) {
+                intersection.children.insert(*segment, child.cut(other));
+            }
+        }
+
+        // remove empty children
+        self.children.retain(|_, c| !c.is_empty());
+
+        self.refresh_cardinality();
+        intersection.refresh_cardinality();
+
+        Partition::Tree(intersection)
     }
 }

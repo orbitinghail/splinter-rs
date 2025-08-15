@@ -125,6 +125,11 @@ impl<L: Level> Partition<L> {
         }
     }
 
+    #[inline]
+    pub(crate) fn optimize_fast(&mut self) {
+        self.switch_kind(self.optimize_kind(true));
+    }
+
     fn optimize_kind(&self, skip_run: bool) -> PartitionKind {
         let kind = self.kind();
         let cardinality = self.cardinality();
@@ -181,7 +186,7 @@ impl<L: Level> Partition<L> {
     /// Insert a value into the partition without optimizing the partition's
     /// storage choice. You should run `Self::optimize` on this partition
     /// afterwards.
-    /// Returns `true` if the insertion occurred, otherwise `false`.
+    /// Returns `true` if the insertion occurred, `false` otherwise.
     pub fn raw_insert(&mut self, value: L::Value) -> bool {
         match self {
             Partition::Full => false,
@@ -189,6 +194,26 @@ impl<L: Level> Partition<L> {
             Partition::Vec(partition) => partition.insert(value),
             Partition::Run(partition) => partition.insert(value),
             Partition::Tree(partition) => partition.insert(value),
+        }
+    }
+
+    /// Remove a value from the partition without optimizing the partition's
+    /// storage choice. You should run `Self::optimize` on this partition afterwards.
+    /// Returns `true` if the removal occurred, `false` otherwise.
+    pub fn raw_remove(&mut self, value: L::Value) -> bool {
+        match self {
+            Partition::Full => {
+                self.switch_kind(if L::PREFER_TREE {
+                    PartitionKind::Tree
+                } else {
+                    PartitionKind::Run
+                });
+                self.raw_remove(value)
+            }
+            Partition::Bitmap(partition) => partition.remove(value),
+            Partition::Vec(partition) => partition.remove(value),
+            Partition::Run(partition) => partition.remove(value),
+            Partition::Tree(partition) => partition.remove(value),
         }
     }
 }
@@ -346,17 +371,34 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
     fn insert(&mut self, value: L::Value) -> bool {
         let inserted = self.raw_insert(value);
         if inserted {
-            self.switch_kind(self.optimize_kind(true));
+            self.optimize_fast();
         }
         inserted
+    }
+
+    fn remove(&mut self, value: L::Value) -> bool {
+        let removed = self.raw_remove(value);
+        if removed {
+            self.optimize_fast();
+        }
+        removed
     }
 }
 
 impl<L: Level> FromIterator<L::Value> for Partition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let mut partition = Partition::Vec(iter.into_iter().collect());
-        partition.switch_kind(partition.optimize_kind(true));
+        partition.optimize_fast();
         partition
+    }
+}
+
+impl<L: Level> Extend<L::Value> for Partition<L> {
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        for el in iter {
+            self.raw_insert(el);
+        }
+        self.optimize_fast();
     }
 }
 

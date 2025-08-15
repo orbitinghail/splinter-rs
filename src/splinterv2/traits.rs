@@ -41,8 +41,12 @@ pub trait PartitionRead<L: Level> {
 
 pub trait PartitionWrite<L: Level> {
     /// Inserts the value into the partition unless it already exists.
-    /// Returns `true` if the insertion occurred, otherwise `false`.
+    /// Returns `true` if the insertion occurred, `false` otherwise.
     fn insert(&mut self, value: L::Value) -> bool;
+
+    /// Removes the value from the partition if it exists.
+    /// Returns `true` if the removal occurred, `false` otherwise.
+    fn remove(&mut self, value: L::Value) -> bool;
 }
 
 #[doc(hidden)]
@@ -67,4 +71,17 @@ impl_truncate_from_usize!(u32, u24, u16, u8);
 pub trait Optimizable {
     /// Optimize memory usage. Should be run after batch inserts or before serialization.
     fn optimize(&mut self);
+}
+
+pub trait Merge<Rhs = Self> {
+    /// Merges rhs into self
+    fn merge(&mut self, rhs: &Rhs);
+}
+
+pub trait Cut<Rhs = Self> {
+    type Out;
+
+    /// Returns the intersection between self and other while removing the
+    /// intersection from self
+    fn cut(&mut self, rhs: &Rhs) -> Self::Out;
 }

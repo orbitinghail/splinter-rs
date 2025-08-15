@@ -73,6 +73,10 @@ impl PartitionWrite<High> for SplinterV2 {
     fn insert(&mut self, value: u32) -> bool {
         self.0.insert(value)
     }
+
+    fn remove(&mut self, value: u32) -> bool {
+        self.0.remove(value)
+    }
 }
 
 impl Encodable for SplinterV2 {

@@ -28,7 +28,7 @@ itertools = "0.14"
 num = "0.4"
 static_assertions = "1.1"
 bitvec = "1.0.1"
-u24 = "0.2.0"
+u24 = { version = "0.3.0", features = ["rangemap"] }
 rangemap = "1.6.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.1.0"

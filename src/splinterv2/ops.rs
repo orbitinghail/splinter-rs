@@ -1,8 +1,9 @@
 use crate::splinterv2::{
-    PartitionRead,
+    PartitionRead, PartitionWrite,
     codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
     level::Level,
     partition::Partition,
+    traits::{Cut, Merge},
 };
 
 impl<L: Level> PartialEq for Partition<L> {
@@ -10,16 +11,14 @@ impl<L: Level> PartialEq for Partition<L> {
         use Partition::*;
 
         match (self, other) {
-            // use fast physical comparisons if both partitions use the same
-            // storage
+            // use fast physical ops if both partitions share storage
             (Full, Full) => true,
             (Bitmap(a), Bitmap(b)) => a == b,
             (Vec(a), Vec(b)) => a == b,
             (Run(a), Run(b)) => a == b,
             (Tree(a), Tree(b)) => a == b,
 
-            // fall back to logical equality if the two partitions have
-            // different storage classes
+            // otherwise fall back to logical ops
             (a, b) => {
                 debug_assert_ne!(a.kind(), b.kind(), "should have different storage classes");
                 itertools::equal(a.iter(), b.iter())
@@ -34,18 +33,76 @@ impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L> {
         use PartitionRef::*;
 
         match (self, other) {
-            // use fast physical comparisons if both partitions use the same
-            // storage
+            // use fast physical ops if both partitions share storage
             (Partition::Full, NonRecursive(Full)) => true,
             (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a == *bitmap,
             (Partition::Vec(a), NonRecursive(Vec { values })) => a == *values,
             (Partition::Run(a), NonRecursive(Run { runs })) => a == *runs,
             (Partition::Tree(a), Tree(b)) => *a == *b,
 
-            // fall back to logical equality if the two partitions have
-            // different storage classes
+            // otherwise fall back to logical ops
             (a, b) => itertools::equal(a.iter(), b.iter()),
         }
+    }
+}
+
+impl<L: Level> Merge for Partition<L> {
+    fn merge(&mut self, rhs: &Self) {
+        use Partition::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (Full, _) => (),
+
+            // use fast physical ops if both partitions share storage
+            (Bitmap(a), Bitmap(b)) => a.merge(b),
+            (Vec(a), Vec(b)) => a.merge(b),
+            (Run(a), Run(b)) => a.merge(b),
+            (Tree(a), Tree(b)) => a.merge(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                for el in b.iter() {
+                    a.raw_insert(el);
+                }
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> Cut for Partition<L> {
+    type Out = Self;
+
+    fn cut(&mut self, rhs: &Self) -> Self::Out {
+        use Partition::*;
+
+        let mut intersection = match (&mut *self, rhs) {
+            // use fast physical ops if both partitions share storage
+            (a @ Full, Full) => std::mem::take(a),
+            (Bitmap(a), Bitmap(b)) => a.cut(b),
+            (Run(a), Run(b)) => a.cut(b),
+            (Tree(a), Tree(b)) => a.cut(b),
+
+            // fallback to general optimized logical ops
+            (Vec(a), b) => a.cut(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                let mut intersection = Partition::default();
+                for val in b.iter() {
+                    if a.remove(val) {
+                        intersection.raw_insert(val);
+                    }
+                }
+                intersection
+            }
+        };
+
+        self.optimize_fast();
+        intersection.optimize_fast();
+        intersection
     }
 }
 
