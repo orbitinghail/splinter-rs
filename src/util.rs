@@ -1,7 +1,6 @@
 use std::iter::Peekable;
 
 use bytes::BufMut;
-use itertools::PeekingNext;
 
 pub trait FromSuffix<'a> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self;
