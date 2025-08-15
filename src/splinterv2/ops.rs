@@ -108,11 +108,21 @@ impl<L: Level> Cut for Partition<L> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use itertools::Itertools;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
-    use crate::{splinterv2::Optimizable, testutil::mksplinterv2};
+    use crate::{
+        splinterv2::{
+            Optimizable,
+            level::High,
+            partition::Partition,
+            traits::{Cut, Merge},
+        },
+        testutil::mksplinterv2,
+    };
 
     #[quickcheck]
     fn test_partitions_equality_quickcheck(values: Vec<u32>) -> TestResult {
@@ -150,5 +160,38 @@ mod tests {
         let b = mksplinterv2(&b).encode_to_splinter_ref();
 
         TestResult::from_bool((a == b) == expected)
+    }
+
+    #[quickcheck]
+    fn test_merge_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
+        let mut merged = Partition::<High>::from_iter(a.iter().copied());
+        let other = Partition::<High>::from_iter(b.iter().copied());
+
+        if optimize {
+            merged.optimize();
+        }
+
+        let expected = Partition::<High>::from_iter(a.union(&b).copied());
+        merged.merge(&other);
+        TestResult::from_bool(merged == expected)
+    }
+
+    #[quickcheck]
+    fn test_cut_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
+        let mut source = Partition::<High>::from_iter(a.clone());
+        let other = Partition::<High>::from_iter(b.clone());
+
+        if optimize {
+            source.optimize();
+        }
+
+        let expected_intersection = Partition::<High>::from_iter(a.intersection(&b).copied());
+        let expected_remaining = Partition::<High>::from_iter(a.difference(&b).copied());
+
+        let actual_intersection = source.cut(&other);
+
+        TestResult::from_bool(
+            actual_intersection == expected_intersection && source == expected_remaining,
+        )
     }
 }
