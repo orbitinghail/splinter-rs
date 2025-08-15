@@ -1,4 +1,7 @@
+use std::iter::Peekable;
+
 use bytes::BufMut;
+use itertools::PeekingNext;
 
 pub trait FromSuffix<'a> {
     fn from_suffix(data: &'a [u8], cardinality: usize) -> Self;
@@ -45,4 +48,21 @@ macro_rules! MultiIter {
             }
         }
     };
+}
+
+pub fn find_next_sorted<I, T>(iter: &mut Peekable<I>, needle: &T) -> Option<T>
+where
+    I: Iterator<Item = T>,
+    T: PartialOrd + PartialEq,
+{
+    // advance the iterator until either:
+    // 1. we find the needle
+    // 2. we find a value larger than the needle
+    //
+    while let Some(next) = iter.next_if(|v| v <= needle) {
+        if &next == needle {
+            return Some(next);
+        }
+    }
+    None
 }
