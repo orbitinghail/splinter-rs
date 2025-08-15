@@ -18,6 +18,7 @@ pub mod ops;
 mod partition;
 mod relational;
 mod splinter;
+pub mod splinterv2;
 mod util;
 
 #[cfg(test)]
@@ -176,7 +177,7 @@ mod tests {
             vec![1],
             (0..10).collect(),
             set_gen.random(64),
-            set_gen.distributed(2, 2, 2, 4, 32),
+            set_gen.distributed(2, 2, 2, 4),
         ];
 
         for values in sets {
@@ -199,7 +200,7 @@ mod tests {
             vec![2],
             (0..20).step_by(3).collect(),
             set_gen.random(64),
-            set_gen.distributed(2, 1, 1, 16, 32),
+            set_gen.distributed(2, 1, 1, 16),
         ];
 
         for values in sets {
