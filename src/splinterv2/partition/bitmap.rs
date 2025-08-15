@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 
 use bitvec::{
     bitbox,
@@ -14,8 +14,9 @@ use crate::splinterv2::{
     codec::{Encodable, encoder::Encoder},
     count::{count_bitmap_runs, count_unique_sorted},
     level::Level,
+    partition::Partition,
     segment::SplitSegment,
-    traits::{PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Cut, Merge, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[derive(Clone, Eq)]
@@ -131,6 +132,14 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
             .expect("value out of range");
         !bit.replace(true)
     }
+
+    fn remove(&mut self, value: L::Value) -> bool {
+        let mut bit = self
+            .bitmap
+            .get_mut(value.as_())
+            .expect("value out of range");
+        bit.replace(false)
+    }
 }
 
 impl<L: Level> PartialEq for BitmapPartition<L> {
@@ -148,5 +157,24 @@ where
 {
     fn eq(&self, other: &BitSlice<T, O>) -> bool {
         self.bitmap.as_bitslice() == other
+    }
+}
+
+impl<L: Level> Merge for BitmapPartition<L> {
+    fn merge(&mut self, rhs: &Self) {
+        self.bitmap |= rhs.bitmap.as_bitslice()
+    }
+}
+
+impl<L: Level> Cut for BitmapPartition<L> {
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &Self) -> Self::Out {
+        let intersection = self.bitmap.clone() & rhs.bitmap.as_bitslice();
+        self.bitmap &= !intersection.clone();
+        Partition::Bitmap(BitmapPartition {
+            bitmap: intersection,
+            _marker: PhantomData,
+        })
     }
 }

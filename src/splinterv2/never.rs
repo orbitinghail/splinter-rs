@@ -4,7 +4,7 @@ use crate::splinterv2::{
     Encodable, PartitionRead, PartitionWrite,
     codec::{encoder::Encoder, partition_ref::PartitionRef},
     level::Level,
-    traits::Optimizable,
+    traits::{Cut, Merge, Optimizable},
 };
 
 /// The Never type is used to terminate the Level tree. It is never constructed
@@ -32,6 +32,10 @@ impl Encodable for Never {
 impl<L: Level> PartitionWrite<L> for Never {
     fn insert(&mut self, _value: L::Value) -> bool {
         unreachable!("Never::insert")
+    }
+
+    fn remove(&mut self, _value: L::Value) -> bool {
+        unreachable!("Never::remove")
     }
 }
 
@@ -87,5 +91,18 @@ impl Level for Never {
 impl<L: Level> PartialEq<PartitionRef<'_, L>> for Never {
     fn eq(&self, _other: &PartitionRef<'_, L>) -> bool {
         unreachable!("Never::eq")
+    }
+}
+
+impl Merge for Never {
+    fn merge(&mut self, _rhs: &Self) {
+        unreachable!("Never::merge")
+    }
+}
+
+impl Cut for Never {
+    type Out = Never;
+    fn cut(&mut self, _rhs: &Self) -> Self::Out {
+        unreachable!("Never::cut")
     }
 }

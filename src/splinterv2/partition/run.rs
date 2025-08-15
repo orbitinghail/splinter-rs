@@ -3,28 +3,17 @@ use std::{fmt::Debug, mem::size_of, ops::RangeInclusive};
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
-use rangemap::{RangeInclusiveSet, StepFns};
+use rangemap::RangeInclusiveSet;
 
 use crate::splinterv2::{
     PartitionWrite,
     codec::{Encodable, encoder::Encoder, partition_ref::EncodedRun},
     count::count_unique_sorted,
     level::Level,
+    partition::Partition,
     segment::SplitSegment,
-    traits::{PartitionRead, TruncateFrom},
+    traits::{Cut, Merge, PartitionRead, TruncateFrom},
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct NumStep;
-impl<T: PrimInt + ConstOne> StepFns<T> for NumStep {
-    fn add_one(start: &T) -> T {
-        *start + T::ONE
-    }
-
-    fn sub_one(start: &T) -> T {
-        *start - T::ONE
-    }
-}
 
 pub(crate) trait Run<L: Level> {
     fn len(&self) -> usize;
@@ -99,7 +88,7 @@ where
 
 #[derive(Clone, Eq)]
 pub struct RunPartition<L: Level> {
-    runs: RangeInclusiveSet<L::Value, NumStep>,
+    runs: RangeInclusiveSet<L::Value>,
 }
 
 impl<L: Level> RunPartition<L> {
@@ -116,7 +105,7 @@ impl<L: Level> RunPartition<L> {
         let Some(first) = values.next() else {
             return RunPartition::default();
         };
-        let mut runs = RangeInclusiveSet::<L::Value, NumStep>::default();
+        let mut runs = RangeInclusiveSet::new();
         let mut cursor = (first, first);
         for value in values {
             // since the input iterator is sorted and unique, we only need to
@@ -150,9 +139,7 @@ impl<L: Level> RunPartition<L> {
 
 impl<L: Level> Default for RunPartition<L> {
     fn default() -> Self {
-        RunPartition {
-            runs: RangeInclusiveSet::<L::Value, NumStep>::new_with_step_fns(),
-        }
+        RunPartition { runs: Default::default() }
     }
 }
 
@@ -216,13 +203,22 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
 
 impl<L: Level> PartitionWrite<L> for RunPartition<L> {
     fn insert(&mut self, value: L::Value) -> bool {
-        // TODO: ideally self.runs.insert would return some signal when it
-        // changes the underlying btree
+        // TODO: ideally self.runs.insert would return a bool
         if self.runs.contains(&value) {
             false
         } else {
             self.runs.insert(value..=value);
             true
+        }
+    }
+
+    fn remove(&mut self, value: L::Value) -> bool {
+        // TODO: ideally self.runs.remove would return a bool
+        if self.runs.contains(&value) {
+            self.runs.remove(value..=value);
+            true
+        } else {
+            false
         }
     }
 }
@@ -279,6 +275,26 @@ impl<L: Level> PartialEq for RunPartition<L> {
 impl<L: Level> PartialEq<[EncodedRun<L>]> for RunPartition<L> {
     fn eq(&self, other: &[EncodedRun<L>]) -> bool {
         itertools::equal(other.iter(), self.runs.iter())
+    }
+}
+
+impl<L: Level> Merge for RunPartition<L> {
+    fn merge(&mut self, rhs: &Self) {
+        for range in rhs.runs.iter() {
+            self.runs.insert(range.clone());
+        }
+    }
+}
+
+impl<L: Level> Cut for RunPartition<L> {
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &Self) -> Self::Out {
+        let intersection: RangeInclusiveSet<L::Value> = self.runs.intersection(&rhs.runs).collect();
+        for run in intersection.iter() {
+            self.runs.remove(run.clone());
+        }
+        Partition::Run(Self { runs: intersection })
     }
 }
 

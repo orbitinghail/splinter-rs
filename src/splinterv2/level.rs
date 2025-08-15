@@ -5,6 +5,7 @@ use num::{
     cast::AsPrimitive,
     traits::{ConstOne, ConstZero},
 };
+use rangemap::StepLite;
 use u24::u24;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, Unaligned};
 
@@ -13,7 +14,7 @@ use crate::splinterv2::{
     never::Never,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 pub trait Level: Sized {
@@ -30,7 +31,9 @@ pub trait Level: Sized {
         + Clone
         + PartialEq
         + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
-        + Eq;
+        + Eq
+        + Cut<Out = Self::Down>
+        + Merge;
 
     type Value: num::PrimInt
         + AsPrimitive<usize>
@@ -40,7 +43,8 @@ pub trait Level: Sized {
         + ConstOne
         + Debug
         + Display
-        + Copy;
+        + StepLite
+        + Clone;
 
     type ValueUnaligned: IntoBytes
         + FromBytes

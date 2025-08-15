@@ -804,11 +804,12 @@ dependencies = [
 
 [[package]]
 name = "u24"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b96ead338d8186e9dcd4fcd6369ceb8a19611d8f62644704a8be15d9b6250b4"
+checksum = "286e0e39248f1ed8dd4a9c129d5dce1554205f0b8add77c8e34fcdb0ae3a62ea"
 dependencies = [
  "num",
+ "rangemap",
  "static_assertions",
  "zerocopy",
 ]
