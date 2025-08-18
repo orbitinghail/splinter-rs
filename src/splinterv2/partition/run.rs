@@ -1,13 +1,13 @@
-use std::{fmt::Debug, mem::size_of, ops::RangeInclusive};
+use std::{fmt::Debug, iter::FusedIterator, mem::size_of, ops::RangeInclusive};
 
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
-use rangemap::RangeInclusiveSet;
+use range_set_blaze::{CheckSortedDisjoint, Integer, RangeSetBlaze, SortedDisjoint};
 
 use crate::splinterv2::{
     PartitionWrite,
-    codec::{Encodable, encoder::Encoder, partition_ref::EncodedRun},
+    codec::{Encodable, encoder::Encoder, runs_ref::RunsRef},
     count::count_unique_sorted,
     level::Level,
     partition::Partition,
@@ -15,47 +15,49 @@ use crate::splinterv2::{
     traits::{Cut, Merge, PartitionRead, TruncateFrom},
 };
 
-pub(crate) trait Run<L: Level> {
+pub(crate) trait Run<T> {
     fn len(&self) -> usize;
-    fn rank(&self, v: L::Value) -> usize;
-    fn select(&self, idx: usize) -> Option<L::Value>;
-    fn first(&self) -> L::Value;
-    fn last(&self) -> L::Value;
+    fn rank(&self, v: T) -> usize;
+    fn select(&self, idx: usize) -> Option<T>;
+    fn first(&self) -> T;
+    fn last(&self) -> T;
 }
 
-impl<L: Level> Run<L> for RangeInclusive<L::Value> {
+impl<T> Run<T> for RangeInclusive<T>
+where
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+{
     #[inline]
     fn len(&self) -> usize {
         self.end().as_() - self.start().as_() + 1
     }
 
     #[inline]
-    fn rank(&self, v: L::Value) -> usize {
+    fn rank(&self, v: T) -> usize {
         v.min(*self.end()).as_() - self.start().as_() + 1
     }
 
     #[inline]
-    fn select(&self, idx: usize) -> Option<L::Value> {
-        let n = *self.start() + L::Value::truncate_from(idx);
+    fn select(&self, idx: usize) -> Option<T> {
+        let n = *self.start() + T::truncate_from(idx);
         (n <= *self.end()).then_some(n)
     }
 
     #[inline]
-    fn first(&self) -> L::Value {
+    fn first(&self) -> T {
         *self.start()
     }
 
     #[inline]
-    fn last(&self) -> L::Value {
+    fn last(&self) -> T {
         *self.end()
     }
 }
 
-pub(crate) fn run_rank<L, I, R>(iter: I, value: L::Value) -> usize
+pub(crate) fn run_rank<T, I>(iter: I, value: T) -> usize
 where
-    L: Level,
-    I: IntoIterator<Item = R>,
-    R: Run<L>,
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    I: IntoIterator<Item = RangeInclusive<T>>,
 {
     iter.into_iter()
         .fold_while(0, |acc, run| {
@@ -70,11 +72,10 @@ where
         .into_inner()
 }
 
-pub(crate) fn run_select<L, I, R>(iter: I, mut n: usize) -> Option<L::Value>
+pub(crate) fn run_select<T, I>(iter: I, mut n: usize) -> Option<T>
 where
-    L: Level,
-    I: IntoIterator<Item = R>,
-    R: Run<L>,
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    I: IntoIterator<Item = RangeInclusive<T>>,
 {
     for run in iter.into_iter() {
         let len = run.len();
@@ -88,7 +89,7 @@ where
 
 #[derive(Clone, Eq)]
 pub struct RunPartition<L: Level> {
-    runs: RangeInclusiveSet<L::Value>,
+    runs: RangeSetBlaze<L::Value>,
 }
 
 impl<L: Level> RunPartition<L> {
@@ -101,36 +102,22 @@ impl<L: Level> RunPartition<L> {
 
     /// Construct an `RunPartition` from a sorted iter of unique values
     /// SAFETY: undefined behavior if the iter is not sorted or contains duplicates
-    pub fn from_sorted_unique_unchecked(mut values: impl Iterator<Item = L::Value>) -> Self {
-        let Some(first) = values.next() else {
-            return RunPartition::default();
-        };
-        let mut runs = RangeInclusiveSet::new();
-        let mut cursor = (first, first);
-        for value in values {
-            // since the input iterator is sorted and unique, we only need to
-            // check if the next value is adjacent to the current range
-            if cursor.1 + L::Value::ONE == value {
-                cursor.1 = value;
-            } else {
-                runs.insert(cursor.0..=cursor.1);
-                cursor = (value, value);
-            }
+    pub fn from_sorted_unique_unchecked(values: impl Iterator<Item = L::Value>) -> Self {
+        Self {
+            runs: CheckSortedDisjoint::new(MergeRuns::new(values)).into_range_set_blaze(),
         }
-        runs.insert(cursor.0..=cursor.1);
-        RunPartition { runs }
     }
 
     #[inline]
     pub fn count_runs(&self) -> usize {
-        self.runs.len()
+        self.runs.ranges().len()
     }
 
     #[inline]
     pub fn sparsity_ratio(&self) -> f64 {
         let segments = self
             .runs
-            .iter()
+            .ranges()
             .flat_map(|r| r.start().segment()..=r.end().segment());
         let unique_segments = count_unique_sorted(segments);
         unique_segments as f64 / self.cardinality() as f64
@@ -154,26 +141,25 @@ where
 
 impl<L: Level> FromIterator<L::Value> for RunPartition<L> {
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
-        let values = iter.into_iter().sorted().dedup();
-        // SAFETY: the iterator is sorted and deduped
-        Self::from_sorted_unique_unchecked(values)
+        Self { runs: RangeSetBlaze::from_iter(iter) }
     }
 }
 
 impl<L: Level> Encodable for RunPartition<L> {
     #[inline]
     fn encoded_size(&self) -> usize {
-        Self::encoded_size(self.runs.len())
+        Self::encoded_size(self.count_runs())
     }
 
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
-        encoder.put_run_partition::<L>(self.runs.iter());
+        encoder.put_run_partition::<L>(self.runs.ranges());
     }
 }
 
 impl<L: Level> PartitionRead<L> for RunPartition<L> {
     fn cardinality(&self) -> usize {
-        self.runs.iter().map(|run| Run::<L>::len(run)).sum()
+        // SAFETY: this is safe so long as L::Value is smaller than 2^53
+        <L::Value as Integer>::safe_len_to_f64_lossy(self.runs.len()) as usize
     }
 
     fn is_empty(&self) -> bool {
@@ -181,87 +167,33 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
     }
 
     fn contains(&self, value: L::Value) -> bool {
-        self.runs.contains(&value)
+        self.runs.contains(value)
     }
 
     fn rank(&self, value: L::Value) -> usize {
-        run_rank::<L, _, _>(self.runs.iter().cloned(), value)
+        run_rank(self.runs.ranges(), value)
     }
 
     fn select(&self, idx: usize) -> Option<L::Value> {
-        run_select::<L, _, _>(self.runs.iter().cloned(), idx)
+        run_select(self.runs.ranges(), idx)
     }
 
     fn last(&self) -> Option<L::Value> {
-        self.runs.last().map(|r| r.end()).copied()
+        self.runs.last()
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.runs.iter().flat_map(RunIter::from)
+        self.runs.iter()
     }
 }
 
 impl<L: Level> PartitionWrite<L> for RunPartition<L> {
     fn insert(&mut self, value: L::Value) -> bool {
-        // TODO: ideally self.runs.insert would return a bool
-        if self.runs.contains(&value) {
-            false
-        } else {
-            self.runs.insert(value..=value);
-            true
-        }
+        self.runs.insert(value)
     }
 
     fn remove(&mut self, value: L::Value) -> bool {
-        // TODO: ideally self.runs.remove would return a bool
-        if self.runs.contains(&value) {
-            self.runs.remove(value..=value);
-            true
-        } else {
-            false
-        }
-    }
-}
-
-#[doc(hidden)]
-pub struct RunIter<T> {
-    start: T,
-    end: T,
-    exhausted: bool,
-}
-
-impl<T> RunIter<T> {
-    pub fn new(start: T, end: T) -> Self {
-        Self { start, end, exhausted: false }
-    }
-}
-
-impl<T: Copy> From<&RangeInclusive<T>> for RunIter<T> {
-    fn from(range: &RangeInclusive<T>) -> Self {
-        Self {
-            start: *range.start(),
-            end: *range.end(),
-            exhausted: false,
-        }
-    }
-}
-
-impl<T: PrimInt + ConstOne> Iterator for RunIter<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.exhausted {
-            return None;
-        }
-
-        let is_iterating = self.start < self.end;
-        Some(if is_iterating {
-            let next = self.start + T::ONE;
-            std::mem::replace(&mut self.start, next)
-        } else {
-            self.exhausted = true;
-            self.start
-        })
+        self.runs.remove(value)
     }
 }
 
@@ -272,17 +204,15 @@ impl<L: Level> PartialEq for RunPartition<L> {
     }
 }
 
-impl<L: Level> PartialEq<[EncodedRun<L>]> for RunPartition<L> {
-    fn eq(&self, other: &[EncodedRun<L>]) -> bool {
-        itertools::equal(other.iter(), self.runs.iter())
+impl<L: Level> PartialEq<&RunsRef<'_, L>> for &RunPartition<L> {
+    fn eq(&self, other: &&RunsRef<'_, L>) -> bool {
+        itertools::equal(self.runs.ranges(), other.ranges())
     }
 }
 
 impl<L: Level> Merge for RunPartition<L> {
     fn merge(&mut self, rhs: &Self) {
-        for range in rhs.runs.iter() {
-            self.runs.insert(range.clone());
-        }
+        self.runs |= &rhs.runs;
     }
 }
 
@@ -290,11 +220,55 @@ impl<L: Level> Cut for RunPartition<L> {
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &Self) -> Self::Out {
-        let intersection: RangeInclusiveSet<L::Value> = self.runs.intersection(&rhs.runs).collect();
-        for run in intersection.iter() {
-            self.runs.remove(run.clone());
-        }
+        let intersection = (self.runs.ranges() & rhs.runs.ranges()).into_range_set_blaze();
+        self.runs = (self.runs.ranges() - intersection.ranges()).into_range_set_blaze();
         Partition::Run(Self { runs: intersection })
+    }
+}
+
+struct MergeRuns<I, T> {
+    inner: I,
+    run: Option<(T, T)>,
+}
+
+impl<I, T> MergeRuns<I, T>
+where
+    T: PrimInt + ConstOne,
+    I: Iterator<Item = T>,
+{
+    fn new(mut inner: I) -> Self {
+        let run = inner.next().map(|x| (x, x));
+        Self { inner, run }
+    }
+}
+
+impl<I, T> FusedIterator for MergeRuns<I, T>
+where
+    T: PrimInt + ConstOne,
+    I: Iterator<Item = T>,
+{
+}
+
+impl<I, T> Iterator for MergeRuns<I, T>
+where
+    T: PrimInt + ConstOne,
+    I: Iterator<Item = T>,
+{
+    type Item = RangeInclusive<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(cursor) = self.run.as_mut() {
+            while let Some(next) = self.inner.next() {
+                if cursor.1 + T::ONE == next {
+                    cursor.1 = next;
+                } else {
+                    let run = cursor.0..=cursor.1;
+                    *cursor = (next, next);
+                    return Some(run);
+                }
+            }
+        }
+        self.run.take().map(|(a, b)| a..=b)
     }
 }
 
@@ -324,11 +298,14 @@ mod tests {
         let vals = [1, 2, 5, 7, 8, 11];
         let partition = RunPartition::<Block>::from_sorted_unique_unchecked(vals.iter().copied());
 
-        itertools::assert_equal(
-            partition.runs.iter().cloned(),
-            [1..=2, 5..=5, 7..=8, 11..=11],
-        );
-
+        itertools::assert_equal(partition.runs.ranges(), [1..=2, 5..=5, 7..=8, 11..=11]);
         itertools::assert_equal(vals.into_iter(), partition.iter());
+    }
+
+    #[test]
+    fn test_merge_runs() {
+        let vals = [1, 2, 3, 5, 7, 8, 10];
+        let merged = MergeRuns::new(vals.into_iter());
+        itertools::assert_equal(merged, [1..=3, 5..=5, 7..=8, 10..=10]);
     }
 }

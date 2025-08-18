@@ -1,26 +1,20 @@
-use std::ops::RangeInclusive;
-
 use bitvec::{order::Lsb0, slice::BitSlice};
 use either::Either;
 use num::traits::{AsPrimitive, Bounded};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{FromBytes, TryFromBytes};
 
 use crate::{
     MultiIter,
     splinterv2::{
         PartitionRead,
-        codec::{DecodeErr, tree_ref::TreeRef},
+        codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
         level::{Block, Level},
-        partition::{
-            PartitionKind,
-            bitmap::BitmapPartition,
-            run::{Run, RunIter, run_rank, run_select},
-        },
+        partition::{PartitionKind, bitmap::BitmapPartition},
         traits::TruncateFrom,
     },
 };
 
-pub(super) fn decode_len<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {
+pub(super) fn decode_len_from_suffix<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {
     let (data, len) = L::ValueUnaligned::try_read_from_suffix(data)?;
     // length is decremented when stored
     Ok((data, len.into().as_() + 1))
@@ -33,7 +27,7 @@ pub enum NonRecursivePartitionRef<'a, L: Level> {
     Full,
     Bitmap { bitmap: &'a BitSlice<u8, Lsb0> },
     Vec { values: &'a [L::ValueUnaligned] },
-    Run { runs: &'a [EncodedRun<L>] },
+    Run { runs: RunsRef<'a, L> },
 }
 
 impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
@@ -50,7 +44,7 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
                 })
             }
             PartitionKind::Vec => {
-                let (data, len) = decode_len::<L>(data)?;
+                let (data, len) = decode_len_from_suffix::<L>(data)?;
                 let bytes = len * size_of::<L::ValueUnaligned>();
                 DecodeErr::ensure_bytes_available(data, bytes)?;
                 let range = (data.len() - bytes)..data.len();
@@ -58,15 +52,7 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
                     values: <[L::ValueUnaligned]>::ref_from_bytes_with_elems(&data[range], len)?,
                 })
             }
-            PartitionKind::Run => {
-                let (data, runs) = decode_len::<L>(data)?;
-                let bytes = runs * size_of::<L::ValueUnaligned>() * 2;
-                DecodeErr::ensure_bytes_available(data, bytes)?;
-                let range = (data.len() - bytes)..data.len();
-                Ok(Self::Run {
-                    runs: <[EncodedRun<L>]>::ref_from_bytes(&data[range])?,
-                })
-            }
+            PartitionKind::Run => Ok(Self::Run { runs: RunsRef::from_suffix(data)? }),
             PartitionKind::Tree => unreachable!("non-recursive"),
         }
     }
@@ -126,7 +112,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             Self::Full => L::MAX_LEN,
             Self::Bitmap { bitmap } => bitmap.count_ones(),
             Self::Vec { values } => values.len(),
-            Self::Run { runs } => runs.iter().map(|run| run.len()).sum(),
+            Self::Run { runs } => runs.cardinality(),
         }
     }
 
@@ -146,7 +132,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             Self::Full => true,
             Self::Bitmap { bitmap } => *bitmap.get(value.as_()).unwrap(),
             Self::Vec { values } => values.binary_search(&value.into()).is_ok(),
-            Self::Run { runs } => runs.iter().any(|run| run.contains(value.into())),
+            Self::Run { runs } => runs.contains(value),
         }
     }
 
@@ -162,7 +148,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
                 Ok(index) => index + 1,
                 Err(index) => index,
             },
-            Self::Run { runs } => run_rank(runs.iter(), value),
+            Self::Run { runs } => runs.rank(value),
         }
     }
 
@@ -172,7 +158,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             Self::Full => Some(L::Value::truncate_from(idx)),
             Self::Bitmap { bitmap } => bitmap.iter_ones().nth(idx).map(L::Value::truncate_from),
             Self::Vec { values } => values.get(idx).map(|&v| v.into()),
-            Self::Run { runs } => run_select(runs.iter(), idx),
+            Self::Run { runs } => runs.select(idx),
         }
     }
 
@@ -182,7 +168,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             Self::Full => Some(L::Value::max_value()),
             Self::Bitmap { bitmap } => bitmap.last_one().map(L::Value::truncate_from),
             Self::Vec { values } => values.last().map(|&v| v.into()),
-            Self::Run { runs } => runs.last().map(|run| run.end.into()),
+            Self::Run { runs } => runs.last(),
         }
     }
 
@@ -194,7 +180,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
                 Iter::Bitmap(bitmap.iter_ones().map(L::Value::truncate_from))
             }
             Self::Vec { values } => Iter::Vec(values.iter().map(|&v| v.into())),
-            Self::Run { runs } => Iter::Run(runs.iter().flat_map(|run| run.iter())),
+            Self::Run { runs } => Iter::Run(runs.iter()),
         }
     }
 }
@@ -294,7 +280,7 @@ impl<'a, L: Level> IntoIterator for NonRecursivePartitionRef<'a, L> {
             Self::Full => Box::new((0..L::MAX_LEN).map(L::Value::truncate_from)),
             Self::Bitmap { bitmap } => Box::new(bitmap.iter_ones().map(L::Value::truncate_from)),
             Self::Vec { values } => Box::new(values.iter().map(|&v| v.into())),
-            Self::Run { runs } => Box::new(runs.iter().flat_map(|run| run.iter())),
+            Self::Run { runs } => Box::new(runs.into_iter()),
         }
     }
 }
@@ -309,69 +295,5 @@ impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
             Self::NonRecursive(p) => p.into_iter(),
             Self::Tree(tree_ref) => tree_ref.into_iter(),
         }
-    }
-}
-
-#[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable)]
-#[repr(C)]
-#[doc(hidden)]
-pub struct EncodedRun<L: Level> {
-    /// inclusive start
-    start: L::ValueUnaligned,
-    /// inclusive end
-    end: L::ValueUnaligned,
-}
-
-impl<L: Level> EncodedRun<L> {
-    pub fn len(&self) -> usize {
-        self.end.into().as_() - self.start.into().as_() + 1
-    }
-
-    pub fn contains(&self, value: L::ValueUnaligned) -> bool {
-        self.start <= value && value <= self.end
-    }
-
-    pub fn iter(&self) -> RunIter<L::Value> {
-        RunIter::new(self.start.into(), self.end.into())
-    }
-}
-
-impl<L: Level> From<&RangeInclusive<L::Value>> for EncodedRun<L> {
-    fn from(range: &RangeInclusive<L::Value>) -> Self {
-        let start = (*range.start()).into();
-        let end = (*range.end()).into();
-        EncodedRun { start, end }
-    }
-}
-
-impl<L: Level> PartialEq<RangeInclusive<L::Value>> for EncodedRun<L> {
-    fn eq(&self, other: &RangeInclusive<L::Value>) -> bool {
-        self.start.into() == *other.start() && self.end.into() == *other.end()
-    }
-}
-
-impl<L: Level> Run<L> for &EncodedRun<L> {
-    #[inline]
-    fn len(&self) -> usize {
-        EncodedRun::len(self)
-    }
-
-    fn rank(&self, v: L::Value) -> usize {
-        v.min(self.end.into()).as_() - self.start.into().as_() + 1
-    }
-
-    fn select(&self, idx: usize) -> Option<L::Value> {
-        let n = self.start.into() + L::Value::truncate_from(idx);
-        (n <= self.end.into()).then_some(n)
-    }
-
-    #[inline]
-    fn first(&self) -> L::Value {
-        self.start.into()
-    }
-
-    #[inline]
-    fn last(&self) -> L::Value {
-        self.end.into()
     }
 }

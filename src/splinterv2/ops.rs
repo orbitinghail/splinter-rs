@@ -37,7 +37,7 @@ impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L> {
             (Partition::Full, NonRecursive(Full)) => true,
             (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a == *bitmap,
             (Partition::Vec(a), NonRecursive(Vec { values })) => a == *values,
-            (Partition::Run(a), NonRecursive(Run { runs })) => a == *runs,
+            (Partition::Run(a), NonRecursive(Run { runs })) => a == runs,
             (Partition::Tree(a), Tree(b)) => *a == *b,
 
             // otherwise fall back to logical ops

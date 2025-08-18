@@ -7,7 +7,7 @@ use zerocopy::{IntoBytes, transmute_ref};
 
 use crate::splinterv2::{
     Partition, PartitionRead,
-    codec::{footer::Footer, partition_ref::EncodedRun, tree_ref::TreeIndexBuilder},
+    codec::{footer::Footer, runs_ref::EncodedRun, tree_ref::TreeIndexBuilder},
     level::{Block, Level},
     partition::PartitionKind,
     traits::TruncateFrom,
@@ -59,7 +59,7 @@ impl<B: BufMut> Encoder<B> {
     /// Encode a Run partition into the buffer.
     pub fn put_run_partition<'a, L: Level>(
         &mut self,
-        runs: impl Iterator<Item = &'a RangeInclusive<L::Value>>,
+        runs: impl Iterator<Item = RangeInclusive<L::Value>>,
     ) {
         let mut num_runs = 0;
         for run in runs {

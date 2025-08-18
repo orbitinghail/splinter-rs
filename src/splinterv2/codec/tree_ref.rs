@@ -7,7 +7,7 @@ use crate::splinterv2::{
     Partition, PartitionRead, PartitionWrite,
     codec::{
         DecodeErr,
-        partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len},
+        partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len_from_suffix},
     },
     level::{Block, Level},
     partition::{PartitionKind, bitmap::BitmapPartition},
@@ -25,7 +25,7 @@ pub struct TreeRef<'a, L: Level> {
 
 impl<'a, L: Level> TreeRef<'a, L> {
     pub(super) fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
-        let (data, num_children) = decode_len::<Block>(data)?;
+        let (data, num_children) = decode_len_from_suffix::<Block>(data)?;
 
         let (segments_size, segments_kind) =
             TreeIndexBuilder::<L>::pick_segments_store(num_children);

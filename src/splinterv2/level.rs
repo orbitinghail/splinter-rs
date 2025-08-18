@@ -5,7 +5,6 @@ use num::{
     cast::AsPrimitive,
     traits::{ConstOne, ConstZero},
 };
-use rangemap::StepLite;
 use u24::u24;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, Unaligned};
 
@@ -43,8 +42,8 @@ pub trait Level: Sized {
         + ConstOne
         + Debug
         + Display
-        + StepLite
-        + Clone;
+        + Clone
+        + range_set_blaze::Integer;
 
     type ValueUnaligned: IntoBytes
         + FromBytes

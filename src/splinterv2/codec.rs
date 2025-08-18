@@ -7,6 +7,7 @@ use crate::splinterv2::codec::encoder::Encoder;
 pub mod encoder;
 pub mod footer;
 pub mod partition_ref;
+pub mod runs_ref;
 pub mod tree_ref;
 
 pub trait Encodable {
