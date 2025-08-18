@@ -144,8 +144,8 @@ impl<L: Level> PartialEq for VecPartition<L> {
     }
 }
 
-impl<L: Level> PartialEq<[L::ValueUnaligned]> for VecPartition<L> {
-    fn eq(&self, other: &[L::ValueUnaligned]) -> bool {
+impl<L: Level> PartialEq<&[L::ValueUnaligned]> for VecPartition<L> {
+    fn eq(&self, other: &&[L::ValueUnaligned]) -> bool {
         itertools::equal(self.iter(), other.iter().map(|&v| v.into()))
     }
 }
@@ -156,10 +156,20 @@ impl<L: Level> Merge for VecPartition<L> {
     }
 }
 
-impl<L: Level> Cut<Partition<L>> for VecPartition<L> {
+impl<L: Level> Merge<&[L::ValueUnaligned]> for VecPartition<L> {
+    fn merge(&mut self, rhs: &&[L::ValueUnaligned]) {
+        self.values = self
+            .iter()
+            .merge(rhs.iter().map(|&v| v.into()))
+            .dedup()
+            .collect_vec();
+    }
+}
+
+impl<L: Level, P: PartitionRead<L>> Cut<P> for VecPartition<L> {
     type Out = Partition<L>;
 
-    fn cut(&mut self, rhs: &Partition<L>) -> Self::Out {
+    fn cut(&mut self, rhs: &P) -> Self::Out {
         let mut other = rhs.iter().peekable();
 
         let mut intersection = Partition::default();

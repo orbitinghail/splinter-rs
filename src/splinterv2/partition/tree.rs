@@ -211,6 +211,16 @@ impl<L: Level> Merge for TreePartition<L> {
     }
 }
 
+impl<L: Level> Merge<TreeRef<'_, L>> for TreePartition<L> {
+    fn merge(&mut self, rhs: &TreeRef<'_, L>) {
+        let zipped = rhs.segments().zip(rhs.children());
+        for (segment, child) in zipped {
+            self.children.entry(segment).or_default().merge(&child);
+        }
+        self.refresh_cardinality();
+    }
+}
+
 impl<L: Level> Cut for TreePartition<L> {
     type Out = Partition<L>;
 
@@ -220,6 +230,29 @@ impl<L: Level> Cut for TreePartition<L> {
         for (segment, child) in self.children.iter_mut() {
             if let Some(other) = rhs.children.get(segment) {
                 intersection.children.insert(*segment, child.cut(other));
+            }
+        }
+
+        // remove empty children
+        self.children.retain(|_, c| !c.is_empty());
+
+        self.refresh_cardinality();
+        intersection.refresh_cardinality();
+
+        Partition::Tree(intersection)
+    }
+}
+
+impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L> {
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &TreeRef<'_, L>) -> Self::Out {
+        let mut intersection = Self::default();
+        let zipped = rhs.segments().zip(rhs.children());
+
+        for (segment, other) in zipped {
+            if let Some(child) = self.children.get_mut(&segment) {
+                intersection.children.insert(segment, child.cut(&other));
             }
         }
 

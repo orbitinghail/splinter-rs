@@ -30,6 +30,8 @@ pub trait Level: Sized {
         + Clone
         + PartialEq
         + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
+        + for<'a> Merge<PartitionRef<'a, Self::LevelDown>>
+        + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>
         + Eq
         + Cut<Out = Self::Down>
         + Merge;

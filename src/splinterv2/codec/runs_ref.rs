@@ -1,5 +1,6 @@
-use std::ops::RangeInclusive;
+use std::{iter::FusedIterator, ops::RangeInclusive};
 
+use range_set_blaze::{SortedDisjoint, SortedStarts};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::splinterv2::{
@@ -25,8 +26,8 @@ impl<'a, L: Level> RunsRef<'a, L> {
         })
     }
 
-    pub fn ranges(&self) -> impl Iterator<Item = RangeInclusive<L::Value>> {
-        self.runs.iter().map(|r| r.into())
+    pub fn ranges(&self) -> RangesIter<'_, L> {
+        RangesIter { inner: self.runs.iter() }
     }
 
     pub fn to_iter(self) -> impl Iterator<Item = L::Value> {
@@ -97,3 +98,26 @@ impl<L: Level> From<RangeInclusive<L::Value>> for EncodedRun<L> {
         EncodedRun { start, end }
     }
 }
+
+pub struct RangesIter<'a, L: Level> {
+    inner: std::slice::Iter<'a, EncodedRun<L>>,
+}
+
+impl<'a, L: Level> Iterator for RangesIter<'a, L> {
+    type Item = RangeInclusive<L::Value>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|r| r.into())
+    }
+}
+
+impl<L: Level> DoubleEndedIterator for RangesIter<'_, L> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|r| r.into())
+    }
+}
+
+impl<L: Level> FusedIterator for RangesIter<'_, L> {}
+impl<L: Level> SortedStarts<L::Value> for RangesIter<'_, L> {}
+impl<L: Level> SortedDisjoint<L::Value> for RangesIter<'_, L> {}
+impl<L: Level> ExactSizeIterator for RangesIter<'_, L> {}

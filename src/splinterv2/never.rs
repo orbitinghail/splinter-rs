@@ -100,9 +100,22 @@ impl Merge for Never {
     }
 }
 
+impl<L: Level> Merge<PartitionRef<'_, L>> for Never {
+    fn merge(&mut self, _rhs: &PartitionRef<'_, L>) {
+        unreachable!("Never::merge")
+    }
+}
+
 impl Cut for Never {
     type Out = Never;
     fn cut(&mut self, _rhs: &Self) -> Self::Out {
+        unreachable!("Never::cut")
+    }
+}
+
+impl<L: Level> Cut<PartitionRef<'_, L>> for Never {
+    type Out = Never;
+    fn cut(&mut self, _rhs: &PartitionRef<'_, L>) -> Self::Out {
         unreachable!("Never::cut")
     }
 }

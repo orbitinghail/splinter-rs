@@ -149,28 +149,55 @@ impl<L: Level> PartialEq for BitmapPartition<L> {
     }
 }
 
-impl<L, T, O> PartialEq<BitSlice<T, O>> for BitmapPartition<L>
+impl<L, T, O> PartialEq<&BitSlice<T, O>> for BitmapPartition<L>
 where
     L: Level,
     T: BitStore,
     O: BitOrder,
 {
-    fn eq(&self, other: &BitSlice<T, O>) -> bool {
+    fn eq(&self, other: &&BitSlice<T, O>) -> bool {
         self.bitmap.as_bitslice() == other
     }
 }
 
 impl<L: Level> Merge for BitmapPartition<L> {
+    #[inline]
     fn merge(&mut self, rhs: &Self) {
         self.bitmap |= rhs.bitmap.as_bitslice()
+    }
+}
+
+impl<L, T, O> Merge<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn merge(&mut self, rhs: &&BitSlice<T, O>) {
+        self.bitmap |= *rhs
     }
 }
 
 impl<L: Level> Cut for BitmapPartition<L> {
     type Out = Partition<L>;
 
+    #[inline]
     fn cut(&mut self, rhs: &Self) -> Self::Out {
-        let intersection = self.bitmap.clone() & rhs.bitmap.as_bitslice();
+        self.cut(&rhs.bitmap.as_bitslice())
+    }
+}
+
+impl<L, T, O> Cut<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &&BitSlice<T, O>) -> Self::Out {
+        let intersection = self.bitmap.clone() & *rhs;
         self.bitmap &= !intersection.clone();
         Partition::Bitmap(BitmapPartition {
             bitmap: intersection,

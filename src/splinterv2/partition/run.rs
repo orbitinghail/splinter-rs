@@ -216,11 +216,29 @@ impl<L: Level> Merge for RunPartition<L> {
     }
 }
 
+impl<L: Level> Merge<RunsRef<'_, L>> for RunPartition<L> {
+    fn merge(&mut self, rhs: &RunsRef<'_, L>) {
+        for range in rhs.ranges() {
+            self.runs.ranges_insert(range);
+        }
+    }
+}
+
 impl<L: Level> Cut for RunPartition<L> {
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &Self) -> Self::Out {
         let intersection = (self.runs.ranges() & rhs.runs.ranges()).into_range_set_blaze();
+        self.runs = (self.runs.ranges() - intersection.ranges()).into_range_set_blaze();
+        Partition::Run(Self { runs: intersection })
+    }
+}
+
+impl<L: Level> Cut<RunsRef<'_, L>> for RunPartition<L> {
+    type Out = Partition<L>;
+
+    fn cut(&mut self, rhs: &RunsRef<'_, L>) -> Self::Out {
+        let intersection = (self.runs.ranges() & rhs.ranges()).into_range_set_blaze();
         self.runs = (self.runs.ranges() - intersection.ranges()).into_range_set_blaze();
         Partition::Run(Self { runs: intersection })
     }
