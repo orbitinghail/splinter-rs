@@ -314,9 +314,9 @@ impl<L: Level> SetGenV2<L> {
     }
 
     /// Generate a random set of values such that the probability any two values
-    /// are sequential is `stickyness`.
-    pub fn runs(&mut self, len: usize, stickyness: f64) -> Vec<L::Value> {
-        let s = stickyness.clamp(0.0, 1.0);
+    /// are sequential is `stickiness`.
+    pub fn runs(&mut self, len: usize, stickiness: f64) -> Vec<L::Value> {
+        let s = stickiness.clamp(0.0, 1.0);
         let mut out = Vec::with_capacity(len);
         if len == 0 {
             return out;

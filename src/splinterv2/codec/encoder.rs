@@ -57,7 +57,7 @@ impl<B: BufMut> Encoder<B> {
     }
 
     /// Encode a Run partition into the buffer.
-    pub fn put_run_partition<'a, L: Level>(
+    pub fn put_run_partition<L: Level>(
         &mut self,
         runs: impl Iterator<Item = RangeInclusive<L::Value>>,
     ) {

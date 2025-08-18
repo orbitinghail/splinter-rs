@@ -2,7 +2,6 @@
 
 New Splinter encoding that dynamically switches between Bitmap, Vec, Run, and Tree storage at every level of the u32 segment hierarchy. The following tasks will complete feature parity with the original Splinter code:
 
-- Fix clippy and typos errors
 - Implement `Merge/Cut<PartitionRef> for Partition`
 - Implement `Merge/Cut` for Splinter and SplinterRef
 - Performance benchmarks against Splinter V1 and Roaring

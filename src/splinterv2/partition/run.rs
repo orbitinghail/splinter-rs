@@ -258,7 +258,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(cursor) = self.run.as_mut() {
-            while let Some(next) = self.inner.next() {
+            for next in self.inner.by_ref() {
                 if cursor.1 + T::ONE == next {
                     cursor.1 = next;
                 } else {

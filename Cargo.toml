@@ -6,7 +6,7 @@ authors = ["orbitinghail <hello@orbitinghail.dev>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/orbitinghail/splinter-rs"
 homepage = "https://github.com/orbitinghail/splinter-rs"
-rust-version = "1.85"
+rust-version = "1.87"
 
 keywords = ["bitmap", "compression", "zero-copy"]
 categories = ["data-structures", "encoding"]
