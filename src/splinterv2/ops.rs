@@ -185,6 +185,7 @@ mod tests {
     use crate::{
         splinterv2::{
             Optimizable,
+            codec::{Encodable, partition_ref::PartitionRef},
             level::High,
             partition::Partition,
             traits::{Cut, Merge},
@@ -257,6 +258,41 @@ mod tests {
         let expected_remaining = Partition::<High>::from_iter(a.difference(&b).copied());
 
         let actual_intersection = source.cut(&other);
+
+        TestResult::from_bool(
+            actual_intersection == expected_intersection && source == expected_remaining,
+        )
+    }
+
+    #[quickcheck]
+    fn test_merge_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
+        let mut merged = Partition::<High>::from_iter(a.iter().copied());
+        let other_bytes = Partition::<High>::from_iter(b.iter().copied()).encode_to_bytes();
+        let other_ref = PartitionRef::from_suffix(&other_bytes).unwrap();
+
+        if optimize {
+            merged.optimize();
+        }
+
+        let expected = Partition::<High>::from_iter(a.union(&b).copied());
+        merged.merge(&other_ref);
+        TestResult::from_bool(merged == expected)
+    }
+
+    #[quickcheck]
+    fn test_cut_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
+        let mut source = Partition::<High>::from_iter(a.clone());
+        let other_bytes = Partition::<High>::from_iter(b.clone()).encode_to_bytes();
+        let other_ref = PartitionRef::from_suffix(&other_bytes).unwrap();
+
+        if optimize {
+            source.optimize();
+        }
+
+        let expected_intersection = Partition::<High>::from_iter(a.intersection(&b).copied());
+        let expected_remaining = Partition::<High>::from_iter(a.difference(&b).copied());
+
+        let actual_intersection = source.cut(&other_ref);
 
         TestResult::from_bool(
             actual_intersection == expected_intersection && source == expected_remaining,
