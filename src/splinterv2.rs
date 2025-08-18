@@ -40,40 +40,49 @@ impl FromIterator<u32> for SplinterV2 {
 }
 
 impl PartitionRead<High> for SplinterV2 {
+    #[inline]
     fn cardinality(&self) -> usize {
         self.0.cardinality()
     }
 
+    #[inline]
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    #[inline]
     fn contains(&self, value: u32) -> bool {
         self.0.contains(value)
     }
 
+    #[inline]
     fn rank(&self, value: u32) -> usize {
         self.0.rank(value)
     }
 
+    #[inline]
     fn select(&self, idx: usize) -> Option<u32> {
         self.0.select(idx)
     }
 
+    #[inline]
     fn last(&self) -> Option<u32> {
         self.0.last()
     }
 
+    #[inline]
     fn iter(&self) -> impl Iterator<Item = u32> {
         self.0.iter()
     }
 }
 
 impl PartitionWrite<High> for SplinterV2 {
+    #[inline]
     fn insert(&mut self, value: u32) -> bool {
         self.0.insert(value)
     }
 
+    #[inline]
     fn remove(&mut self, value: u32) -> bool {
         self.0.remove(value)
     }

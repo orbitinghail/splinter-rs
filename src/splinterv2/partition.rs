@@ -131,7 +131,6 @@ impl<L: Level> Partition<L> {
     }
 
     fn optimize_kind(&self, skip_run: bool) -> PartitionKind {
-        let kind = self.kind();
         let cardinality = self.cardinality();
 
         if cardinality == L::MAX_LEN {
@@ -148,16 +147,10 @@ impl<L: Level> Partition<L> {
 
         if L::PREFER_TREE && cardinality > L::TREE_MIN {
             let sparsity = self.sparsity_ratio();
-            if kind == PartitionKind::Tree {
-                if sparsity < TREE_SPARSE_THRESHOLD {
-                    // If we are currently a tree, and this level prefers to be
-                    // a tree, then we stay a tree unless we pass the sparsity threshold
-                    return kind;
-                }
-                // too sparse, fall through to selecting partition kind by size
-            } else if sparsity < TREE_SPARSE_THRESHOLD {
+            if sparsity < TREE_SPARSE_THRESHOLD {
                 return PartitionKind::Tree;
             }
+            // too sparse, fall through to selecting partition kind by size
         }
 
         let choices = [

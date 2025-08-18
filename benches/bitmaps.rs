@@ -2,6 +2,7 @@ use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use roaring::RoaringBitmap;
 use splinter_rs::{Splinter, SplinterRead, SplinterRef, SplinterWrite, ops::Intersection};
+use splinter_rs::splinterv2::{SplinterV2, SplinterRefV2, traits::PartitionRead, traits::PartitionWrite};
 use std::hint::black_box;
 
 fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
@@ -14,6 +15,14 @@ fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
 
 fn mksplinter_ref(values: impl IntoIterator<Item = u32>) -> SplinterRef<Bytes> {
     SplinterRef::from_bytes(mksplinter(values).serialize_to_bytes()).unwrap()
+}
+
+fn mksplinter_v2(values: impl IntoIterator<Item = u32>) -> SplinterV2 {
+    SplinterV2::from_iter(values)
+}
+
+fn mksplinter_ref_v2(values: impl IntoIterator<Item = u32>) -> SplinterRefV2<Bytes> {
+    mksplinter_v2(values).encode_to_splinter_ref()
 }
 
 fn benchmark_contains(c: &mut Criterion) {
@@ -33,6 +42,18 @@ fn benchmark_contains(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new("splinter ref", cardinality), |b| {
             let splinter = mksplinter_ref(0..cardinality);
+            assert!(splinter.contains(black_box(lookup)));
+            b.iter(|| splinter.contains(black_box(lookup)))
+        });
+
+        group.bench_function(BenchmarkId::new("splinter v2", cardinality), |b| {
+            let splinter = mksplinter_v2(0..cardinality);
+            assert!(splinter.contains(black_box(lookup)));
+            b.iter(|| splinter.contains(black_box(lookup)))
+        });
+
+        group.bench_function(BenchmarkId::new("splinter ref v2", cardinality), |b| {
+            let splinter = mksplinter_ref_v2(0..cardinality);
             assert!(splinter.contains(black_box(lookup)));
             b.iter(|| splinter.contains(black_box(lookup)))
         });
@@ -64,6 +85,15 @@ fn benchmark_insert(c: &mut Criterion) {
 
     group.bench_function("splinter/cold", |b| {
         b.iter(|| Splinter::default().insert(black_box(MAGIC)))
+    });
+
+    group.bench_function("splinter v2/warm", |b| {
+        let mut splinter = SplinterV2::default();
+        b.iter(|| splinter.insert(black_box(MAGIC)))
+    });
+
+    group.bench_function("splinter v2/cold", |b| {
+        b.iter(|| SplinterV2::default().insert(black_box(MAGIC)))
     });
 
     group.bench_function("roaring/cold", |b| {
