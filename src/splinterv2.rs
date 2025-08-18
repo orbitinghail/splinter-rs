@@ -163,20 +163,6 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRefV2<B> {
     }
 }
 
-impl<B: Deref<Target = [u8]>> PartialEq<SplinterRefV2<B>> for SplinterV2 {
-    #[inline]
-    fn eq(&self, other: &SplinterRefV2<B>) -> bool {
-        self.0 == other.load_unchecked()
-    }
-}
-
-impl<B: Deref<Target = [u8]>> PartialEq<SplinterV2> for SplinterRefV2<B> {
-    #[inline]
-    fn eq(&self, other: &SplinterV2) -> bool {
-        other == self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
