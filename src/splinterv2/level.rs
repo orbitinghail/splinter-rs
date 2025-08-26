@@ -6,7 +6,7 @@ use num::{
     traits::{ConstOne, ConstZero},
 };
 use u24::u24;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, LE, U16, U32, Unaligned};
+use zerocopy::{BE, FromBytes, Immutable, IntoBytes, KnownLayout, U16, U32, Unaligned};
 
 use crate::splinterv2::{
     codec::{Encodable, partition_ref::PartitionRef},
@@ -74,7 +74,7 @@ impl Level for High {
     type LevelDown = Mid;
     type Down = Partition<Self::LevelDown>;
     type Value = u32;
-    type ValueUnaligned = U32<LE>;
+    type ValueUnaligned = U32<BE>;
 
     const BITS: usize = 32;
 }
@@ -88,7 +88,7 @@ impl Level for Mid {
     type LevelDown = Low;
     type Down = Partition<Self::LevelDown>;
     type Value = u24;
-    type ValueUnaligned = U24<LE>;
+    type ValueUnaligned = U24<BE>;
 
     const BITS: usize = 24;
 }
@@ -102,7 +102,7 @@ impl Level for Low {
     type LevelDown = Block;
     type Down = Partition<Self::LevelDown>;
     type Value = u16;
-    type ValueUnaligned = U16<LE>;
+    type ValueUnaligned = U16<BE>;
 
     const BITS: usize = 16;
 }

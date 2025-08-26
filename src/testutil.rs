@@ -3,7 +3,7 @@ use std::{fmt::Debug, marker::PhantomData, ops::Bound};
 use bytes::{BufMut, Bytes, BytesMut};
 use itertools::{Itertools, assert_equal};
 use num::{CheckedAdd, Saturating, traits::ConstOne};
-use rand::{Rng, SeedableRng, seq::index};
+use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
 use zerocopy::IntoBytes;
 
 use crate::{
@@ -85,21 +85,29 @@ impl Debug for TestSplinter {
 }
 
 pub struct SetGen {
-    rng: rand::rngs::StdRng,
+    seed: u64,
 }
 
 impl SetGen {
     pub fn new(seed: u64) -> Self {
-        let rng = rand::rngs::StdRng::seed_from_u64(seed);
-        Self { rng }
+        Self { seed }
+    }
+
+    fn rng(&self) -> StdRng {
+        rand::rngs::StdRng::seed_from_u64(self.seed)
+    }
+
+    pub fn linear(&mut self, count: usize) -> Vec<u32> {
+        (0..count as u32).collect()
     }
 
     pub fn distributed(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
         let mut out = Vec::default();
-        for high in index::sample(&mut self.rng, 256, high) {
-            for mid in index::sample(&mut self.rng, 256, mid) {
-                for low in index::sample(&mut self.rng, 256, low) {
-                    for blk in index::sample(&mut self.rng, 256, block) {
+        let mut rng = self.rng();
+        for high in index::sample(&mut rng, 256, high) {
+            for mid in index::sample(&mut rng, 256, mid) {
+                for low in index::sample(&mut rng, 256, low) {
+                    for blk in index::sample(&mut rng, 256, block) {
                         out.push(u32::from_be_bytes([
                             high as u8, mid as u8, low as u8, blk as u8,
                         ]));
@@ -119,7 +127,7 @@ impl SetGen {
     }
 
     pub fn random(&mut self, len: usize) -> Vec<u32> {
-        index::sample(&mut self.rng, u32::MAX as usize, len)
+        index::sample(&mut self.rng(), u32::MAX as usize, len)
             .into_iter()
             .map(|i| i as u32)
             .sorted()

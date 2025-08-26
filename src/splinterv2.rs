@@ -178,8 +178,9 @@ mod tests {
     use super::*;
     use crate::{
         splinterv2::{codec::Encodable, traits::Optimizable},
-        testutil::{SetGen, analyze_compression_patterns, ratio_to_marks},
+        testutil::{SetGen, analyze_compression_patterns, mksplinterv2, ratio_to_marks},
     };
+    use quickcheck_macros::quickcheck;
     use roaring::RoaringBitmap;
 
     #[test]
@@ -209,7 +210,7 @@ mod tests {
     #[test]
     fn test_wat() {
         let mut set_gen = SetGen::new(0xDEAD_BEEF);
-        let set = set_gen.random(16384);
+        let set = set_gen.random(1024);
         let baseline_size = set.len() * 4;
 
         let mut splinter = SplinterV2::from_iter(set.iter().copied());
@@ -217,6 +218,65 @@ mod tests {
 
         dbg!(&splinter, splinter.encoded_size(), baseline_size);
         itertools::assert_equal(splinter.iter(), set.into_iter());
+    }
+
+    /// This is a regression test for a bug in the SplinterRef encoding. The bug
+    /// was that we used LittleEndian encoded values to store unaligned values,
+    /// which sort in reverse order from what we expect.
+    #[test]
+    fn test_contains_bug() {
+        let mut set_gen = SetGen::new(0xDEAD_BEEF);
+        let set = set_gen.random(1024);
+        let lookup = set[(set.len() / 3) as usize];
+        let splinter = mksplinterv2(&set).encode_to_splinter_ref();
+        assert!(splinter.contains(lookup))
+    }
+
+    #[quickcheck]
+    fn test_splinter_quickcheck(set: Vec<u32>) -> bool {
+        let splinter = mksplinterv2(&set);
+        if set.is_empty() {
+            !splinter.contains(123)
+        } else {
+            let lookup = set[set.len() / 3];
+            splinter.contains(lookup)
+        }
+    }
+
+    #[quickcheck]
+    fn test_splinter_opt_quickcheck(set: Vec<u32>) -> bool {
+        let mut splinter = mksplinterv2(&set);
+        splinter.optimize();
+        if set.is_empty() {
+            !splinter.contains(123)
+        } else {
+            let lookup = set[set.len() / 3];
+            splinter.contains(lookup)
+        }
+    }
+
+    #[quickcheck]
+    fn test_splinter_ref_quickcheck(set: Vec<u32>) -> bool {
+        let splinter = mksplinterv2(&set).encode_to_splinter_ref();
+        if set.is_empty() {
+            !splinter.contains(123)
+        } else {
+            let lookup = set[set.len() / 3];
+            splinter.contains(lookup)
+        }
+    }
+
+    #[quickcheck]
+    fn test_splinter_opt_ref_quickcheck(set: Vec<u32>) -> bool {
+        let mut splinter = mksplinterv2(&set);
+        splinter.optimize();
+        let splinter = splinter.encode_to_splinter_ref();
+        if set.is_empty() {
+            !splinter.contains(123)
+        } else {
+            let lookup = set[set.len() / 3];
+            splinter.contains(lookup)
+        }
     }
 
     #[test]

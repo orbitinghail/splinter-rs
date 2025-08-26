@@ -755,6 +755,7 @@ dependencies = [
  "rand 0.9.2",
  "range-set-blaze",
  "roaring",
+ "splinter-rs",
  "static_assertions",
  "thiserror",
  "u24",

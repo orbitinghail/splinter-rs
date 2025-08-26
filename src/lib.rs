@@ -21,8 +21,8 @@ mod splinter;
 pub mod splinterv2;
 mod util;
 
-#[cfg(test)]
-mod testutil;
+#[cfg(any(test, feature = "testutil"))]
+pub mod testutil;
 
 pub use splinter::{SPLINTER_MAX_VALUE, Splinter, SplinterRef};
 
