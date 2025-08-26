@@ -100,6 +100,7 @@ impl Encodable for SplinterV2 {
 }
 
 impl Optimizable for SplinterV2 {
+    #[inline]
     fn optimize(&mut self) {
         self.0.optimize();
     }
@@ -207,8 +208,8 @@ mod tests {
 
     #[test]
     fn test_wat() {
-        let mut set_gen = SetGen::new(0xDEADBEEF);
-        let set = set_gen.distributed(1, 1, 16, 256);
+        let mut set_gen = SetGen::new(0xDEAD_BEEF);
+        let set = set_gen.random(16384);
         let baseline_size = set.len() * 4;
 
         let mut splinter = SplinterV2::from_iter(set.iter().copied());
@@ -255,7 +256,15 @@ mod tests {
             splinter.optimize();
             itertools::assert_equal(splinter.iter(), set.iter().copied());
 
+            let expected_size = splinter.encoded_size();
             let splinter = splinter.encode_to_bytes();
+
+            assert_eq!(
+                splinter.len(),
+                expected_size,
+                "actual encoded size does not match declared encoded size"
+            );
+
             let roaring = to_roaring(set.iter().copied());
 
             analyze_compression_patterns(&splinter);
@@ -295,7 +304,7 @@ mod tests {
 
         // 1 fully dense block
         let set = set_gen.distributed(1, 1, 1, 256);
-        run_test("1 dense block", set, 256, 31, 15);
+        run_test("1 dense block", set, 256, 25, 15);
 
         // 1 half full block
         let set = set_gen.distributed(1, 1, 1, 128);
@@ -378,20 +387,20 @@ mod tests {
 
         // each partition is dense
         let set = set_gen.dense(8, 8, 8, 8);
-        run_test("dense throughout", set, elements, 4038, 2700);
+        run_test("dense throughout", set, elements, 4113, 2700);
 
         // the lowest partitions are dense
         let set = set_gen.dense(1, 1, 64, 64);
-        run_test("dense low", set, elements, 443, 267);
+        run_test("dense low", set, elements, 529, 267);
 
         // the mid and low partitions are dense
         let set = set_gen.dense(1, 32, 16, 8);
-        run_test("dense mid/low", set, elements, 3797, 2376);
+        run_test("dense mid/low", set, elements, 4113, 2376);
 
         // fully random sets of varying sizes
         run_test("random/32", set_gen.random(32), 32, 145, 328);
         run_test("random/256", set_gen.random(256), 256, 1041, 2560);
-        run_test("random/1024", set_gen.random(1024), 1024, 5126, 10168);
+        run_test("random/1024", set_gen.random(1024), 1024, 4113, 10168);
         run_test("random/4096", set_gen.random(4096), 4096, 14350, 39952);
         run_test("random/16384", set_gen.random(16384), 16384, 51214, 148600);
         run_test("random/65535", set_gen.random(65535), 65535, 198667, 462190);

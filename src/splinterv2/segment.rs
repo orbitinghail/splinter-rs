@@ -17,16 +17,17 @@ macro_rules! impl_split {
             impl SplitSegment for $ty {
                 type Rest = $rest;
 
-                #[inline]
+                #[inline(always)]
                 fn segment(self) -> Segment {
                     (self >> (<$rest>::BITS as usize)).as_()
                 }
 
-                #[inline]
+                #[inline(always)]
                 fn split(self) -> (Segment, Self::Rest) {
                     (self.segment(), self.as_())
                 }
 
+                #[inline(always)]
                 fn unsplit(segment: Segment, rest: Self::Rest) -> Self {
                     let segment: $ty = segment.as_();
                     let rest: $ty = rest.as_();

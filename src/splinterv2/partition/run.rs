@@ -135,7 +135,13 @@ where
     L::Value: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RunPartition<{}>({})", L::DEBUG_NAME, self.cardinality())
+        write!(
+            f,
+            "RunPartition<{}>({}, {})",
+            L::DEBUG_NAME,
+            self.cardinality(),
+            self.runs.ranges_len()
+        )
     }
 }
 

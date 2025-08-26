@@ -195,10 +195,6 @@ pub enum PartitionRef<'a, L: Level> {
 impl<'a, L: Level> PartitionRef<'a, L> {
     pub fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
         let (data, kind) = PartitionKind::try_read_from_suffix(data)?;
-        Self::from_suffix_with_kind(kind, data)
-    }
-
-    pub fn from_suffix_with_kind(kind: PartitionKind, data: &'a [u8]) -> Result<Self, DecodeErr> {
         match kind {
             PartitionKind::Tree => Ok(Self::Tree(TreeRef::from_suffix(data)?)),
             kind => Ok(Self::NonRecursive(

@@ -1,8 +1,11 @@
 use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use roaring::RoaringBitmap;
+use splinter_rs::splinterv2::Optimizable;
+use splinter_rs::splinterv2::{
+    SplinterRefV2, SplinterV2, traits::PartitionRead, traits::PartitionWrite,
+};
 use splinter_rs::{Splinter, SplinterRead, SplinterRef, SplinterWrite, ops::Intersection};
-use splinter_rs::splinterv2::{SplinterV2, SplinterRefV2, traits::PartitionRead, traits::PartitionWrite};
 use std::hint::black_box;
 
 fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
@@ -52,14 +55,42 @@ fn benchmark_contains(c: &mut Criterion) {
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
+        group.bench_function(
+            BenchmarkId::new("splinter v2 optimized", cardinality),
+            |b| {
+                let mut splinter = mksplinter_v2(0..cardinality);
+                splinter.optimize();
+                assert!(splinter.contains(black_box(lookup)));
+                b.iter(|| splinter.contains(black_box(lookup)))
+            },
+        );
+
         group.bench_function(BenchmarkId::new("splinter ref v2", cardinality), |b| {
             let splinter = mksplinter_ref_v2(0..cardinality);
             assert!(splinter.contains(black_box(lookup)));
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
+        group.bench_function(
+            BenchmarkId::new("splinter ref v2 optimized", cardinality),
+            |b| {
+                let mut splinter = mksplinter_v2(0..cardinality);
+                splinter.optimize();
+                let splinter = splinter.encode_to_splinter_ref();
+                assert!(splinter.contains(black_box(lookup)));
+                b.iter(|| splinter.contains(black_box(lookup)))
+            },
+        );
+
         group.bench_function(BenchmarkId::new("roaring", cardinality), |b| {
             let bitmap = RoaringBitmap::from_sorted_iter(0..cardinality).unwrap();
+            assert!(bitmap.contains(black_box(lookup)));
+            b.iter(|| bitmap.contains(black_box(lookup)))
+        });
+
+        group.bench_function(BenchmarkId::new("roaring optimized", cardinality), |b| {
+            let mut bitmap = RoaringBitmap::from_sorted_iter(0..cardinality).unwrap();
+            bitmap.optimize();
             assert!(bitmap.contains(black_box(lookup)));
             b.iter(|| bitmap.contains(black_box(lookup)))
         });

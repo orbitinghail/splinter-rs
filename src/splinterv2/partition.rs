@@ -130,7 +130,7 @@ impl<L: Level> Partition<L> {
         self.switch_kind(self.optimize_kind(true));
     }
 
-    fn optimize_kind(&self, skip_run: bool) -> PartitionKind {
+    fn optimize_kind(&self, fast: bool) -> PartitionKind {
         let cardinality = self.cardinality();
 
         if cardinality == L::MAX_LEN {
@@ -145,26 +145,38 @@ impl<L: Level> Partition<L> {
             }
         }
 
-        if L::PREFER_TREE && cardinality > L::TREE_MIN {
-            let sparsity = self.sparsity_ratio();
-            if sparsity < TREE_SPARSE_THRESHOLD {
-                return PartitionKind::Tree;
-            }
-            // too sparse, fall through to selecting partition kind by size
-        }
-
         let choices = [
+            (PartitionKind::Tree, {
+                if !fast && let Partition::Tree(tree) = self {
+                    // if we are already a tree, then we should only stay a tree
+                    // if we are the smallest option
+                    tree.encoded_size() + 1
+                } else if L::PREFER_TREE
+                    && cardinality > L::TREE_MIN
+                    && self.sparsity_ratio() < TREE_SPARSE_THRESHOLD
+                {
+                    // switch to tree if this level prefers it and the
+                    // cardinality + sparsity meet our thresholds
+                    0
+                } else {
+                    // otherwise we don't want to be a tree
+                    usize::MAX
+                }
+            }),
             (
                 PartitionKind::Vec,
-                VecPartition::<L>::encoded_size(cardinality),
+                VecPartition::<L>::encoded_size(cardinality) + 1,
             ),
-            (PartitionKind::Bitmap, BitmapPartition::<L>::ENCODED_SIZE),
+            (
+                PartitionKind::Bitmap,
+                BitmapPartition::<L>::ENCODED_SIZE + 1,
+            ),
             (
                 PartitionKind::Run,
-                if skip_run {
+                if fast {
                     usize::MAX
                 } else {
-                    RunPartition::<L>::encoded_size(self.count_runs())
+                    RunPartition::<L>::encoded_size(self.count_runs()) + 1
                 },
             ),
         ];
