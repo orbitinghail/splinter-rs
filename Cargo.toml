@@ -42,6 +42,11 @@ roaring = "=0.11.2"
 lz4 = "=1.28.1"
 splinter-rs = { path = ".", features = ["testutil"] }
 
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
 [features]
 default = []
 testutil = ["dep:rand"]
