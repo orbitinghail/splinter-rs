@@ -160,7 +160,7 @@ impl<L: Level> LevelSetGen<L> {
     }
 
     pub fn random(&mut self, len: usize) -> Vec<L::Value> {
-        index::sample(&mut self.rng(), L::MAX_LEN - 1, len)
+        index::sample(&mut self.rng(), L::MAX_LEN, len)
             .into_iter()
             .map(L::Value::truncate_from)
             .sorted()

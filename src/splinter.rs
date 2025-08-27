@@ -410,11 +410,11 @@ mod tests {
 
         // fully random sets of varying sizes
         run_test("random/32", set_gen.random(32), 32, 145, 328);
-        run_test("random/256", set_gen.random(256), 256, 1041, 2552);
-        run_test("random/1024", set_gen.random(1024), 1024, 4113, 10152);
-        run_test("random/4096", set_gen.random(4096), 4096, 14350, 39792);
-        run_test("random/16384", set_gen.random(16384), 16384, 51214, 148832);
-        run_test("random/65535", set_gen.random(65535), 65535, 198667, 462838);
+        run_test("random/256", set_gen.random(256), 256, 1041, 2544);
+        run_test("random/1024", set_gen.random(1024), 1024, 4113, 10168);
+        run_test("random/4096", set_gen.random(4096), 4096, 14350, 40056);
+        run_test("random/16384", set_gen.random(16384), 16384, 51214, 148656);
+        run_test("random/65535", set_gen.random(65535), 65535, 198667, 461278);
 
         let mut fail_test = false;
 
