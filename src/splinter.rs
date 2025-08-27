@@ -625,6 +625,12 @@ mod tests {
     }
 
     #[test]
+    fn test_minimal_enc() {
+        let bytes = mksplinter(0..5).serialize_to_bytes();
+        dbg!(bytes);
+    }
+
+    #[test]
     fn test_splinter_ref_sanity() {
         // fill up the first partition and sparse fill up the second partition
         let values = (0..65535)

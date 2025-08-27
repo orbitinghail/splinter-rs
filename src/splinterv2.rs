@@ -120,6 +120,11 @@ impl<B: Deref<Target = [u8]>> Debug for SplinterRefV2<B> {
 
 impl<B: Deref<Target = [u8]>> SplinterRefV2<B> {
     pub fn from_bytes(data: B) -> Result<Self, DecodeErr> {
+        const SPLINTER_V1_MAGIC: [u8; 4] = [0xDA, 0xAE, 0x12, 0xDF];
+        if data.len() >= SPLINTER_V1_MAGIC.len() && data.starts_with(&SPLINTER_V1_MAGIC) {
+            return Err(DecodeErr::SplinterV1);
+        }
+
         if data.len() < Footer::SIZE {
             return Err(DecodeErr::Length);
         }

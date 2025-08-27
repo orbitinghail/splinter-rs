@@ -36,6 +36,9 @@ pub enum DecodeErr {
 
     #[error("invalid checksum")]
     Checksum,
+
+    #[error("buffer contains serialized Splinter V1, decode using splinter-rs:v0.3.3")]
+    SplinterV1,
 }
 
 impl DecodeErr {
@@ -261,6 +264,15 @@ mod tests {
         assert_matches!(
             PartitionRef::<Block>::from_suffix(&buf),
             Err(DecodeErr::Length)
+        );
+    }
+
+    #[test]
+    fn test_detect_splinter_v1() {
+        let empty_splinter_v1 = b"\xda\xae\x12\xdf\0\0\0\0";
+        assert_matches!(
+            SplinterRefV2::from_bytes(empty_splinter_v1.as_slice()),
+            Err(DecodeErr::SplinterV1)
         );
     }
 }

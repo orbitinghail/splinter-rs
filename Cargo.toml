@@ -1,6 +1,6 @@
 [package]
 name = "splinter-rs"
-version = "0.3.3"
+version = "2.0.0"
 edition = "2024"
 authors = ["orbitinghail <hello@orbitinghail.dev>"]
 license = "MIT OR Apache-2.0"
@@ -34,7 +34,7 @@ quickcheck_macros = "1.1.0"
 crc64fast-nvme = "1.2.0"
 assert_matches = "1.5.0"
 range-set-blaze = "0.3.0"
-rand = { version = "=0.9.2", optional = true }
+rand = { version = "0.9", optional = true }
 
 [dev-dependencies]
 criterion = "=0.7.0"
