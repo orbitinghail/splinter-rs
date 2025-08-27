@@ -1,5 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
+use bytes::Bytes;
 use zerocopy::FromBytes;
 
 use crate::{
@@ -9,6 +10,7 @@ use crate::{
     traits::PartitionRead,
 };
 
+#[derive(Clone)]
 pub struct SplinterRef<B> {
     pub(crate) data: B,
 }
@@ -21,17 +23,42 @@ impl<B: Deref<Target = [u8]>> Debug for SplinterRef<B> {
     }
 }
 
+impl<B> SplinterRef<B> {
+    #[inline]
+    pub fn inner(&self) -> &B {
+        &self.data
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> B {
+        self.data
+    }
+}
+
+impl SplinterRef<Bytes> {
+    #[inline]
+    pub fn encode_to_bytes(&self) -> Bytes {
+        self.data.clone()
+    }
+}
+
 impl<B: Deref<Target = [u8]>> Encodable for SplinterRef<B> {
+    #[inline]
     fn encoded_size(&self) -> usize {
         self.data.len()
     }
 
+    #[inline]
     fn encode<T: bytes::BufMut>(&self, encoder: &mut Encoder<T>) {
         encoder.write_splinter(&self.data);
     }
 }
 
 impl<B: Deref<Target = [u8]>> SplinterRef<B> {
+    pub fn decode_to_splinter(&self) -> Splinter {
+        Splinter::from_iter(self.iter())
+    }
+
     pub fn from_bytes(data: B) -> Result<Self, DecodeErr> {
         pub(crate) const SPLINTER_V1_MAGIC: [u8; 4] = [0xDA, 0xAE, 0x12, 0xDF];
         if data.len() >= SPLINTER_V1_MAGIC.len() && data.starts_with(&SPLINTER_V1_MAGIC) {
@@ -45,14 +72,6 @@ impl<B: Deref<Target = [u8]>> SplinterRef<B> {
         Footer::ref_from_bytes(footer)?.validate(partitions)?;
         PartitionRef::<High>::from_suffix(partitions)?;
         Ok(Self { data })
-    }
-
-    pub fn inner(&self) -> &[u8] {
-        &self.data
-    }
-
-    pub fn into_inner(self) -> B {
-        self.data
     }
 
     pub(crate) fn load_unchecked(&self) -> PartitionRef<'_, High> {

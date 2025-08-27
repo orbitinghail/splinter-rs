@@ -14,6 +14,7 @@
 
 pub mod codec;
 pub mod count;
+pub mod cow;
 pub mod level;
 pub mod partition;
 pub mod partition_ops;
