@@ -116,3 +116,67 @@ impl<B: Deref<Target = [u8]>> PartialEq<Splinter> for SplinterRef<B> {
         other == self
     }
 }
+
+impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<SplinterRef<B2>>
+    for SplinterRef<B>
+{
+    fn eq(&self, other: &SplinterRef<B2>) -> bool {
+        self.load_unchecked() == other.load_unchecked()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        Optimizable, PartitionRead, Splinter,
+        testutil::{SetGen, mksplinter},
+    };
+
+    #[test]
+    fn test_empty() {
+        let splinter = mksplinter(&[]).encode_to_splinter_ref();
+
+        assert_eq!(splinter.decode_to_splinter(), Splinter::default());
+        assert!(!splinter.contains(0));
+        assert_eq!(splinter.cardinality(), 0);
+        assert_eq!(splinter.last(), None);
+    }
+
+    /// This is a regression test for a bug in the SplinterRef encoding. The bug
+    /// was that we used LittleEndian encoded values to store unaligned values,
+    /// which sort in reverse order from what we expect.
+    #[test]
+    fn test_contains_bug() {
+        let mut set_gen = SetGen::new(0xDEAD_BEEF);
+        let set = set_gen.random(1024);
+        let lookup = set[(set.len() / 3) as usize];
+        let splinter = mksplinter(&set).encode_to_splinter_ref();
+        assert!(splinter.contains(lookup))
+    }
+
+    #[quickcheck]
+    fn test_splinter_ref_quickcheck(set: Vec<u32>) -> bool {
+        let splinter = mksplinter(&set).encode_to_splinter_ref();
+        if set.is_empty() {
+            !splinter.contains(123)
+        } else {
+            let lookup = set[set.len() / 3];
+            splinter.contains(lookup)
+        }
+    }
+
+    #[quickcheck]
+    fn test_splinter_opt_ref_quickcheck(set: Vec<u32>) -> bool {
+        let mut splinter = mksplinter(&set);
+        splinter.optimize();
+        let splinter = splinter.encode_to_splinter_ref();
+        if set.is_empty() {
+            !splinter.contains(123)
+        } else {
+            let lookup = set[set.len() / 3];
+            splinter.contains(lookup)
+        }
+    }
+}

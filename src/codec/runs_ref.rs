@@ -74,6 +74,12 @@ impl<L: Level> PartitionRead<L> for RunsRef<'_, L> {
     }
 }
 
+impl<L: Level> PartialEq for RunsRef<'_, L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.runs == other.runs
+    }
+}
+
 #[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable, Clone)]
 #[repr(C)]
 #[doc(hidden)]
@@ -96,6 +102,12 @@ impl<L: Level> From<RangeInclusive<L::Value>> for EncodedRun<L> {
         let start = (*range.start()).into();
         let end = (*range.end()).into();
         EncodedRun { start, end }
+    }
+}
+
+impl<L: Level> PartialEq for EncodedRun<L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.start == other.start && self.end == other.end
     }
 }
 

@@ -182,6 +182,20 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
     }
 }
 
+impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
+    fn eq(&self, other: &Self) -> bool {
+        use NonRecursivePartitionRef::*;
+        match (self, other) {
+            (Bitmap { bitmap: l }, Bitmap { bitmap: r }) => l == r,
+            (Vec { values: l }, Vec { values: r }) => l == r,
+            (Run { runs: l }, Run { runs: r }) => l == r,
+            (Empty, Empty) => true,
+            (Full, Full) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[doc(hidden)]
 pub enum PartitionRef<'a, L: Level> {
@@ -256,6 +270,16 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
         match self {
             Self::NonRecursive(p) => Either::Left(p.iter()),
             Self::Tree(p) => Either::Right(p.iter()),
+        }
+    }
+}
+
+impl<'a, L: Level> PartialEq for PartitionRef<'a, L> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::NonRecursive(l0), Self::NonRecursive(r0)) => l0 == r0,
+            (Self::Tree(l0), Self::Tree(r0)) => l0 == r0,
+            _ => false,
         }
     }
 }

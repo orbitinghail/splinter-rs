@@ -263,6 +263,34 @@ mod tests {
     }
 
     #[test]
+    fn test_vec_byteorder() {
+        let buf = mkpartition_buf::<Low>(PartitionKind::Vec, &[0x01_00, 0x02_00]);
+        assert_eq!(
+            buf.as_ref(),
+            &[
+                0x01, 0x00, // first value
+                0x02, 0x00, // second value
+                0x00, 0x01, // length
+                0x03, // kind
+            ]
+        );
+    }
+
+    #[test]
+    fn test_run_byteorder() {
+        let buf = mkpartition_buf::<Low>(PartitionKind::Run, &[0x01_00, 0x02_00]);
+        assert_eq!(
+            buf.as_ref(),
+            &[
+                0x01, 0x00, 0x01, 0x00, // first run
+                0x02, 0x00, 0x02, 0x00, // second run
+                0x00, 0x01, // length
+                0x04, // kind
+            ]
+        );
+    }
+
+    #[test]
     fn test_detect_splinter_v1() {
         let empty_splinter_v1 = b"\xda\xae\x12\xdf\0\0\0\0";
         assert_matches!(

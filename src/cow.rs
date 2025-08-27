@@ -75,11 +75,11 @@ impl From<CowSplinter<Bytes>> for SplinterRef<Bytes> {
 
 impl<B> CowSplinter<B> {
     pub fn from_owned(splinter: Splinter) -> Self {
-        Self::Owned(splinter)
+        splinter.into()
     }
 
     pub fn from_ref(splinter: SplinterRef<B>) -> Self {
-        Self::Ref(splinter)
+        splinter.into()
     }
 }
 
@@ -192,5 +192,19 @@ impl<B: Deref<Target = [u8]>> PartitionWrite<High> for CowSplinter<B> {
 
     fn remove(&mut self, value: u32) -> bool {
         self.to_mut().remove(value)
+    }
+}
+
+impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<CowSplinter<B2>>
+    for CowSplinter<B>
+{
+    fn eq(&self, other: &CowSplinter<B2>) -> bool {
+        use CowSplinter::*;
+        match (self, other) {
+            (Ref(l), Ref(r)) => l == r,
+            (Ref(l), Owned(r)) => l == r,
+            (Owned(l), Ref(r)) => l == r,
+            (Owned(l), Owned(r)) => l == r,
+        }
     }
 }

@@ -5,6 +5,7 @@ use bytes::Bytes;
 use crate::{
     Cut, Encodable, Merge, Optimizable, SplinterRef,
     codec::{encoder::Encoder, footer::Footer},
+    cow::CowSplinter,
     level::High,
     partition::Partition,
     traits::{PartitionRead, PartitionWrite},
@@ -106,6 +107,15 @@ impl<B: Deref<Target = [u8]>> Merge<SplinterRef<B>> for Splinter {
     }
 }
 
+impl<B: Deref<Target = [u8]>> Merge<CowSplinter<B>> for Splinter {
+    fn merge(&mut self, rhs: &CowSplinter<B>) {
+        match rhs {
+            CowSplinter::Ref(splinter_ref) => self.merge(splinter_ref),
+            CowSplinter::Owned(splinter) => self.merge(splinter),
+        }
+    }
+}
+
 impl Cut for Splinter {
     type Out = Self;
 
@@ -122,6 +132,17 @@ impl<B: Deref<Target = [u8]>> Cut<SplinterRef<B>> for Splinter {
     }
 }
 
+impl<B: Deref<Target = [u8]>> Cut<CowSplinter<B>> for Splinter {
+    type Out = Self;
+
+    fn cut(&mut self, rhs: &CowSplinter<B>) -> Self::Out {
+        match rhs {
+            CowSplinter::Ref(splinter_ref) => self.cut(splinter_ref),
+            CowSplinter::Owned(splinter) => self.cut(splinter),
+        }
+    }
+}
+
 impl<B: Deref<Target = [u8]>> PartialEq<SplinterRef<B>> for Splinter {
     #[inline]
     fn eq(&self, other: &SplinterRef<B>) -> bool {
@@ -129,8 +150,17 @@ impl<B: Deref<Target = [u8]>> PartialEq<SplinterRef<B>> for Splinter {
     }
 }
 
+impl<B: Deref<Target = [u8]>> PartialEq<CowSplinter<B>> for Splinter {
+    fn eq(&self, other: &CowSplinter<B>) -> bool {
+        match other {
+            CowSplinter::Ref(splinter_ref) => self.eq(splinter_ref),
+            CowSplinter::Owned(splinter) => self.eq(splinter),
+        }
+    }
+}
+
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
     use crate::{
         codec::Encodable,
@@ -177,18 +207,6 @@ pub(crate) mod tests {
         itertools::assert_equal(splinter.iter(), set.into_iter());
     }
 
-    /// This is a regression test for a bug in the SplinterRef encoding. The bug
-    /// was that we used LittleEndian encoded values to store unaligned values,
-    /// which sort in reverse order from what we expect.
-    #[test]
-    fn test_contains_bug() {
-        let mut set_gen = SetGen::new(0xDEAD_BEEF);
-        let set = set_gen.random(1024);
-        let lookup = set[(set.len() / 3) as usize];
-        let splinter = mksplinter(&set).encode_to_splinter_ref();
-        assert!(splinter.contains(lookup))
-    }
-
     #[quickcheck]
     fn test_splinter_quickcheck(set: Vec<u32>) -> bool {
         let splinter = mksplinter(&set);
@@ -204,30 +222,6 @@ pub(crate) mod tests {
     fn test_splinter_opt_quickcheck(set: Vec<u32>) -> bool {
         let mut splinter = mksplinter(&set);
         splinter.optimize();
-        if set.is_empty() {
-            !splinter.contains(123)
-        } else {
-            let lookup = set[set.len() / 3];
-            splinter.contains(lookup)
-        }
-    }
-
-    #[quickcheck]
-    fn test_splinter_ref_quickcheck(set: Vec<u32>) -> bool {
-        let splinter = mksplinter(&set).encode_to_splinter_ref();
-        if set.is_empty() {
-            !splinter.contains(123)
-        } else {
-            let lookup = set[set.len() / 3];
-            splinter.contains(lookup)
-        }
-    }
-
-    #[quickcheck]
-    fn test_splinter_opt_ref_quickcheck(set: Vec<u32>) -> bool {
-        let mut splinter = mksplinter(&set);
-        splinter.optimize();
-        let splinter = splinter.encode_to_splinter_ref();
         if set.is_empty() {
             !splinter.contains(123)
         } else {

@@ -158,6 +158,15 @@ impl<'a, L: Level + 'a> IntoIterator for TreeRef<'a, L> {
     }
 }
 
+impl<'a, L: Level> PartialEq for TreeRef<'a, L> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.num_children != other.num_children || self.segments != other.segments {
+            return false;
+        }
+        itertools::equal(self.children(), other.children())
+    }
+}
+
 pub struct TreeIndexBuilder<L: Level> {
     segments: Partition<Block>,
     offsets: Vec<usize>,
