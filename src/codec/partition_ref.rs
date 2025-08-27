@@ -4,14 +4,11 @@ use num::traits::{AsPrimitive, Bounded};
 use zerocopy::{FromBytes, TryFromBytes};
 
 use crate::{
-    MultiIter,
-    splinterv2::{
-        PartitionRead,
-        codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
-        level::{Block, Level},
-        partition::{PartitionKind, bitmap::BitmapPartition},
-        traits::TruncateFrom,
-    },
+    MultiIter, PartitionRead,
+    codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
+    level::{Block, Level},
+    partition::{PartitionKind, bitmap::BitmapPartition},
+    traits::TruncateFrom,
 };
 
 pub(super) fn decode_len_from_suffix<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {

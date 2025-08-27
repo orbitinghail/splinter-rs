@@ -3,14 +3,14 @@ use num::traits::AsPrimitive;
 use std::{marker::PhantomData, mem::size_of};
 use zerocopy::FromBytes;
 
-use crate::splinterv2::{
-    Partition, PartitionRead, PartitionWrite,
+use crate::{
+    PartitionRead, PartitionWrite,
     codec::{
         DecodeErr,
         partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len_from_suffix},
     },
     level::{Block, Level},
-    partition::{PartitionKind, bitmap::BitmapPartition},
+    partition::{Partition, PartitionKind, bitmap::BitmapPartition},
     segment::{Segment, SplitSegment},
     traits::TruncateFrom,
 };

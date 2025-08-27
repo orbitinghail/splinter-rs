@@ -4,14 +4,12 @@ use bytes::BufMut;
 use itertools::Itertools;
 
 use crate::{
-    splinterv2::{
-        codec::{Encodable, encoder::Encoder},
-        count::{count_runs_sorted, count_unique_sorted},
-        level::Level,
-        partition::Partition,
-        segment::SplitSegment,
-        traits::{Cut, Merge, PartitionRead, PartitionWrite},
-    },
+    codec::{Encodable, encoder::Encoder},
+    count::{count_runs_sorted, count_unique_sorted},
+    level::Level,
+    partition::Partition,
+    segment::SplitSegment,
+    traits::{Cut, Merge, PartitionRead, PartitionWrite},
     util::find_next_sorted,
 };
 

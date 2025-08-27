@@ -6,7 +6,7 @@ use std::{
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
 
-use crate::splinterv2::{
+use crate::{
     codec::{
         Encodable,
         encoder::Encoder,

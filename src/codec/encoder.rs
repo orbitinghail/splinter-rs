@@ -5,10 +5,11 @@ use bytes::BufMut;
 use crc64fast_nvme::Digest;
 use zerocopy::{IntoBytes, transmute_ref};
 
-use crate::splinterv2::{
-    Partition, PartitionRead,
+use crate::{
+    PartitionRead,
     codec::{footer::Footer, runs_ref::EncodedRun, tree_ref::TreeIndexBuilder},
     level::{Block, Level},
+    partition::Partition,
     partition::PartitionKind,
     traits::TruncateFrom,
 };
@@ -31,6 +32,12 @@ impl<B: BufMut> Encoder<B> {
     /// Retrieve the wrapped buffer from the `Encoder`
     pub fn into_inner(self) -> B {
         self.buf
+    }
+
+    /// Write an entire encoded splinter to the buffer
+    pub fn write_splinter(&mut self, splinter: &[u8]) {
+        self.buf.put_slice(splinter);
+        self.bytes_written += splinter.len();
     }
 
     /// Write the checksum and Splinter Magic value to the buffer

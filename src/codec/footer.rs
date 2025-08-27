@@ -3,7 +3,7 @@ use zerocopy::{
     ByteEq, ByteHash, FromBytes, Immutable, IntoBytes, KnownLayout, LittleEndian, U64, Unaligned,
 };
 
-use crate::splinterv2::codec::DecodeErr;
+use crate::codec::DecodeErr;
 
 /// The last four bytes of an encoded Splinter
 pub const SPLINTER_MAGIC: [u8; 4] = [0x59, 0x11, 0xA7, 0xE2];

@@ -1,392 +1,491 @@
-use std::{
-    collections::{BTreeMap, btree_map::Entry},
-    convert::TryInto,
-    fmt::Debug,
-    marker::PhantomData,
-    mem::size_of,
-    ops::RangeInclusive,
-};
+use std::fmt::{self, Debug};
 
 use bytes::BufMut;
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use itertools::Itertools;
+use num::traits::{AsPrimitive, Bounded};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{
-    Segment,
-    bitmap::BitmapMutExt,
-    block::Block,
-    index::{IndexRef, index_serialized_size},
-    ops::Merge,
-    relational::Relation,
-    util::{CopyToOwned, FromSuffix, SerializeContainer},
+    MultiIter,
+    codec::{Encodable, encoder::Encoder},
+    level::Level,
+    partition::{
+        bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
+    },
+    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
-#[derive(Clone)]
-pub struct Partition<Offset, V> {
-    values: BTreeMap<Segment, V>,
-    _phantom: PhantomData<Offset>,
+pub mod bitmap;
+pub mod run;
+pub mod tree;
+pub mod vec;
+
+/// Tree sparsity ratio limit
+const TREE_SPARSE_THRESHOLD: f64 = 0.5;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    IntoBytes,
+    TryFromBytes,
+    Unaligned,
+    KnownLayout,
+    Immutable,
+    Default,
+)]
+#[repr(u8)]
+pub enum PartitionKind {
+    #[default]
+    Empty = 0x00,
+    Full = 0x01,
+    Bitmap = 0x02,
+    Vec = 0x03,
+    Run = 0x04,
+    Tree = 0x05,
 }
 
-impl<O, V> Default for Partition<O, V> {
-    fn default() -> Self {
-        Self {
-            values: Default::default(),
-            _phantom: Default::default(),
+impl PartitionKind {
+    pub fn build<L: Level>(self) -> Partition<L> {
+        match self {
+            PartitionKind::Empty => Partition::default(),
+            PartitionKind::Full => Partition::Full,
+            PartitionKind::Bitmap => Partition::Bitmap(Default::default()),
+            PartitionKind::Vec => Partition::Vec(Default::default()),
+            PartitionKind::Run => Partition::Run(Default::default()),
+            PartitionKind::Tree => Partition::Tree(Default::default()),
         }
     }
 }
 
-impl<O, V> Partition<O, V>
-where
-    V: Default,
-{
-    pub fn get_or_init(&mut self, segment: Segment) -> &mut V {
-        self.values.entry(segment).or_default()
+#[derive(Clone, Eq)]
+pub enum Partition<L: Level> {
+    Full,
+    Bitmap(BitmapPartition<L>),
+    Vec(VecPartition<L>),
+    Run(RunPartition<L>),
+    Tree(TreePartition<L>),
+}
+
+impl<L: Level> Partition<L> {
+    pub fn kind(&self) -> PartitionKind {
+        match self {
+            Partition::Full => PartitionKind::Full,
+            Partition::Bitmap(_) => PartitionKind::Bitmap,
+            Partition::Vec(_) => PartitionKind::Vec,
+            Partition::Run(_) => PartitionKind::Run,
+            Partition::Tree(_) => PartitionKind::Tree,
+        }
+    }
+
+    fn switch_kind(&mut self, kind: PartitionKind) {
+        if self.kind() == kind {
+            return;
+        }
+
+        *self = match kind {
+            PartitionKind::Empty => {
+                debug_assert_eq!(self.cardinality(), 0, "Partition is not empty");
+                Partition::default()
+            }
+            PartitionKind::Full => {
+                debug_assert_eq!(self.cardinality(), L::MAX_LEN, "Partition is not full");
+                Partition::Full
+            }
+            PartitionKind::Bitmap => Partition::Bitmap(self.iter().collect()),
+            PartitionKind::Vec => {
+                Partition::Vec(VecPartition::from_sorted_unique_unchecked(self.iter()))
+            }
+            PartitionKind::Run => {
+                Partition::Run(RunPartition::from_sorted_unique_unchecked(self.iter()))
+            }
+            PartitionKind::Tree => Partition::Tree(self.iter().collect()),
+        }
+    }
+
+    fn sparsity_ratio(&self) -> f64 {
+        match self {
+            Partition::Full => 1.0,
+            Partition::Bitmap(p) => p.sparsity_ratio(),
+            Partition::Vec(p) => p.sparsity_ratio(),
+            Partition::Run(p) => p.sparsity_ratio(),
+            Partition::Tree(p) => p.sparsity_ratio(),
+        }
+    }
+
+    fn count_runs(&self) -> usize {
+        match self {
+            Partition::Full => 1,
+            Partition::Bitmap(p) => p.count_runs(),
+            Partition::Vec(p) => p.count_runs(),
+            Partition::Run(p) => p.count_runs(),
+            Partition::Tree(p) => p.count_runs(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn optimize_fast(&mut self) {
+        self.switch_kind(self.optimize_kind(true));
+    }
+
+    fn optimize_kind(&self, fast: bool) -> PartitionKind {
+        let cardinality = self.cardinality();
+
+        if cardinality == L::MAX_LEN {
+            return PartitionKind::Full;
+        }
+
+        if cardinality == 0 {
+            if L::PREFER_TREE {
+                return PartitionKind::Tree;
+            } else {
+                return PartitionKind::Vec;
+            }
+        }
+
+        let choices = [
+            (PartitionKind::Tree, {
+                if !fast && let Partition::Tree(tree) = self {
+                    // if we are already a tree, then we should only stay a tree
+                    // if we are the smallest option
+                    tree.encoded_size() + 1
+                } else if L::PREFER_TREE
+                    && cardinality > L::TREE_MIN
+                    && self.sparsity_ratio() < TREE_SPARSE_THRESHOLD
+                {
+                    // switch to tree if this level prefers it and the
+                    // cardinality + sparsity meet our thresholds
+                    0
+                } else {
+                    // otherwise we don't want to be a tree
+                    usize::MAX
+                }
+            }),
+            (
+                PartitionKind::Vec,
+                VecPartition::<L>::encoded_size(cardinality) + 1,
+            ),
+            (
+                PartitionKind::Bitmap,
+                BitmapPartition::<L>::ENCODED_SIZE + 1,
+            ),
+            (
+                PartitionKind::Run,
+                if fast {
+                    usize::MAX
+                } else {
+                    RunPartition::<L>::encoded_size(self.count_runs()) + 1
+                },
+            ),
+        ];
+
+        if let Some(idx) = choices.iter().position_min_by_key(|(_, s)| *s) {
+            return choices[idx].0;
+        }
+
+        self.kind()
+    }
+
+    /// Insert a value into the partition without optimizing the partition's
+    /// storage choice. You should run `Self::optimize` on this partition
+    /// afterwards.
+    /// Returns `true` if the insertion occurred, `false` otherwise.
+    pub fn raw_insert(&mut self, value: L::Value) -> bool {
+        match self {
+            Partition::Full => false,
+            Partition::Bitmap(partition) => partition.insert(value),
+            Partition::Vec(partition) => partition.insert(value),
+            Partition::Run(partition) => partition.insert(value),
+            Partition::Tree(partition) => partition.insert(value),
+        }
+    }
+
+    /// Remove a value from the partition without optimizing the partition's
+    /// storage choice. You should run `Self::optimize` on this partition afterwards.
+    /// Returns `true` if the removal occurred, `false` otherwise.
+    pub fn raw_remove(&mut self, value: L::Value) -> bool {
+        match self {
+            Partition::Full => {
+                self.switch_kind(if L::PREFER_TREE {
+                    PartitionKind::Tree
+                } else {
+                    PartitionKind::Run
+                });
+                self.raw_remove(value)
+            }
+            Partition::Bitmap(partition) => partition.remove(value),
+            Partition::Vec(partition) => partition.remove(value),
+            Partition::Run(partition) => partition.remove(value),
+            Partition::Tree(partition) => partition.remove(value),
+        }
     }
 }
 
-impl<O, V> Partition<O, V> {
-    pub const EMPTY: Self = Self {
-        values: BTreeMap::new(),
-        _phantom: PhantomData,
+impl<L: Level> Optimizable for Partition<L> {
+    fn optimize(&mut self) {
+        let this = &mut *self;
+        let optimized = this.optimize_kind(false);
+        if optimized != this.kind() {
+            this.switch_kind(optimized);
+        } else if let Partition::Tree(tree) = this {
+            tree.optimize_children();
+        }
+    }
+}
+
+impl<L: Level> Encodable for Partition<L> {
+    fn encoded_size(&self) -> usize {
+        if self.is_empty() {
+            // PartitionKind::Empty
+            1
+        } else {
+            let inner_size = match self {
+                Partition::Full => 0,
+                Partition::Bitmap(partition) => partition.encoded_size(),
+                Partition::Vec(partition) => partition.encoded_size(),
+                Partition::Run(partition) => partition.encoded_size(),
+                Partition::Tree(partition) => partition.encoded_size(),
+            };
+            // inner + PartitionKind
+            inner_size + 1
+        }
+    }
+
+    fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>) {
+        if self.is_empty() {
+            encoder.put_kind(PartitionKind::Empty);
+        } else {
+            match self {
+                Partition::Full => {
+                    encoder.put_kind(PartitionKind::Full);
+                }
+                Partition::Bitmap(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Bitmap);
+                }
+                Partition::Vec(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Vec);
+                }
+                Partition::Run(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Run);
+                }
+                Partition::Tree(partition) => {
+                    partition.encode(encoder);
+                    encoder.put_kind(PartitionKind::Tree);
+                }
+            }
+        }
+    }
+}
+
+impl<L: Level> Default for Partition<L> {
+    fn default() -> Self {
+        Partition::Vec(VecPartition::default())
+    }
+}
+
+impl<L: Level> Debug for Partition<L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Partition::Full => write!(f, "Full"),
+            Partition::Bitmap(partition) => partition.fmt(f),
+            Partition::Vec(partition) => partition.fmt(f),
+            Partition::Run(partition) => partition.fmt(f),
+            Partition::Tree(partition) => partition.fmt(f),
+        }
+    }
+}
+
+impl<L: Level> PartitionRead<L> for Partition<L> {
+    fn cardinality(&self) -> usize {
+        match self {
+            Partition::Full => L::MAX_LEN,
+            Partition::Bitmap(partition) => partition.cardinality(),
+            Partition::Vec(partition) => partition.cardinality(),
+            Partition::Run(partition) => partition.cardinality(),
+            Partition::Tree(partition) => partition.cardinality(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            Partition::Full => false,
+            Partition::Bitmap(partition) => partition.is_empty(),
+            Partition::Vec(partition) => partition.is_empty(),
+            Partition::Run(partition) => partition.is_empty(),
+            Partition::Tree(partition) => partition.is_empty(),
+        }
+    }
+
+    fn contains(&self, value: L::Value) -> bool {
+        match self {
+            Partition::Full => true,
+            Partition::Bitmap(partition) => partition.contains(value),
+            Partition::Vec(partition) => partition.contains(value),
+            Partition::Run(partition) => partition.contains(value),
+            Partition::Tree(partition) => partition.contains(value),
+        }
+    }
+
+    fn rank(&self, value: L::Value) -> usize {
+        match self {
+            Partition::Full => value.as_() + 1,
+            Partition::Bitmap(p) => p.rank(value),
+            Partition::Vec(p) => p.rank(value),
+            Partition::Run(p) => p.rank(value),
+            Partition::Tree(p) => p.rank(value),
+        }
+    }
+
+    fn select(&self, idx: usize) -> Option<L::Value> {
+        match self {
+            Partition::Full => Some(L::Value::truncate_from(idx)),
+            Partition::Bitmap(p) => p.select(idx),
+            Partition::Vec(p) => p.select(idx),
+            Partition::Run(p) => p.select(idx),
+            Partition::Tree(p) => p.select(idx),
+        }
+    }
+
+    fn last(&self) -> Option<L::Value> {
+        match self {
+            Partition::Full => Some(L::Value::max_value()),
+            Partition::Bitmap(p) => p.last(),
+            Partition::Vec(p) => p.last(),
+            Partition::Run(p) => p.last(),
+            Partition::Tree(p) => p.last(),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
+        match self {
+            Partition::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
+            Partition::Bitmap(p) => Iter::Bitmap(p.iter()),
+            Partition::Vec(p) => Iter::Vec(p.iter()),
+            Partition::Run(p) => Iter::Run(p.iter()),
+            Partition::Tree(p) => Iter::Tree(p.iter()),
+        }
+    }
+}
+
+impl<L: Level> PartitionWrite<L> for Partition<L> {
+    fn insert(&mut self, value: L::Value) -> bool {
+        let inserted = self.raw_insert(value);
+        if inserted {
+            self.optimize_fast();
+        }
+        inserted
+    }
+
+    fn remove(&mut self, value: L::Value) -> bool {
+        let removed = self.raw_remove(value);
+        if removed {
+            self.optimize_fast();
+        }
+        removed
+    }
+}
+
+impl<L: Level> FromIterator<L::Value> for Partition<L> {
+    fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
+        let mut partition = Partition::Vec(iter.into_iter().collect());
+        partition.optimize_fast();
+        partition
+    }
+}
+
+impl<L: Level> Extend<L::Value> for Partition<L> {
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        for el in iter {
+            self.raw_insert(el);
+        }
+        self.optimize_fast();
+    }
+}
+
+MultiIter!(Iter, Full, Bitmap, Vec, Run, Tree);
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        PartitionRead, Splinter,
+        level::{High, Level, Low},
+        partition::Partition,
+        testutil::{LevelSetGen, mkpartition, test_partition_read},
+        traits::TruncateFrom,
     };
 
-    /// Inserts a value into the partition.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the segment is already present.
-    pub fn insert(&mut self, segment: Segment, value: V) {
-        assert!(
-            self.values.insert(segment, value).is_none(),
-            "segment already present in partition"
+    use super::PartitionKind;
+
+    #[test]
+    fn test_partition_full() {
+        let splinter = Partition::<High>::Full;
+        assert!(!splinter.is_empty(), "not empty");
+        assert_eq!(
+            splinter.cardinality(),
+            <High as Level>::MAX_LEN,
+            "cardinality"
+        );
+        assert_eq!(
+            splinter.last(),
+            Some(<High as Level>::Value::max_value()),
+            "last"
         );
     }
 
-    pub fn retain(&mut self, f: impl FnMut(&Segment, &mut V) -> bool) {
-        self.values.retain(f);
-    }
+    #[test]
+    fn test_partitions_direct() {
+        let mut setgen = LevelSetGen::<Low>::new(0xDEADBEEF);
 
-    pub fn last(&self) -> Option<(Segment, &V)> {
-        self.values.last_key_value().map(|(k, v)| (*k, v))
-    }
-}
+        let kinds = [
+            PartitionKind::Bitmap,
+            PartitionKind::Vec,
+            PartitionKind::Run,
+            PartitionKind::Tree,
+        ];
+        let sets = &[
+            vec![],
+            vec![0],
+            vec![0, 1],
+            vec![0, u16::MAX],
+            vec![u16::MAX],
+            setgen.random(8),
+            setgen.random(4096),
+            setgen.runs(4096, 0.01),
+            setgen.runs(4096, 0.2),
+            setgen.runs(4096, 0.5),
+            setgen.runs(4096, 0.9),
+            (0..Low::MAX_LEN)
+                .map(|v| <Low as Level>::Value::truncate_from(v))
+                .collect_vec(),
+        ];
 
-impl<O, V> Merge for Partition<O, V>
-where
-    V: Merge + Clone,
-{
-    fn merge(&mut self, rhs: &Self) {
-        for (k, v) in rhs.iter() {
-            match self.values.entry(k) {
-                Entry::Occupied(mut entry) => {
-                    entry.get_mut().merge(v);
+        for kind in kinds {
+            for (i, set) in sets.iter().enumerate() {
+                println!("Testing partition kind: {kind:?} with set {i}");
+
+                if kind == PartitionKind::Tree && i == 5 {
+                    println!("break")
                 }
-                Entry::Vacant(entry) => {
-                    entry.insert(v.clone());
-                }
+
+                let partition = mkpartition::<Low>(kind, &set);
+                test_partition_read(&partition, &set);
             }
         }
     }
-}
 
-impl<'a, O, V, Rv> Merge<PartitionRef<'a, O, Rv>> for Partition<O, V>
-where
-    O: FromBytes + Immutable + Copy + Into<u32>,
-    V: Merge<Rv>,
-    Rv: FromSuffix<'a> + CopyToOwned<Owned = V>,
-{
-    fn merge(&mut self, rhs: &PartitionRef<'a, O, Rv>) {
-        for (k, v) in rhs.iter() {
-            match self.values.entry(k) {
-                Entry::Occupied(mut entry) => {
-                    entry.get_mut().merge(&v);
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(v.copy_to_owned());
-                }
-            }
-        }
-    }
-}
-
-impl<O, V> Relation for Partition<O, V> {
-    type ValRef<'a>
-        = &'a V
-    where
-        Self: 'a;
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        self.values.iter().map(|(k, v)| (*k, v))
-    }
-
-    fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
-        self.values.get(&key)
-    }
-
-    fn range(
-        &self,
-        range: RangeInclusive<Segment>,
-    ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        self.values.range(range).map(|(k, v)| (*k, v))
-    }
-}
-
-impl<O, V> SerializeContainer for Partition<O, V>
-where
-    V: SerializeContainer,
-    O: TryFrom<u32, Error: Debug> + IntoBytes + Immutable,
-{
-    fn should_serialize(&self) -> bool {
-        self.values.values().any(|v| v.should_serialize())
-    }
-
-    fn serialized_size(&self) -> usize {
-        let index_size = index_serialized_size::<O>(self.values.len());
-        self.values
-            .iter()
-            .fold(index_size, |acc, (_, value)| acc + value.serialized_size())
-    }
-
-    fn serialize<B: BufMut>(&self, out: &mut B) -> (usize, usize) {
-        // keep track of segments, cardinalities, and offsets as we flush values
-        let mut index = Block::default();
-        let mut cardinalities: Vec<u8> = Vec::with_capacity(self.values.len());
-        let mut offsets = Vec::with_capacity(self.values.len());
-        let mut offset: u32 = 0;
-
-        for (&segment, value) in self.values.iter().filter(|(_, v)| v.should_serialize()) {
-            let (cardinality, n) = value.serialize(out);
-            index.insert(segment);
-            cardinalities.push((cardinality - 1).try_into().expect("cardinality overflow"));
-            offset += TryInto::<u32>::try_into(n).expect("offset overflow");
-            offsets.push(offset);
-        }
-
-        // write out the index
-        // index keys
-        let (cardinality, keys_size) = index.serialize(out);
-        assert_eq!(cardinality, self.values.len(), "cardinality mismatch");
-
-        // index cardinalities
-        let cardinalities_size = cardinalities.len();
-        out.put_slice(&cardinalities);
-
-        // index offsets
-        let offsets_size = offsets.len() * size_of::<O>();
-        for value_offset in offsets {
-            let value_offset = O::try_from(offset - value_offset).expect("offset overflow");
-            out.put_slice(value_offset.as_bytes());
-        }
-
-        (
-            cardinality,
-            (offset as usize) + keys_size + cardinalities_size + offsets_size,
-        )
-    }
-}
-
-pub struct PartitionRef<'a, Offset, V> {
-    values: &'a [u8],
-    index: IndexRef<'a, Offset>,
-    _phantom: PhantomData<V>,
-}
-
-impl<'a, Offset, V> FromSuffix<'a> for PartitionRef<'a, Offset, V>
-where
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
-{
-    fn from_suffix(data: &'a [u8], cardinality: usize) -> Self {
-        let (values, index) = IndexRef::from_suffix(data, cardinality);
-        Self { values, index, _phantom: PhantomData }
-    }
-}
-
-impl<'a, Offset, V> CopyToOwned for PartitionRef<'a, Offset, V>
-where
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
-    V: CopyToOwned + FromSuffix<'a>,
-{
-    type Owned = Partition<Offset, V::Owned>;
-
-    fn copy_to_owned(&self) -> Self::Owned {
-        let values: BTreeMap<Segment, V::Owned> =
-            self.iter().map(|(k, v)| (k, v.copy_to_owned())).collect();
-        Partition { values, _phantom: PhantomData }
-    }
-}
-
-impl<'a, Offset, V> PartitionRef<'a, Offset, V>
-where
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'a> + 'a,
-{
-    /// Returns the cardinality of the partition by summing the cardinalities
-    /// stored in the partition's index
-    #[inline]
-    pub fn cardinality(&self) -> usize {
-        self.index.cardinality()
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = (Segment, V)> + 'a {
-        PartitionRefIter {
-            values: self.values,
-            index_iter: self.index.into_iter(),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn into_range(
-        self,
-        range: RangeInclusive<Segment>,
-    ) -> impl Iterator<Item = (Segment, V)> + 'a {
-        let r2 = range.clone();
-        self.into_iter()
-            .skip_while(move |(k, _)| !r2.contains(k))
-            .take_while(move |(k, _)| range.contains(k))
-    }
-
-    pub fn last(&self) -> Option<(Segment, V)> {
-        if let Some((segment, cardinality, offset)) = self.index.last() {
-            Some((
-                segment,
-                read_partition_ref_value(cardinality, offset, self.values),
-            ))
-        } else {
-            None
-        }
-    }
-}
-
-fn read_partition_ref_value<'a, V: FromSuffix<'a>>(
-    cardinality: usize,
-    offset: usize,
-    values: &'a [u8],
-) -> V {
-    assert!(values.len() >= offset, "offset out of range");
-    let data = &values[..(values.len() - offset)];
-    V::from_suffix(data, cardinality)
-}
-
-struct PartitionRefIter<'a, I, V> {
-    values: &'a [u8],
-    index_iter: I,
-    _phantom: PhantomData<V>,
-}
-
-impl<'a, I, V> Iterator for PartitionRefIter<'a, I, V>
-where
-    I: Iterator<Item = (Segment, usize, usize)> + 'a,
-    V: FromSuffix<'a>,
-{
-    type Item = (Segment, V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some((segment, cardinality, offset)) = self.index_iter.next() {
-            Some((
-                segment,
-                read_partition_ref_value(cardinality, offset, self.values),
-            ))
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a, Offset, V> Relation for PartitionRef<'a, Offset, V>
-where
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'a>,
-{
-    type ValRef<'b>
-        = V
-    where
-        Self: 'b;
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.index.len()
-    }
-
-    #[inline]
-    fn iter(&self) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        PartitionRefIter {
-            values: self.values,
-            index_iter: self.index.clone().into_iter(),
-            _phantom: PhantomData,
-        }
-    }
-
-    fn get(&self, key: Segment) -> Option<Self::ValRef<'_>> {
-        if let Some((cardinality, offset)) = self.index.lookup(key) {
-            Some(read_partition_ref_value(cardinality, offset, self.values))
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    fn range(
-        &self,
-        range: RangeInclusive<Segment>,
-    ) -> impl Iterator<Item = (Segment, Self::ValRef<'_>)> {
-        let r2 = range.clone();
-        self.iter()
-            .skip_while(move |(k, _)| !r2.contains(k))
-            .take_while(move |(k, _)| range.contains(k))
-    }
-}
-
-// Equality Operations
-
-// Partition == Partition
-impl<O, V: PartialEq> PartialEq for Partition<O, V> {
-    fn eq(&self, other: &Self) -> bool {
-        self.values == other.values
-    }
-}
-
-// PartitionRef == PartitionRef
-impl<'a, Offset, V> PartialEq for PartitionRef<'a, Offset, V>
-where
-    Offset: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'a> + PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-// PartitionRef == Partition
-impl<'a, O, V, V2> PartialEq<Partition<O, V2>> for PartitionRef<'a, O, V>
-where
-    O: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'a> + PartialEq<V2>,
-{
-    fn eq(&self, other: &Partition<O, V2>) -> bool {
-        if self.len() != other.values.len() {
-            return false;
-        }
-        for ((k1, v1), (k2, v2)) in self.iter().zip(other.iter()) {
-            if k1 != k2 || v1 != *v2 {
-                return false;
-            }
-        }
-        true
-    }
-}
-
-// Partition == PartitionRef
-impl<'a, O, V, V2> PartialEq<PartitionRef<'a, O, V>> for Partition<O, V2>
-where
-    O: FromBytes + Immutable + Copy + Into<u32>,
-    V: FromSuffix<'a> + PartialEq<V2>,
-{
-    fn eq(&self, other: &PartitionRef<'a, O, V>) -> bool {
-        other == self
+    #[quickcheck]
+    fn test_partitions_quickcheck(values: Vec<u32>) -> TestResult {
+        let expected = values.iter().copied().sorted().dedup().collect_vec();
+        test_partition_read(&Splinter::from_iter(values), &expected);
+        TestResult::passed()
     }
 }

@@ -2,7 +2,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use thiserror::Error;
 use zerocopy::{ConvertError, SizeError};
 
-use crate::splinterv2::codec::encoder::Encoder;
+use crate::codec::encoder::Encoder;
 
 pub mod encoder;
 pub mod footer;
@@ -70,32 +70,30 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        splinterv2::{
-            codec::footer::{Footer, SPLINTER_MAGIC},
-            level::Block,
-        },
-        testutil::{mkpartition_buf, mksplinterv2_buf, mksplinterv2_manual},
-    };
     use assert_matches::assert_matches;
     use itertools::Itertools;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
     use crate::{
-        splinterv2::{
-            Encodable, SplinterRefV2, SplinterV2,
-            codec::{DecodeErr, partition_ref::PartitionRef},
-            level::{Level, Low},
-            partition::PartitionKind,
-            traits::{Optimizable, TruncateFrom},
+        Encodable, Splinter, SplinterRef,
+        codec::{
+            DecodeErr,
+            footer::{Footer, SPLINTER_MAGIC},
+            partition_ref::PartitionRef,
         },
-        testutil::{SetGenV2, mkpartition, test_partition_read},
+        level::{Block, Level, Low},
+        partition::PartitionKind,
+        testutil::{
+            LevelSetGen, mkpartition, mkpartition_buf, mksplinter_buf, mksplinter_manual,
+            test_partition_read,
+        },
+        traits::{Optimizable, TruncateFrom},
     };
 
     #[test]
     fn test_encode_decode_direct() {
-        let mut setgen = SetGenV2::<Low>::new(0xDEADBEEF);
+        let mut setgen = LevelSetGen::<Low>::new(0xDEADBEEF);
         let kinds = [
             PartitionKind::Bitmap,
             PartitionKind::Vec,
@@ -141,7 +139,7 @@ mod tests {
     #[quickcheck]
     fn test_encode_decode_quickcheck(values: Vec<u32>) -> TestResult {
         let expected = values.iter().copied().sorted().dedup().collect_vec();
-        let mut splinter = SplinterV2::from_iter(values);
+        let mut splinter = Splinter::from_iter(values);
         splinter.optimize();
         let buf = splinter.encode_to_bytes();
         assert_eq!(
@@ -149,7 +147,7 @@ mod tests {
             splinter.encoded_size(),
             "encoded_size doesn't match actual size"
         );
-        let splinter_ref = SplinterRefV2::from_bytes(buf).unwrap();
+        let splinter_ref = SplinterRef::from_bytes(buf).unwrap();
 
         test_partition_read(&splinter_ref, &expected);
 
@@ -161,7 +159,7 @@ mod tests {
         for i in 0..Footer::SIZE {
             let truncated = [0].repeat(i);
             assert_matches!(
-                SplinterRefV2::from_bytes(truncated),
+                SplinterRef::from_bytes(truncated),
                 Err(DecodeErr::Length),
                 "Failed for truncated buffer of size {}",
                 i
@@ -171,43 +169,40 @@ mod tests {
 
     #[test]
     fn test_corrupted_root_partition_kind() {
-        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+        let mut buf = mksplinter_buf(&[1, 2, 3]);
 
         // Buffer with just footer size but corrupted partition kind
         let footer_offset = buf.len() - Footer::SIZE;
         let partitions = &mut buf[0..footer_offset];
         partitions[partitions.len() - 1] = 10;
-        let corrupted = mksplinterv2_manual(partitions);
+        let corrupted = mksplinter_manual(partitions);
 
-        assert_matches!(
-            SplinterRefV2::from_bytes(corrupted),
-            Err(DecodeErr::Validity)
-        );
+        assert_matches!(SplinterRef::from_bytes(corrupted), Err(DecodeErr::Validity));
     }
 
     #[test]
     fn test_corrupted_magic() {
-        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+        let mut buf = mksplinter_buf(&[1, 2, 3]);
 
         let magic_offset = buf.len() - SPLINTER_MAGIC.len();
         buf[magic_offset..].copy_from_slice(&[0].repeat(4));
 
-        assert_matches!(SplinterRefV2::from_bytes(buf), Err(DecodeErr::Magic));
+        assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Magic));
     }
 
     #[test]
     fn test_corrupted_data() {
-        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+        let mut buf = mksplinter_buf(&[1, 2, 3]);
         buf[0] = 123;
-        assert_matches!(SplinterRefV2::from_bytes(buf), Err(DecodeErr::Checksum));
+        assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Checksum));
     }
 
     #[test]
     fn test_corrupted_checksum() {
-        let mut buf = mksplinterv2_buf(&[1, 2, 3]);
+        let mut buf = mksplinter_buf(&[1, 2, 3]);
         let checksum_offset = buf.len() - Footer::SIZE;
         buf[checksum_offset] = 123;
-        assert_matches!(SplinterRefV2::from_bytes(buf), Err(DecodeErr::Checksum));
+        assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Checksum));
     }
 
     #[test]
@@ -271,7 +266,7 @@ mod tests {
     fn test_detect_splinter_v1() {
         let empty_splinter_v1 = b"\xda\xae\x12\xdf\0\0\0\0";
         assert_matches!(
-            SplinterRefV2::from_bytes(empty_splinter_v1.as_slice()),
+            SplinterRef::from_bytes(empty_splinter_v1.as_slice()),
             Err(DecodeErr::SplinterV1)
         );
     }

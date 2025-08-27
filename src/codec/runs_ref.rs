@@ -3,7 +3,7 @@ use std::{iter::FusedIterator, ops::RangeInclusive};
 use range_set_blaze::{SortedDisjoint, SortedStarts};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-use crate::splinterv2::{
+use crate::{
     PartitionRead,
     codec::{DecodeErr, partition_ref::decode_len_from_suffix},
     level::Level,

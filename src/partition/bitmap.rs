@@ -10,7 +10,7 @@ use bitvec::{
 use bytes::BufMut;
 use num::traits::AsPrimitive;
 
-use crate::splinterv2::{
+use crate::{
     codec::{Encodable, encoder::Encoder},
     count::{count_bitmap_runs, count_unique_sorted},
     level::Level,

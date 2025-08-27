@@ -8,7 +8,7 @@ use num::{
 use u24::u24;
 use zerocopy::{BE, FromBytes, Immutable, IntoBytes, KnownLayout, U16, U32, Unaligned};
 
-use crate::splinterv2::{
+use crate::{
     codec::{Encodable, partition_ref::PartitionRef},
     never::Never,
     partition::Partition,

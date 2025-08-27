@@ -5,7 +5,7 @@ use itertools::{FoldWhile, Itertools};
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
 use range_set_blaze::{CheckSortedDisjoint, Integer, RangeSetBlaze, SortedDisjoint};
 
-use crate::splinterv2::{
+use crate::{
     PartitionWrite,
     codec::{Encodable, encoder::Encoder, runs_ref::RunsRef},
     count::count_unique_sorted,
@@ -298,7 +298,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::splinterv2::level::Block;
+    use crate::level::Block;
 
     use super::*;
 
