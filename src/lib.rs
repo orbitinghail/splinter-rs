@@ -13,17 +13,19 @@
 //!   any type implementing `Deref<Target = [u8]>`.
 
 pub mod codec;
-pub mod count;
 pub mod cow;
-pub mod level;
-pub mod partition;
-pub mod partition_ops;
-pub mod segment;
 pub mod splinter;
 pub mod splinter_ref;
 pub mod traits;
 
+#[doc(hidden)]
+pub mod count;
+
+mod level;
 mod never;
+mod partition;
+mod partition_ops;
+mod segment;
 mod util;
 
 pub use splinter::Splinter;

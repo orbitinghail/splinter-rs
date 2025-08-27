@@ -5,10 +5,11 @@ use zerocopy::{ConvertError, SizeError};
 use crate::codec::encoder::Encoder;
 
 pub mod encoder;
-pub mod footer;
-pub mod partition_ref;
-pub mod runs_ref;
-pub mod tree_ref;
+
+pub(crate) mod footer;
+pub(crate) mod partition_ref;
+pub(crate) mod runs_ref;
+pub(crate) mod tree_ref;
 
 pub trait Encodable {
     fn encoded_size(&self) -> usize;
