@@ -127,6 +127,7 @@ impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<SplinterRef<B2
 
 #[cfg(test)]
 mod test {
+    use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
     use crate::{
@@ -177,6 +178,46 @@ mod test {
         } else {
             let lookup = set[set.len() / 3];
             splinter.contains(lookup)
+        }
+    }
+
+    #[quickcheck]
+    fn test_splinter_ref_eq_quickcheck(set: Vec<u32>) -> bool {
+        let ref1 = mksplinter(&set).encode_to_splinter_ref();
+        let ref2 = mksplinter(&set).encode_to_splinter_ref();
+        ref1 == ref2
+    }
+
+    #[quickcheck]
+    fn test_splinter_opt_ref_eq_quickcheck(set: Vec<u32>) -> bool {
+        let mut ref1 = mksplinter(&set);
+        ref1.optimize();
+        let ref1 = ref1.encode_to_splinter_ref();
+        let ref2 = mksplinter(&set).encode_to_splinter_ref();
+        ref1 == ref2
+    }
+
+    #[quickcheck]
+    fn test_splinter_ref_ne_quickcheck(set1: Vec<u32>, set2: Vec<u32>) -> TestResult {
+        if set1 == set2 {
+            TestResult::discard()
+        } else {
+            let ref1 = mksplinter(&set1).encode_to_splinter_ref();
+            let ref2 = mksplinter(&set2).encode_to_splinter_ref();
+            TestResult::from_bool(ref1 != ref2)
+        }
+    }
+
+    #[quickcheck]
+    fn test_splinter_opt_ref_ne_quickcheck(set1: Vec<u32>, set2: Vec<u32>) -> TestResult {
+        if set1 == set2 {
+            TestResult::discard()
+        } else {
+            let mut ref1 = mksplinter(&set1);
+            ref1.optimize();
+            let ref1 = ref1.encode_to_splinter_ref();
+            let ref2 = mksplinter(&set2).encode_to_splinter_ref();
+            TestResult::from_bool(ref1 != ref2)
         }
     }
 }
