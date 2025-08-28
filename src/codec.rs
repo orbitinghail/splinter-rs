@@ -1,4 +1,5 @@
 use bytes::{BufMut, Bytes, BytesMut};
+use culprit::Culprit;
 use thiserror::Error;
 use zerocopy::{ConvertError, SizeError};
 
@@ -93,9 +94,9 @@ pub enum DecodeErr {
 
 impl DecodeErr {
     #[inline]
-    fn ensure_bytes_available(data: &[u8], len: usize) -> Result<(), DecodeErr> {
+    fn ensure_bytes_available(data: &[u8], len: usize) -> culprit::Result<(), DecodeErr> {
         if data.len() < len {
-            Err(Self::Length)
+            Err(Culprit::new(Self::Length))
         } else {
             Ok(())
         }
@@ -103,12 +104,14 @@ impl DecodeErr {
 }
 
 impl<S, D> From<SizeError<S, D>> for DecodeErr {
+    #[track_caller]
     fn from(_: SizeError<S, D>) -> Self {
         DecodeErr::Length
     }
 }
 
 impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
+    #[track_caller]
     fn from(err: ConvertError<A, S, V>) -> Self {
         match err {
             ConvertError::Alignment(_) => panic!("All zerocopy transmutations must be unaligned"),
@@ -120,13 +123,12 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
     use itertools::Itertools;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
     use crate::{
-        Encodable, Splinter, SplinterRef,
+        Encodable, Splinter, SplinterRef, assert_error,
         codec::{
             DecodeErr,
             footer::{Footer, SPLINTER_V2_MAGIC},
@@ -208,9 +210,9 @@ mod tests {
     fn test_length_corruption() {
         for i in 0..Footer::SIZE {
             let truncated = [0].repeat(i);
-            assert_matches!(
+            assert_error!(
                 SplinterRef::from_bytes(truncated),
-                Err(DecodeErr::Length),
+                DecodeErr::Length,
                 "Failed for truncated buffer of size {}",
                 i
             );
@@ -227,7 +229,7 @@ mod tests {
         partitions[partitions.len() - 1] = 10;
         let corrupted = mksplinter_manual(partitions);
 
-        assert_matches!(SplinterRef::from_bytes(corrupted), Err(DecodeErr::Validity));
+        assert_error!(SplinterRef::from_bytes(corrupted), DecodeErr::Validity);
     }
 
     #[test]
@@ -237,14 +239,14 @@ mod tests {
         let magic_offset = buf.len() - SPLINTER_V2_MAGIC.len();
         buf[magic_offset..].copy_from_slice(&[0].repeat(4));
 
-        assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Magic));
+        assert_error!(SplinterRef::from_bytes(buf), DecodeErr::Magic);
     }
 
     #[test]
     fn test_corrupted_data() {
         let mut buf = mksplinter_buf(&[1, 2, 3]);
         buf[0] = 123;
-        assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Checksum));
+        assert_error!(SplinterRef::from_bytes(buf), DecodeErr::Checksum);
     }
 
     #[test]
@@ -252,7 +254,7 @@ mod tests {
         let mut buf = mksplinter_buf(&[1, 2, 3]);
         let checksum_offset = buf.len() - Footer::SIZE;
         buf[checksum_offset] = 123;
-        assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Checksum));
+        assert_error!(SplinterRef::from_bytes(buf), DecodeErr::Checksum);
     }
 
     #[test]
@@ -265,10 +267,7 @@ mod tests {
         // corrupt the length
         buf[3] = 5;
 
-        assert_matches!(
-            PartitionRef::<Block>::from_suffix(&buf),
-            Err(DecodeErr::Length)
-        );
+        assert_error!(PartitionRef::<Block>::from_suffix(&buf), DecodeErr::Length);
     }
 
     #[test]
@@ -281,10 +280,7 @@ mod tests {
         // corrupt the length
         buf[2] = 5;
 
-        assert_matches!(
-            PartitionRef::<Block>::from_suffix(&buf),
-            Err(DecodeErr::Length)
-        );
+        assert_error!(PartitionRef::<Block>::from_suffix(&buf), DecodeErr::Length);
     }
 
     #[test]
@@ -306,10 +302,7 @@ mod tests {
         // corrupt the tree len
         buf[7] = 5;
 
-        assert_matches!(
-            PartitionRef::<Block>::from_suffix(&buf),
-            Err(DecodeErr::Length)
-        );
+        assert_error!(PartitionRef::<Block>::from_suffix(&buf), DecodeErr::Length);
     }
 
     #[test]
@@ -343,9 +336,9 @@ mod tests {
     #[test]
     fn test_detect_splinter_v1() {
         let empty_splinter_v1 = b"\xda\xae\x12\xdf\0\0\0\0";
-        assert_matches!(
+        assert_error!(
             SplinterRef::from_bytes(empty_splinter_v1.as_slice()),
-            Err(DecodeErr::SplinterV1)
+            DecodeErr::SplinterV1
         );
     }
 }

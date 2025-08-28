@@ -1,5 +1,6 @@
 use std::{iter::FusedIterator, ops::RangeInclusive};
 
+use culprit::ResultExt;
 use range_set_blaze::{SortedDisjoint, SortedStarts};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -16,8 +17,8 @@ pub struct RunsRef<'a, L: Level> {
 }
 
 impl<'a, L: Level> RunsRef<'a, L> {
-    pub(super) fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
-        let (data, runs) = decode_len_from_suffix::<L>(data)?;
+    pub(super) fn from_suffix(data: &'a [u8]) -> culprit::Result<Self, DecodeErr> {
+        let (data, runs) = decode_len_from_suffix::<L>(data).or_into_ctx()?;
         let bytes = runs * size_of::<L::ValueUnaligned>() * 2;
         DecodeErr::ensure_bytes_available(data, bytes)?;
         let range = (data.len() - bytes)..data.len();

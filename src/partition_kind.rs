@@ -1,4 +1,4 @@
-use zerocopy::TryFromBytes;
+use zerocopy::{KnownLayout, TryFromBytes};
 
 use crate::partition::Partition;
 
@@ -6,7 +6,7 @@ use crate::level::Level;
 
 /// `PartitionKind` is a one byte bitfield which currently only uses the first
 /// three bits (LE). The remaining bits are reserved for future expansion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, TryFromBytes)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, TryFromBytes, KnownLayout)]
 #[repr(u8)]
 pub enum PartitionKind {
     #[default]

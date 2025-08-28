@@ -19,81 +19,6 @@ use crate::{
     traits::TruncateFrom,
 };
 
-/// Heuristic analyzer: prints patterns found in the data which could be
-/// exploited by lz4 to improve compression
-pub fn analyze_compression_patterns(data: &[u8]) {
-    use std::collections::HashMap;
-
-    let len = data.len();
-    if len == 0 {
-        println!("empty slice");
-        return;
-    }
-    println!("length: {len} bytes");
-
-    // --- zeros ---
-    let (mut zeros, mut longest_run, mut run) = (0usize, 0usize, 0usize);
-    for &b in data {
-        if b == 0 {
-            zeros += 1;
-            run += 1;
-            longest_run = longest_run.max(run);
-        } else {
-            run = 0;
-        }
-    }
-    println!(
-        "zeros: {zeros} ({:.2}%), longest run: {longest_run}",
-        zeros as f64 * 100.0 / len as f64
-    );
-
-    // --- histogram / entropy ---
-    let mut freq = [0u32; 256];
-    for &b in data {
-        freq[b as usize] += 1;
-    }
-    let entropy: f64 = freq
-        .iter()
-        .filter(|&&c| c != 0)
-        .map(|&c| {
-            let p = c as f64 / len as f64;
-            -p * p.log2()
-        })
-        .sum();
-    println!("shannon entropy ≈ {entropy:.3} bits/byte (max 8)");
-
-    // --- repeated 8-byte blocks ---
-    const BLOCK: usize = 8;
-    if len >= BLOCK {
-        let mut map: HashMap<&[u8], u32> = HashMap::new();
-        for chunk in data.chunks_exact(BLOCK) {
-            *map.entry(chunk).or_default() += 1;
-        }
-
-        let mut duplicate_bytes = 0u32;
-        let mut top: Option<(&[u8], u32)> = None;
-
-        for (&k, &v) in map.iter() {
-            if v > 1 {
-                duplicate_bytes += (v - 1) * BLOCK as u32;
-                if top.is_none_or(|(_, max)| v > max) {
-                    top = Some((k, v));
-                }
-            }
-        }
-
-        if let Some((bytes, count)) = top {
-            println!(
-                "repeated 8-byte blocks: {duplicate_bytes} duplicate bytes; most common occurs {count}× (bytes {bytes:02X?})"
-            );
-        } else {
-            println!("no duplicated 8-byte blocks");
-        }
-    }
-
-    println!("analysis complete");
-}
-
 pub fn ratio_to_marks(ratio: f64) -> String {
     let magnitude = if ratio >= 1.0 { ratio } else { 1.0 / ratio };
     let marks = if magnitude >= 4.0 {
@@ -344,4 +269,11 @@ pub fn mksplinter(values: &[u32]) -> Splinter {
 
 pub fn mksplinter_buf(values: &[u32]) -> BytesMut {
     mksplinter(values).encode_to_bytes().try_into_mut().unwrap()
+}
+
+#[macro_export]
+macro_rules! assert_error {
+    ($expr:expr, $err:path$(, $($rest:tt),+)?) => {
+        assert_matches::assert_matches!(($expr).expect_err("expected an error").ctx(), $err $(, $($rest),+)?)
+    };
 }
