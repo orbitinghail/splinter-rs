@@ -166,29 +166,29 @@ random/32                      Splinter        145        145       1.00        
                                Roaring LZ4     331        331       2.25         ++
                                Baseline        128        128       0.88          -
 random/256                     Splinter       1041       1041       1.00         ok
-                               Roaring        2552       2552       2.45         ++
+                               Roaring        2544       2544       2.44         ++
                                Splinter LZ4   1047       1047       1.01         ok
-                               Roaring LZ4    2557       2557       2.44         ++
+                               Roaring LZ4    2553       2553       2.44         ++
                                Baseline       1024       1024       0.98         ok
 random/1024                    Splinter       4113       4113       1.00         ok
-                               Roaring       10152      10152       2.47         ++
+                               Roaring       10168      10168       2.47         ++
                                Splinter LZ4   4131       4131       1.00         ok
-                               Roaring LZ4   10174      10174       2.46         ++
+                               Roaring LZ4   10208      10208       2.47         ++
                                Baseline       4096       4096       1.00         ok
 random/4096                    Splinter      14350      14350       1.00         ok
-                               Roaring       39792      39792       2.77        +++
-                               Splinter LZ4  14352      14352       1.00         ok
-                               Roaring LZ4   39903      39903       2.78        +++
+                               Roaring       40056      40056       2.79        +++
+                               Splinter LZ4  14359      14359       1.00         ok
+                               Roaring LZ4   40208      40208       2.80        +++
                                Baseline      16384      16384       1.14          +
 random/16384                   Splinter      51214      51214       1.00         ok
-                               Roaring      148832     148832       2.91        +++
+                               Roaring      148656     148656       2.90        +++
                                Splinter LZ4  51416      51416       1.00         ok
-                               Roaring LZ4  149413     149413       2.91        +++
+                               Roaring LZ4  149229     149229       2.90        +++
                                Baseline      65536      65536       1.28          +
 random/65535                   Splinter     198667     198667       1.00         ok
-                               Roaring      462838     462838       2.33         ++
+                               Roaring      461278     461278       2.32         ++
                                Splinter LZ4 199448     199448       1.00         ok
-                               Roaring LZ4  464654     464654       2.33         ++
+                               Roaring LZ4  463085     463085       2.32         ++
                                Baseline     262140     262140       1.32          +
 average compression ratio (splinter_lz4 / splinter): 0.97
 ```
