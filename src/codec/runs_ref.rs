@@ -11,7 +11,7 @@ use crate::{
     partition::run::{Run, run_rank, run_select},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct RunsRef<'a, L: Level> {
     runs: &'a [EncodedRun<L>],
 }
@@ -81,7 +81,7 @@ impl<L: Level> PartialEq for RunsRef<'_, L> {
     }
 }
 
-#[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable, Clone)]
+#[derive(Debug, IntoBytes, FromBytes, Unaligned, KnownLayout, Immutable, Clone, Eq)]
 #[repr(C)]
 #[doc(hidden)]
 pub struct EncodedRun<L: Level> {

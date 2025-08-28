@@ -16,7 +16,7 @@ use crate::{
     traits::TruncateFrom,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct TreeRef<'a, L: Level> {
     num_children: usize,
     segments: NonRecursivePartitionRef<'a, Block>,

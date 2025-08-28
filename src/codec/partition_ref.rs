@@ -21,7 +21,7 @@ pub(super) fn decode_len_from_suffix<L: Level>(
     Ok((data, len.into().as_() + 1))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 #[doc(hidden)]
 pub enum NonRecursivePartitionRef<'a, L: Level> {
     Empty,
@@ -205,7 +205,7 @@ impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 #[doc(hidden)]
 pub enum PartitionRef<'a, L: Level> {
     NonRecursive(NonRecursivePartitionRef<'a, L>),
