@@ -153,7 +153,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
     fn select(&self, idx: usize) -> Option<L::Value> {
         match self {
             Self::Empty => None,
-            Self::Full => Some(L::Value::truncate_from(idx)),
+            Self::Full => (idx < L::MAX_LEN).then(|| L::Value::truncate_from(idx)),
             Self::Bitmap { bitmap } => bitmap.iter_ones().nth(idx).map(L::Value::truncate_from),
             Self::Vec { values } => values.get(idx).map(|&v| v.into()),
             Self::Run { runs } => runs.select(idx),
@@ -313,5 +313,22 @@ impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
             Self::NonRecursive(p) => p.into_iter(),
             Self::Tree(tree_ref) => tree_ref.into_iter(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use itertools::Itertools;
+
+    use crate::{
+        codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
+        level::Block,
+        testutil::test_partition_read,
+    };
+
+    #[test]
+    fn test_partition_full() {
+        let block = PartitionRef::<'_, Block>::NonRecursive(NonRecursivePartitionRef::Full);
+        test_partition_read(&block, &(0..=255).collect_vec());
     }
 }

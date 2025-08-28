@@ -308,7 +308,7 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
 
     fn select(&self, idx: usize) -> Option<L::Value> {
         match self {
-            Partition::Full => Some(L::Value::truncate_from(idx)),
+            Partition::Full => (idx < L::MAX_LEN).then(|| L::Value::truncate_from(idx)),
             Partition::Bitmap(p) => p.select(idx),
             Partition::Vec(p) => p.select(idx),
             Partition::Run(p) => p.select(idx),
@@ -380,7 +380,7 @@ mod tests {
 
     use crate::{
         PartitionRead,
-        level::{High, Level, Low},
+        level::{Block, High, Level, Low},
         partition::Partition,
         partition_kind::PartitionKind,
         testutil::{LevelSetGen, mkpartition, test_partition_read, test_partition_write},
@@ -401,6 +401,9 @@ mod tests {
             Some(<High as Level>::Value::max_value()),
             "last"
         );
+
+        let block = Partition::<Block>::Full;
+        test_partition_read(&block, &(0..=255).collect_vec());
     }
 
     #[test]
