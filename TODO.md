@@ -1,8 +1,19 @@
-# Splinter V2
+# Feature ideas
 
-New Splinter encoding that dynamically switches between Bitmap, Vec, Run, and Tree storage at every level of the u32 segment hierarchy. The following tasks will complete feature parity with the original Splinter code:
+## Avoid storing the last offset in a TreePartition
 
-- inverted partitions: if cardinality > 50% store the partition inverted
-- add a recursive validation function to PartitionRef
-- optimize the range() function to skip over partitions that can't match during
-  tree iteration
+The last offset is always 0, so we should be able to avoid storing it. This will optimize the very common case of single child tree partitions offering a large boost in compression performance.
+
+## Inverted partitions
+
+When a partition is storing more than 50% of it's possible values, we should store it inverted. Thus partitions only grow until they hit 50% of their max storage, and then they start shrinking.
+
+Some bits are already reserved in PartitionKind to support the concept of inversion.
+
+## Recursive validation
+
+Currently untrusted Splinters can trivially cause panics at runtime. No known memory unsafety exists, however for any usage of Splinter with untrusted data a better validation system will be required. This validation system should support scanning the entire Serialized Splinter and verify that it can be correctly decoded with no overflows. The most likely overflow cause is the offsets array stored with TreePartitions.
+
+## Optimize range
+
+The `PartitionRead::range()` function can be optimized to skip over entire partitions during tree iteration.
