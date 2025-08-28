@@ -307,6 +307,8 @@ impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<SplinterRef<B2
     }
 }
 
+impl<B: Deref<Target = [u8]>> Eq for SplinterRef<B> {}
+
 #[cfg(test)]
 mod test {
     use quickcheck::TestResult;

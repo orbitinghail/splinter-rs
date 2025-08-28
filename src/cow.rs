@@ -365,3 +365,5 @@ impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<CowSplinter<B2
         }
     }
 }
+
+impl<B: Deref<Target = [u8]>> Eq for CowSplinter<B> {}
