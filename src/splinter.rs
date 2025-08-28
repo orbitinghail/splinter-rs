@@ -11,12 +11,80 @@ use crate::{
     traits::{PartitionRead, PartitionWrite},
 };
 
+/// A compressed bitmap optimized for small, sparse sets of 32-bit unsigned integers.
+///
+/// `Splinter` is the main owned data structure that can be built incrementally by inserting
+/// values and then optimized for size and query performance. It uses a 256-way tree structure
+/// by decomposing integers into big-endian component bytes, with nodes optimized into four
+/// different storage classes: tree, vec, bitmap, and run.
+///
+/// For zero-copy querying of serialized data, see [`SplinterRef`].
+/// For a clone-on-write wrapper, see [`CowSplinter`].
+///
+/// # Examples
+///
+/// Basic usage:
+///
+/// ```
+/// use splinter_rs::{Splinter, PartitionWrite, PartitionRead, Optimizable};
+///
+/// let mut splinter = Splinter::EMPTY;
+///
+/// // Insert some values
+/// splinter.insert(1024);
+/// splinter.insert(2048);
+/// splinter.insert(123);
+///
+/// // Check membership
+/// assert!(splinter.contains(1024));
+/// assert!(!splinter.contains(999));
+///
+/// // Get cardinality
+/// assert_eq!(splinter.cardinality(), 3);
+///
+/// // Optimize for better compression, recommended before encoding to bytes.
+/// splinter.optimize();
+/// ```
+///
+/// Building from iterator:
+///
+/// ```
+/// use splinter_rs::{Splinter, PartitionRead};
+///
+/// let values = vec![100, 200, 300, 400];
+/// let splinter: Splinter = values.into_iter().collect();
+///
+/// assert_eq!(splinter.cardinality(), 4);
+/// assert!(splinter.contains(200));
+/// ```
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct Splinter(Partition<High>);
 
 static_assertions::const_assert_eq!(std::mem::size_of::<Splinter>(), 40);
 
 impl Splinter {
+    /// An empty Splinter, suitable for usage in a const context.
+    pub const EMPTY: Self = Splinter(Partition::EMPTY);
+
+    /// Encodes this splinter into a [`SplinterRef`] for zero-copy querying.
+    ///
+    /// This method serializes the splinter data and returns a [`SplinterRef<Bytes>`]
+    /// that can be used for efficient read-only operations without deserializing
+    /// the underlying data structure.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionWrite, PartitionRead};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(42);
+    /// splinter.insert(1337);
+    ///
+    /// let splinter_ref = splinter.encode_to_splinter_ref();
+    /// assert_eq!(splinter_ref.cardinality(), 2);
+    /// assert!(splinter_ref.contains(42));
+    /// ```
     pub fn encode_to_splinter_ref(&self) -> SplinterRef<Bytes> {
         SplinterRef { data: self.encode_to_bytes() }
     }
@@ -29,36 +97,149 @@ impl FromIterator<u32> for Splinter {
 }
 
 impl PartitionRead<High> for Splinter {
+    /// Returns the total number of elements in this splinter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// assert_eq!(splinter.cardinality(), 0);
+    ///
+    /// splinter.insert(100);
+    /// splinter.insert(200);
+    /// splinter.insert(300);
+    /// assert_eq!(splinter.cardinality(), 3);
+    /// ```
     #[inline]
     fn cardinality(&self) -> usize {
         self.0.cardinality()
     }
 
+    /// Returns `true` if this splinter contains no elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// assert!(splinter.is_empty());
+    ///
+    /// splinter.insert(42);
+    /// assert!(!splinter.is_empty());
+    /// ```
     #[inline]
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Returns `true` if this splinter contains the specified value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(42);
+    /// splinter.insert(1337);
+    ///
+    /// assert!(splinter.contains(42));
+    /// assert!(splinter.contains(1337));
+    /// assert!(!splinter.contains(999));
+    /// ```
     #[inline]
     fn contains(&self, value: u32) -> bool {
         self.0.contains(value)
     }
 
+    /// Returns the number of elements in this splinter that are less than or equal to the given value.
+    ///
+    /// This is also known as the "rank" of the value in the sorted sequence of all elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(10);
+    /// splinter.insert(20);
+    /// splinter.insert(30);
+    ///
+    /// assert_eq!(splinter.rank(5), 0);   // No elements <= 5
+    /// assert_eq!(splinter.rank(10), 1);  // One element <= 10
+    /// assert_eq!(splinter.rank(25), 2);  // Two elements <= 25
+    /// assert_eq!(splinter.rank(30), 3);  // Three elements <= 30
+    /// assert_eq!(splinter.rank(50), 3);  // Three elements <= 50
+    /// ```
     #[inline]
     fn rank(&self, value: u32) -> usize {
         self.0.rank(value)
     }
 
+    /// Returns the element at the given index in the sorted sequence, or `None` if the index is out of bounds.
+    ///
+    /// The index is 0-based, so `select(0)` returns the smallest element.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(100);
+    /// splinter.insert(50);
+    /// splinter.insert(200);
+    ///
+    /// assert_eq!(splinter.select(0), Some(50));   // Smallest element
+    /// assert_eq!(splinter.select(1), Some(100));  // Second smallest
+    /// assert_eq!(splinter.select(2), Some(200));  // Largest element
+    /// assert_eq!(splinter.select(3), None);       // Out of bounds
+    /// ```
     #[inline]
     fn select(&self, idx: usize) -> Option<u32> {
         self.0.select(idx)
     }
 
+    /// Returns the largest element in this splinter, or `None` if it's empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// assert_eq!(splinter.last(), None);
+    ///
+    /// splinter.insert(100);
+    /// splinter.insert(50);
+    /// splinter.insert(200);
+    ///
+    /// assert_eq!(splinter.last(), Some(200));
+    /// ```
     #[inline]
     fn last(&self) -> Option<u32> {
         self.0.last()
     }
 
+    /// Returns an iterator over all elements in ascending order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(300);
+    /// splinter.insert(100);
+    /// splinter.insert(200);
+    ///
+    /// let values: Vec<u32> = splinter.iter().collect();
+    /// assert_eq!(values, vec![100, 200, 300]);
+    /// ```
     #[inline]
     fn iter(&self) -> impl Iterator<Item = u32> {
         self.0.iter()
@@ -66,11 +247,58 @@ impl PartitionRead<High> for Splinter {
 }
 
 impl PartitionWrite<High> for Splinter {
+    /// Inserts a value into this splinter.
+    ///
+    /// Returns `true` if the value was newly inserted, or `false` if it was already present.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionWrite, PartitionRead};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    ///
+    /// // First insertion returns true
+    /// assert!(splinter.insert(42));
+    /// assert_eq!(splinter.cardinality(), 1);
+    ///
+    /// // Second insertion of same value returns false
+    /// assert!(!splinter.insert(42));
+    /// assert_eq!(splinter.cardinality(), 1);
+    ///
+    /// // Different value returns true
+    /// assert!(splinter.insert(100));
+    /// assert_eq!(splinter.cardinality(), 2);
+    /// ```
     #[inline]
     fn insert(&mut self, value: u32) -> bool {
         self.0.insert(value)
     }
 
+    /// Removes a value from this splinter.
+    ///
+    /// Returns `true` if the value was present and removed, or `false` if it was not present.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionWrite, PartitionRead};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(42);
+    /// splinter.insert(100);
+    /// assert_eq!(splinter.cardinality(), 2);
+    ///
+    /// // Remove existing value
+    /// assert!(splinter.remove(42));
+    /// assert_eq!(splinter.cardinality(), 1);
+    /// assert!(!splinter.contains(42));
+    /// assert!(splinter.contains(100));
+    ///
+    /// // Remove non-existent value
+    /// assert!(!splinter.remove(999));
+    /// assert_eq!(splinter.cardinality(), 1);
+    /// ```
     #[inline]
     fn remove(&mut self, value: u32) -> bool {
         self.0.remove(value)
@@ -164,15 +392,20 @@ mod tests {
     use super::*;
     use crate::{
         codec::Encodable,
-        testutil::{SetGen, analyze_compression_patterns, mksplinter, ratio_to_marks},
+        testutil::{
+            SetGen, analyze_compression_patterns, mksplinter, ratio_to_marks, test_partition_read,
+            test_partition_write,
+        },
         traits::Optimizable,
     };
+    use itertools::Itertools;
+    use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
     use roaring::RoaringBitmap;
 
     #[test]
     fn test_sanity() {
-        let mut splinter = Splinter::default();
+        let mut splinter = Splinter::EMPTY;
 
         assert!(splinter.insert(1));
         assert!(!splinter.insert(1));
@@ -191,7 +424,11 @@ mod tests {
 
         splinter.optimize();
 
-        dbg!(splinter);
+        dbg!(&splinter);
+
+        let expected = splinter.iter().collect_vec();
+        test_partition_read(&splinter, &expected);
+        test_partition_write(&mut splinter);
     }
 
     #[test]
@@ -205,6 +442,20 @@ mod tests {
 
         dbg!(&splinter, splinter.encoded_size(), baseline_size);
         itertools::assert_equal(splinter.iter(), set.into_iter());
+    }
+
+    #[quickcheck]
+    fn test_splinter_read_quickcheck(set: Vec<u32>) -> TestResult {
+        let expected = set.iter().copied().sorted().dedup().collect_vec();
+        test_partition_read(&Splinter::from_iter(set), &expected);
+        TestResult::passed()
+    }
+
+    #[quickcheck]
+    fn test_splinter_write_quickcheck(set: Vec<u32>) -> TestResult {
+        let mut splinter = Splinter::from_iter(set);
+        test_partition_write(&mut splinter);
+        TestResult::passed()
     }
 
     #[quickcheck]
@@ -266,6 +517,9 @@ mod tests {
             let mut splinter = Splinter::from_iter(set.clone());
             splinter.optimize();
             itertools::assert_equal(splinter.iter(), set.iter().copied());
+
+            test_partition_read(&splinter, &set);
+            test_partition_write(&mut splinter.clone());
 
             let expected_size = splinter.encoded_size();
             let splinter = splinter.encode_to_bytes();

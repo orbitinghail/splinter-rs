@@ -11,11 +11,34 @@ pub(crate) mod partition_ref;
 pub(crate) mod runs_ref;
 pub(crate) mod tree_ref;
 
+/// Trait for types that can be encoded into a binary format.
 pub trait Encodable {
+    /// Returns the number of bytes required to encode this value.
+    ///
+    /// This should return the exact number of bytes that [`encode`](Self::encode)
+    /// will write, allowing for efficient buffer pre-allocation.
+    ///
+    /// Note: This function traverses the entire datastructure which scales with cardinality.
     fn encoded_size(&self) -> usize;
 
+    /// Encodes this value into the provided encoder.
     fn encode<B: BufMut>(&self, encoder: &mut Encoder<B>);
 
+    /// Convenience method that encodes this value to a [`Bytes`] buffer.
+    ///
+    /// This is the easiest way to serialize splinter data. It allocates
+    /// a buffer of the exact required size and encodes the value into it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, Encodable, PartitionWrite};
+    ///
+    /// let splinter = Splinter::from_iter([8, 42, 16]);
+    /// let bytes = splinter.encode_to_bytes();
+    /// assert!(!bytes.is_empty());
+    /// assert_eq!(bytes.len(), splinter.encoded_size());
+    /// ```
     fn encode_to_bytes(&self) -> Bytes {
         let size = self.encoded_size();
         let mut encoder = Encoder::new(BytesMut::with_capacity(size));
@@ -24,20 +47,46 @@ pub trait Encodable {
     }
 }
 
+/// Errors that can occur when deserializing splinter data from bytes.
+///
+/// These errors indicate various types of corruption or invalid data that can
+/// be encountered when attempting to decode serialized splinter data.
 #[derive(Debug, Error)]
 pub enum DecodeErr {
+    /// The buffer does not contain enough bytes to decode the expected data.
+    ///
+    /// This error occurs when the buffer is truncated or smaller than the
+    /// minimum required size for a valid splinter.
     #[error("not enough bytes")]
     Length,
 
+    /// The data contains invalid or corrupted encoding structures.
+    ///
+    /// This error indicates that while the buffer has sufficient length and
+    /// correct magic bytes, the internal data structures are malformed or
+    /// contain invalid values.
     #[error("invalid encoding")]
     Validity,
 
+    /// The buffer does not end with the expected magic bytes.
+    ///
+    /// Splinter data ends with specific magic bytes to identify the format.
+    /// This error indicates the buffer does not contain valid splinter data
+    /// or has been corrupted at the end.
     #[error("unknown magic value")]
     Magic,
 
+    /// The calculated checksum does not match the stored checksum.
+    ///
+    /// This error indicates data corruption has occurred somewhere in the
+    /// buffer, as the integrity check has failed.
     #[error("invalid checksum")]
     Checksum,
 
+    /// The buffer contains data from the incompatible Splinter V1 format.
+    ///
+    /// This version of splinter-rs can only decode V2 format data. To decode
+    /// V1 data, use splinter-rs version 0.3.3 or earlier.
     #[error("buffer contains serialized Splinter V1, decode using splinter-rs:v0.3.3")]
     SplinterV1,
 }
@@ -80,7 +129,7 @@ mod tests {
         Encodable, Splinter, SplinterRef,
         codec::{
             DecodeErr,
-            footer::{Footer, SPLINTER_MAGIC},
+            footer::{Footer, SPLINTER_V2_MAGIC},
             partition_ref::PartitionRef,
         },
         level::{Block, Level, Low},
@@ -185,7 +234,7 @@ mod tests {
     fn test_corrupted_magic() {
         let mut buf = mksplinter_buf(&[1, 2, 3]);
 
-        let magic_offset = buf.len() - SPLINTER_MAGIC.len();
+        let magic_offset = buf.len() - SPLINTER_V2_MAGIC.len();
         buf[magic_offset..].copy_from_slice(&[0].repeat(4));
 
         assert_matches!(SplinterRef::from_bytes(buf), Err(DecodeErr::Magic));

@@ -205,3 +205,31 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        level::Block,
+        partition::bitmap::BitmapPartition,
+        testutil::{test_partition_read, test_partition_write},
+    };
+
+    #[quickcheck]
+    fn test_bitmap_small_read_quickcheck(set: Vec<u8>) -> TestResult {
+        let expected = set.iter().copied().sorted().dedup().collect_vec();
+        let partition = BitmapPartition::<Block>::from_iter(set);
+        test_partition_read(&partition, &expected);
+        TestResult::passed()
+    }
+
+    #[quickcheck]
+    fn test_bitmap_small_write_quickcheck(set: Vec<u8>) -> TestResult {
+        let mut partition = BitmapPartition::<Block>::from_iter(set);
+        test_partition_write(&mut partition);
+        TestResult::passed()
+    }
+}

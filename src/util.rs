@@ -1,5 +1,6 @@
 use std::iter::Peekable;
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! MultiIter {
     ($type:ident, $($name:ident),+) => {

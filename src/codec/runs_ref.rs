@@ -30,7 +30,7 @@ impl<'a, L: Level> RunsRef<'a, L> {
         RangesIter { inner: self.runs.iter() }
     }
 
-    pub fn to_iter(self) -> impl Iterator<Item = L::Value> {
+    pub fn into_iter(self) -> impl Iterator<Item = L::Value> {
         self.runs
             .iter()
             .flat_map(|r| num::iter::range_inclusive(r.start.into(), r.end.into()))

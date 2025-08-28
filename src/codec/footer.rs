@@ -5,8 +5,8 @@ use zerocopy::{
 
 use crate::codec::DecodeErr;
 
-/// The last four bytes of an encoded Splinter
-pub const SPLINTER_MAGIC: [u8; 4] = [0x59, 0x11, 0xA7, 0xE2];
+/// The last four bytes of an encoded Splinter version 2
+pub const SPLINTER_V2_MAGIC: [u8; 4] = [0x59, 0x11, 0xA7, 0xE2];
 
 #[derive(FromBytes, IntoBytes, Immutable, Unaligned, KnownLayout, ByteHash, ByteEq)]
 #[repr(C)]
@@ -21,12 +21,12 @@ impl Footer {
     pub fn from_checksum(checksum: u64) -> Self {
         Self {
             checksum: checksum.into(),
-            magic: SPLINTER_MAGIC,
+            magic: SPLINTER_V2_MAGIC,
         }
     }
 
     pub fn validate(&self, data: &[u8]) -> Result<(), DecodeErr> {
-        if self.magic != SPLINTER_MAGIC {
+        if self.magic != SPLINTER_V2_MAGIC {
             return Err(DecodeErr::Magic);
         }
 

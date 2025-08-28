@@ -14,6 +14,7 @@
 
 pub mod codec;
 pub mod cow;
+pub mod level;
 pub mod splinter;
 pub mod splinter_ref;
 pub mod traits;
@@ -21,16 +22,20 @@ pub mod traits;
 #[doc(hidden)]
 pub mod count;
 
-mod level;
 mod never;
 mod partition;
 mod partition_ops;
 mod segment;
 mod util;
 
+#[doc(inline)]
+pub use cow::CowSplinter;
+#[doc(inline)]
 pub use splinter::Splinter;
+#[doc(inline)]
 pub use splinter_ref::SplinterRef;
 
+#[doc(inline)]
 pub use crate::{
     codec::Encodable,
     traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},

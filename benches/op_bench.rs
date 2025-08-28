@@ -84,7 +84,7 @@ fn benchmark_insert(c: &mut Criterion) {
     });
 
     group.bench_function("splinter/warm", |b| {
-        let mut splinter = Splinter::default();
+        let mut splinter = Splinter::EMPTY;
         b.iter(|| splinter.insert(black_box(MAGIC)))
     });
 

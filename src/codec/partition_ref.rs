@@ -297,7 +297,7 @@ impl<'a, L: Level> IntoIterator for NonRecursivePartitionRef<'a, L> {
             Self::Full => Box::new((0..L::MAX_LEN).map(L::Value::truncate_from)),
             Self::Bitmap { bitmap } => Box::new(bitmap.iter_ones().map(L::Value::truncate_from)),
             Self::Vec { values } => Box::new(values.iter().map(|&v| v.into())),
-            Self::Run { runs } => Box::new(runs.to_iter()),
+            Self::Run { runs } => Box::new(runs.into_iter()),
         }
     }
 }

@@ -2,12 +2,15 @@ use std::{fmt::Debug, marker::PhantomData, ops::Bound};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use itertools::{Itertools, assert_equal};
-use num::{CheckedAdd, Saturating, traits::ConstOne};
+use num::{
+    CheckedAdd, Saturating,
+    traits::{Bounded, ConstOne, ConstZero},
+};
 use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
 use zerocopy::IntoBytes;
 
 use crate::{
-    PartitionRead,
+    PartitionRead, PartitionWrite,
     codec::{Encodable, footer::Footer},
     level::{High, Level},
     partition::{Partition, PartitionKind},
@@ -277,6 +280,32 @@ where
             }
         }
     }
+}
+
+/// Validate that a type correctly implements [`PartitionWrite`].
+pub fn test_partition_write<L, S>(splinter: &mut S)
+where
+    L: Level,
+    S: PartitionRead<L> + PartitionWrite<L> + Debug,
+{
+    // start by clearing the splinter while exercising insert/remove
+    let initial_set = splinter.iter().collect_vec();
+    for v in initial_set {
+        assert!(!splinter.insert(v));
+        assert!(splinter.remove(v));
+    }
+
+    // seed the splinter with some sample values
+    let samples = [L::Value::ZERO, L::Value::ONE, L::Value::max_value()];
+    for sample in samples {
+        assert!(splinter.insert(sample));
+        assert!(!splinter.insert(sample));
+        assert!(splinter.remove(sample));
+        assert!(!splinter.remove(sample));
+        assert!(splinter.insert(sample));
+    }
+
+    itertools::assert_equal(splinter.iter(), samples.into_iter());
 }
 
 pub fn mkchecksum(data: &[u8]) -> u64 {

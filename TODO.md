@@ -4,3 +4,5 @@ New Splinter encoding that dynamically switches between Bitmap, Vec, Run, and Tr
 
 - inverted partitions: if cardinality > 50% store the partition inverted
 - add a recursive validation function to PartitionRef
+- optimize the range() function to skip over partitions that can't match during
+  tree iteration

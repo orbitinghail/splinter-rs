@@ -50,7 +50,7 @@ pub enum PartitionKind {
 impl PartitionKind {
     pub fn build<L: Level>(self) -> Partition<L> {
         match self {
-            PartitionKind::Empty => Partition::default(),
+            PartitionKind::Empty => Partition::EMPTY,
             PartitionKind::Full => Partition::Full,
             PartitionKind::Bitmap => Partition::Bitmap(Default::default()),
             PartitionKind::Vec => Partition::Vec(Default::default()),
@@ -70,6 +70,8 @@ pub enum Partition<L: Level> {
 }
 
 impl<L: Level> Partition<L> {
+    pub const EMPTY: Self = Self::Vec(VecPartition::EMPTY);
+
     pub fn kind(&self) -> PartitionKind {
         match self {
             Partition::Full => PartitionKind::Full,
@@ -284,7 +286,7 @@ impl<L: Level> Encodable for Partition<L> {
 
 impl<L: Level> Default for Partition<L> {
     fn default() -> Self {
-        Partition::Vec(VecPartition::default())
+        Partition::EMPTY
     }
 }
 
@@ -412,14 +414,12 @@ MultiIter!(Iter, Full, Bitmap, Vec, Run, Tree);
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
 
     use crate::{
-        PartitionRead, Splinter,
+        PartitionRead,
         level::{High, Level, Low},
         partition::Partition,
-        testutil::{LevelSetGen, mkpartition, test_partition_read},
+        testutil::{LevelSetGen, mkpartition, test_partition_read, test_partition_write},
         traits::TruncateFrom,
     };
 
@@ -476,16 +476,10 @@ mod tests {
                     println!("break")
                 }
 
-                let partition = mkpartition::<Low>(kind, &set);
+                let mut partition = mkpartition::<Low>(kind, &set);
                 test_partition_read(&partition, &set);
+                test_partition_write(&mut partition);
             }
         }
-    }
-
-    #[quickcheck]
-    fn test_partitions_quickcheck(values: Vec<u32>) -> TestResult {
-        let expected = values.iter().copied().sorted().dedup().collect_vec();
-        test_partition_read(&Splinter::from_iter(values), &expected);
-        TestResult::passed()
     }
 }

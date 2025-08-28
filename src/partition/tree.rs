@@ -265,3 +265,31 @@ impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L> {
         Partition::Tree(intersection)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        level::Low,
+        partition::tree::TreePartition,
+        testutil::{test_partition_read, test_partition_write},
+    };
+
+    #[quickcheck]
+    fn test_tree_small_read_quickcheck(set: Vec<u16>) -> TestResult {
+        let expected = set.iter().copied().sorted().dedup().collect_vec();
+        let partition = TreePartition::<Low>::from_iter(set);
+        test_partition_read(&partition, &expected);
+        TestResult::passed()
+    }
+
+    #[quickcheck]
+    fn test_tree_small_write_quickcheck(set: Vec<u16>) -> TestResult {
+        let mut partition = TreePartition::<Low>::from_iter(set);
+        test_partition_write(&mut partition);
+        TestResult::passed()
+    }
+}
