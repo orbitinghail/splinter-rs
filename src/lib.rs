@@ -38,7 +38,7 @@ pub use splinter_ref::SplinterRef;
 
 #[doc(inline)]
 pub use crate::{
-    codec::Encodable,
+    codec::{DecodeErr, Encodable},
     traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
 };
 
