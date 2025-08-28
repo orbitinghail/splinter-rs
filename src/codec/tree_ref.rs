@@ -3,14 +3,14 @@ use num::traits::AsPrimitive;
 use std::{marker::PhantomData, mem::size_of};
 use zerocopy::FromBytes;
 
-use crate::splinterv2::{
-    Partition, PartitionRead, PartitionWrite,
+use crate::{
+    PartitionRead, PartitionWrite,
     codec::{
         DecodeErr,
         partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len_from_suffix},
     },
     level::{Block, Level},
-    partition::{PartitionKind, bitmap::BitmapPartition},
+    partition::{Partition, PartitionKind, bitmap::BitmapPartition},
     segment::{Segment, SplitSegment},
     traits::TruncateFrom,
 };
@@ -155,6 +155,15 @@ impl<'a, L: Level + 'a> IntoIterator for TreeRef<'a, L> {
                     iter.map(move |v| L::Value::unsplit(segment, v))
                 }),
         )
+    }
+}
+
+impl<'a, L: Level> PartialEq for TreeRef<'a, L> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.num_children != other.num_children || self.segments != other.segments {
+            return false;
+        }
+        itertools::equal(self.children(), other.children())
     }
 }
 

@@ -5,7 +5,7 @@ use itertools::{FoldWhile, Itertools};
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
 use range_set_blaze::{CheckSortedDisjoint, Integer, RangeSetBlaze, SortedDisjoint};
 
-use crate::splinterv2::{
+use crate::{
     PartitionWrite,
     codec::{Encodable, encoder::Encoder, runs_ref::RunsRef},
     count::count_unique_sorted,
@@ -298,7 +298,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::splinterv2::level::Block;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        level::Block,
+        testutil::{test_partition_read, test_partition_write},
+    };
 
     use super::*;
 
@@ -331,5 +337,20 @@ mod tests {
         let vals = [1, 2, 3, 5, 7, 8, 10];
         let merged = MergeRuns::new(vals.into_iter());
         itertools::assert_equal(merged, [1..=3, 5..=5, 7..=8, 10..=10]);
+    }
+
+    #[quickcheck]
+    fn test_run_small_read_quickcheck(set: Vec<u8>) -> TestResult {
+        let expected = set.iter().copied().sorted().dedup().collect_vec();
+        let partition = RunPartition::<Block>::from_iter(set);
+        test_partition_read(&partition, &expected);
+        TestResult::passed()
+    }
+
+    #[quickcheck]
+    fn test_run_small_write_quickcheck(set: Vec<u8>) -> TestResult {
+        let mut partition = RunPartition::<Block>::from_iter(set);
+        test_partition_write(&mut partition);
+        TestResult::passed()
     }
 }

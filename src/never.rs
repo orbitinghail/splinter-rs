@@ -1,6 +1,6 @@
 use bytes::BufMut;
 
-use crate::splinterv2::{
+use crate::{
     Encodable, PartitionRead, PartitionWrite,
     codec::{encoder::Encoder, partition_ref::PartitionRef},
     level::Level,

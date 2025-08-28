@@ -4,14 +4,11 @@ use num::traits::{AsPrimitive, Bounded};
 use zerocopy::{FromBytes, TryFromBytes};
 
 use crate::{
-    MultiIter,
-    splinterv2::{
-        PartitionRead,
-        codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
-        level::{Block, Level},
-        partition::{PartitionKind, bitmap::BitmapPartition},
-        traits::TruncateFrom,
-    },
+    MultiIter, PartitionRead,
+    codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
+    level::{Block, Level},
+    partition::{PartitionKind, bitmap::BitmapPartition},
+    traits::TruncateFrom,
 };
 
 pub(super) fn decode_len_from_suffix<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {
@@ -185,6 +182,20 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
     }
 }
 
+impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
+    fn eq(&self, other: &Self) -> bool {
+        use NonRecursivePartitionRef::*;
+        match (self, other) {
+            (Bitmap { bitmap: l }, Bitmap { bitmap: r }) => l == r,
+            (Vec { values: l }, Vec { values: r }) => l == r,
+            (Run { runs: l }, Run { runs: r }) => l == r,
+            (Empty, Empty) => true,
+            (Full, Full) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 #[doc(hidden)]
 pub enum PartitionRef<'a, L: Level> {
@@ -263,6 +274,16 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
     }
 }
 
+impl<'a, L: Level> PartialEq for PartitionRef<'a, L> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::NonRecursive(l0), Self::NonRecursive(r0)) => l0 == r0,
+            (Self::Tree(l0), Self::Tree(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}
+
 MultiIter!(Iter, Empty, Full, Bitmap, Vec, Run);
 
 impl<'a, L: Level> IntoIterator for NonRecursivePartitionRef<'a, L> {
@@ -276,7 +297,7 @@ impl<'a, L: Level> IntoIterator for NonRecursivePartitionRef<'a, L> {
             Self::Full => Box::new((0..L::MAX_LEN).map(L::Value::truncate_from)),
             Self::Bitmap { bitmap } => Box::new(bitmap.iter_ones().map(L::Value::truncate_from)),
             Self::Vec { values } => Box::new(values.iter().map(|&v| v.into())),
-            Self::Run { runs } => Box::new(runs.to_iter()),
+            Self::Run { runs } => Box::new(runs.into_iter()),
         }
     }
 }

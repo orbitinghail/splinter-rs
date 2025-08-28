@@ -2,7 +2,7 @@ use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
-use splinter_rs::splinterv2::count::{count_bitmap_runs, count_runs_sorted, count_unique_sorted};
+use splinter_rs::count::{count_bitmap_runs, count_runs_sorted, count_unique_sorted};
 use std::hint::black_box;
 
 fn run_sequence(rng: &mut impl Rng, size: usize, stride: usize) -> impl Iterator<Item = usize> {

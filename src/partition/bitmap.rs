@@ -10,7 +10,7 @@ use bitvec::{
 use bytes::BufMut;
 use num::traits::AsPrimitive;
 
-use crate::splinterv2::{
+use crate::{
     codec::{Encodable, encoder::Encoder},
     count::{count_bitmap_runs, count_unique_sorted},
     level::Level,
@@ -203,5 +203,33 @@ where
             bitmap: intersection,
             _marker: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        level::Block,
+        partition::bitmap::BitmapPartition,
+        testutil::{test_partition_read, test_partition_write},
+    };
+
+    #[quickcheck]
+    fn test_bitmap_small_read_quickcheck(set: Vec<u8>) -> TestResult {
+        let expected = set.iter().copied().sorted().dedup().collect_vec();
+        let partition = BitmapPartition::<Block>::from_iter(set);
+        test_partition_read(&partition, &expected);
+        TestResult::passed()
+    }
+
+    #[quickcheck]
+    fn test_bitmap_small_write_quickcheck(set: Vec<u8>) -> TestResult {
+        let mut partition = BitmapPartition::<Block>::from_iter(set);
+        test_partition_write(&mut partition);
+        TestResult::passed()
     }
 }

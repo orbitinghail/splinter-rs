@@ -2,4 +2,7 @@
 
 New Splinter encoding that dynamically switches between Bitmap, Vec, Run, and Tree storage at every level of the u32 segment hierarchy. The following tasks will complete feature parity with the original Splinter code:
 
-- Performance benchmarks against Splinter V1 and Roaring
+- inverted partitions: if cardinality > 50% store the partition inverted
+- add a recursive validation function to PartitionRef
+- optimize the range() function to skip over partitions that can't match during
+  tree iteration

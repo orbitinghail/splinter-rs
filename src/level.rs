@@ -8,7 +8,7 @@ use num::{
 use u24::u24;
 use zerocopy::{BE, FromBytes, Immutable, IntoBytes, KnownLayout, U16, U32, Unaligned};
 
-use crate::splinterv2::{
+use crate::{
     codec::{Encodable, partition_ref::PartitionRef},
     never::Never,
     partition::Partition,
@@ -16,6 +16,7 @@ use crate::splinterv2::{
     traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
+#[doc(hidden)]
 pub trait Level: Sized {
     const DEBUG_NAME: &'static str;
 
@@ -65,6 +66,8 @@ pub trait Level: Sized {
     const PREFER_TREE: bool = Self::BITS > 8;
 }
 
+/// High is an internal type which is only exposed in docs due to it's usage in
+/// the `PartitionRead` trait.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct High;
 
@@ -79,6 +82,7 @@ impl Level for High {
     const BITS: usize = 32;
 }
 
+#[doc(hidden)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Mid;
 
@@ -93,6 +97,7 @@ impl Level for Mid {
     const BITS: usize = 24;
 }
 
+#[doc(hidden)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Low;
 
@@ -107,6 +112,7 @@ impl Level for Low {
     const BITS: usize = 16;
 }
 
+#[doc(hidden)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Block;
 

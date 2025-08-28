@@ -1,6 +1,6 @@
 use std::ops::RangeBounds;
 
-use crate::splinterv2::level::Level;
+use crate::level::Level;
 use num::cast::AsPrimitive;
 use u24::u24;
 

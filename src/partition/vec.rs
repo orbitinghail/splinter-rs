@@ -4,14 +4,12 @@ use bytes::BufMut;
 use itertools::Itertools;
 
 use crate::{
-    splinterv2::{
-        codec::{Encodable, encoder::Encoder},
-        count::{count_runs_sorted, count_unique_sorted},
-        level::Level,
-        partition::Partition,
-        segment::SplitSegment,
-        traits::{Cut, Merge, PartitionRead, PartitionWrite},
-    },
+    codec::{Encodable, encoder::Encoder},
+    count::{count_runs_sorted, count_unique_sorted},
+    level::Level,
+    partition::Partition,
+    segment::SplitSegment,
+    traits::{Cut, Merge, PartitionRead, PartitionWrite},
     util::find_next_sorted,
 };
 
@@ -33,6 +31,8 @@ impl<L: Level> Debug for VecPartition<L> {
 }
 
 impl<L: Level> VecPartition<L> {
+    pub const EMPTY: Self = VecPartition { values: vec![] };
+
     #[inline(always)]
     pub const fn encoded_size(cardinality: usize) -> usize {
         // values + length
@@ -180,5 +180,33 @@ impl<L: Level, P: PartitionRead<L>> Cut<P> for VecPartition<L> {
             intersection.raw_insert(v);
         }
         intersection
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use itertools::Itertools;
+    use quickcheck::TestResult;
+    use quickcheck_macros::quickcheck;
+
+    use crate::{
+        level::Block,
+        partition::vec::VecPartition,
+        testutil::{test_partition_read, test_partition_write},
+    };
+
+    #[quickcheck]
+    fn test_vec_small_read_quickcheck(set: Vec<u8>) -> TestResult {
+        let expected = set.iter().copied().sorted().dedup().collect_vec();
+        let partition = VecPartition::<Block>::from_iter(set);
+        test_partition_read(&partition, &expected);
+        TestResult::passed()
+    }
+
+    #[quickcheck]
+    fn test_vec_small_write_quickcheck(set: Vec<u8>) -> TestResult {
+        let mut partition = VecPartition::<Block>::from_iter(set);
+        test_partition_write(&mut partition);
+        TestResult::passed()
     }
 }

@@ -2,209 +2,21 @@ use std::{fmt::Debug, marker::PhantomData, ops::Bound};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use itertools::{Itertools, assert_equal};
-use num::{CheckedAdd, Saturating, traits::ConstOne};
+use num::{
+    CheckedAdd, Saturating,
+    traits::{Bounded, ConstOne, ConstZero},
+};
 use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
 use zerocopy::IntoBytes;
 
 use crate::{
-    Splinter, SplinterRead, SplinterRef, SplinterWrite,
-    splinterv2::{
-        Encodable, PartitionRead, SplinterV2,
-        codec::footer::Footer,
-        level::Level,
-        partition::{Partition, PartitionKind},
-        traits::TruncateFrom,
-    },
-    util::CopyToOwned,
+    PartitionRead, PartitionWrite,
+    codec::{Encodable, footer::Footer},
+    level::{High, Level},
+    partition::{Partition, PartitionKind},
+    splinter::Splinter,
+    traits::TruncateFrom,
 };
-
-pub fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
-    let mut splinter = Splinter::default();
-    for i in values {
-        splinter.insert(i);
-    }
-    splinter
-}
-
-pub fn mksplinter_ref(values: impl IntoIterator<Item = u32>) -> SplinterRef<Bytes> {
-    SplinterRef::from_bytes(mksplinter(values).serialize_to_bytes()).unwrap()
-}
-
-/// Create a pair of `Splinter` and `SplinterRef` from the same values.
-pub fn mksplinters(values: impl IntoIterator<Item = u32> + Clone) -> [TestSplinter; 2] {
-    let splinter = mksplinter(values.clone());
-    let splinter_ref = mksplinter_ref(values);
-    [
-        TestSplinter::Splinter(splinter),
-        TestSplinter::SplinterRef(splinter_ref),
-    ]
-}
-
-pub fn check_combinations<L, R, E, F>(left: L, right: R, expected: E, test: F)
-where
-    L: IntoIterator<Item = u32> + Clone,
-    R: IntoIterator<Item = u32> + Clone,
-    E: IntoIterator<Item = u32> + Clone,
-    F: Fn(TestSplinter, TestSplinter) -> Splinter,
-{
-    let left = mksplinters(left);
-    let right = mksplinters(right);
-    let expected = mksplinter(expected);
-    for (lhs, rhs) in left.into_iter().cartesian_product(right) {
-        let label = format!("lhs: {lhs:?}, rhs: {rhs:?}");
-        let out = test(lhs, rhs);
-        assert_eq!(out, expected, "{label}");
-    }
-}
-
-#[derive(Clone)]
-pub enum TestSplinter {
-    Splinter(Splinter),
-    SplinterRef(SplinterRef<Bytes>),
-}
-
-impl Debug for TestSplinter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Splinter(splinter) => {
-                let prefix: Vec<_> = splinter.iter().take(10).collect();
-                f.debug_struct("Splinter")
-                    .field("meta", splinter)
-                    .field("prefix", &prefix)
-                    .finish()
-            }
-            Self::SplinterRef(splinter) => {
-                let prefix: Vec<_> = splinter.copy_to_owned().iter().take(10).collect();
-                f.debug_struct("SplinterRef")
-                    .field("meta", splinter)
-                    .field("prefix", &prefix)
-                    .finish()
-            }
-        }
-    }
-}
-
-pub struct SetGen {
-    seed: u64,
-}
-
-impl SetGen {
-    pub fn new(seed: u64) -> Self {
-        Self { seed }
-    }
-
-    fn rng(&self) -> StdRng {
-        rand::rngs::StdRng::seed_from_u64(self.seed)
-    }
-
-    pub fn linear(&mut self, count: usize) -> Vec<u32> {
-        (0..count as u32).collect()
-    }
-
-    pub fn distributed(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
-        let mut out = Vec::default();
-        let mut rng = self.rng();
-        for high in index::sample(&mut rng, 256, high) {
-            for mid in index::sample(&mut rng, 256, mid) {
-                for low in index::sample(&mut rng, 256, low) {
-                    for blk in index::sample(&mut rng, 256, block) {
-                        out.push(u32::from_be_bytes([
-                            high as u8, mid as u8, low as u8, blk as u8,
-                        ]));
-                    }
-                }
-            }
-        }
-        out.sort();
-        out
-    }
-
-    pub fn dense(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
-        let out: Vec<u32> = itertools::iproduct!(0..high, 0..mid, 0..low, 0..block)
-            .map(|(a, b, c, d)| u32::from_be_bytes([a as u8, b as u8, c as u8, d as u8]))
-            .collect();
-        out
-    }
-
-    pub fn random(&mut self, len: usize) -> Vec<u32> {
-        index::sample(&mut self.rng(), u32::MAX as usize, len)
-            .into_iter()
-            .map(|i| i as u32)
-            .sorted()
-            .collect()
-    }
-}
-
-/// Validate that `splinter` correctly implements [`SplinterRead`] given the
-/// expected set of values.
-pub fn harness_read<S>(splinter: &S, expected: &[u32])
-where
-    S: SplinterRead + Debug,
-{
-    assert_eq!(splinter.is_empty(), expected.is_empty(), "is_empty");
-    assert_eq!(splinter.cardinality(), expected.len(), "cardinality");
-    assert_eq!(splinter.last(), expected.last().copied(), "last");
-
-    for key in [0u32, 1, 33, 255, 256, 1024, u32::MAX] {
-        assert_eq!(
-            splinter.contains(key),
-            expected.contains(&key),
-            "contains({key})"
-        );
-    }
-
-    assert!(splinter.iter().eq(expected.iter().copied()), "iter");
-    assert!(splinter.range(..).eq(expected.iter().copied()), "range(..)");
-
-    if let (Some(&start), Some(&end)) = (expected.first(), expected.last()) {
-        assert!(
-            splinter
-                .range(start..)
-                .eq(expected.iter().copied().filter(|&v| v >= start)),
-            "range(start..)"
-        );
-        assert!(
-            splinter
-                .range(..=end)
-                .eq(expected.iter().copied().filter(|&v| v <= end)),
-            "range(..=end)"
-        );
-        assert!(
-            splinter
-                .range(start..=end)
-                .eq(expected.iter().copied().filter(|&v| v >= start && v <= end)),
-            "range(start..=end)"
-        );
-        if start < end {
-            assert!(
-                splinter
-                    .range(start..end)
-                    .eq(expected.iter().copied().filter(|&v| v >= start && v < end)),
-                "range(start..end)"
-            );
-        }
-    }
-}
-
-/// Validate that type `W` correctly implements [`SplinterWrite`] by inserting
-/// `values` and comparing the result against a baseline [`Splinter`].
-pub fn harness_write<W>(values: &[u32])
-where
-    W: SplinterWrite + SplinterRead + Default + Debug,
-{
-    let mut splinter = W::default();
-    assert!(splinter.is_empty(), "new splinter not empty");
-
-    for &key in values {
-        assert!(splinter.insert(key), "first insert {key}");
-        assert!(!splinter.insert(key), "duplicate insert {key}");
-    }
-
-    harness_read(&splinter, values);
-
-    let result: Vec<u32> = splinter.iter().collect();
-    assert_eq!(result, values, "write result");
-}
 
 /// Heuristic analyzer: prints patterns found in the data which could be
 /// exploited by lz4 to improve compression
@@ -302,19 +114,56 @@ pub fn ratio_to_marks(ratio: f64) -> String {
     }
 }
 
-pub struct SetGenV2<L> {
-    rng: rand::rngs::StdRng,
+pub type SetGen = LevelSetGen<High>;
+
+pub struct LevelSetGen<L> {
+    seed: u64,
     _phantom: PhantomData<L>,
 }
 
-impl<L: Level> SetGenV2<L> {
+impl SetGen {
+    pub fn distributed(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
+        let mut out = Vec::default();
+        let mut rng = self.rng();
+        for high in index::sample(&mut rng, 256, high) {
+            for mid in index::sample(&mut rng, 256, mid) {
+                for low in index::sample(&mut rng, 256, low) {
+                    for blk in index::sample(&mut rng, 256, block) {
+                        out.push(u32::from_be_bytes([
+                            high as u8, mid as u8, low as u8, blk as u8,
+                        ]));
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    pub fn dense(&mut self, high: usize, mid: usize, low: usize, block: usize) -> Vec<u32> {
+        let out: Vec<u32> = itertools::iproduct!(0..high, 0..mid, 0..low, 0..block)
+            .map(|(a, b, c, d)| u32::from_be_bytes([a as u8, b as u8, c as u8, d as u8]))
+            .collect();
+        out
+    }
+}
+
+impl<L: Level> LevelSetGen<L> {
     pub fn new(seed: u64) -> Self {
-        let rng = rand::rngs::StdRng::seed_from_u64(seed);
-        Self { rng, _phantom: PhantomData }
+        Self { seed, _phantom: PhantomData }
+    }
+
+    fn rng(&self) -> StdRng {
+        rand::rngs::StdRng::seed_from_u64(self.seed)
+    }
+
+    pub fn linear(&mut self, count: usize) -> Vec<L::Value> {
+        assert!(count <= L::MAX_LEN, "count must be less than L::MAX_LEN");
+        (0..count).map(|i| L::Value::truncate_from(i)).collect()
     }
 
     pub fn random(&mut self, len: usize) -> Vec<L::Value> {
-        index::sample(&mut self.rng, L::MAX_LEN - 1, len)
+        index::sample(&mut self.rng(), L::MAX_LEN, len)
             .into_iter()
             .map(L::Value::truncate_from)
             .sorted()
@@ -324,6 +173,7 @@ impl<L: Level> SetGenV2<L> {
     /// Generate a random set of values such that the probability any two values
     /// are sequential is `stickiness`.
     pub fn runs(&mut self, len: usize, stickiness: f64) -> Vec<L::Value> {
+        let mut rng = self.rng();
         let s = stickiness.clamp(0.0, 1.0);
         let mut out = Vec::with_capacity(len);
         if len == 0 {
@@ -332,16 +182,16 @@ impl<L: Level> SetGenV2<L> {
         // Allow worst-case growth of ~2 per step to avoid overflow.
         let max_start =
             (L::MAX_LEN - 1).saturating_sub(2usize.saturating_mul(len.saturating_sub(1)));
-        let mut cur = self.rng.random_range(0..=max_start);
+        let mut cur = rng.random_range(0..=max_start);
         out.push(L::Value::truncate_from(cur));
 
         for _ in 1..len {
-            if self.rng.random_bool(s) {
+            if rng.random_bool(s) {
                 cur = cur.saturating_add(1);
             } else {
                 // Non-sequential: jump by >=2. Use a geometric(0.5) tail for gaps.
                 let mut k = 0;
-                while !self.rng.random_bool(0.5) {
+                while !rng.random_bool(0.5) {
                     k += 1;
                 }
                 let gap = 2 + k; // 2,3,4,... with decreasing probability
@@ -432,14 +282,40 @@ where
     }
 }
 
+/// Validate that a type correctly implements [`PartitionWrite`].
+pub fn test_partition_write<L, S>(splinter: &mut S)
+where
+    L: Level,
+    S: PartitionRead<L> + PartitionWrite<L> + Debug,
+{
+    // start by clearing the splinter while exercising insert/remove
+    let initial_set = splinter.iter().collect_vec();
+    for v in initial_set {
+        assert!(!splinter.insert(v));
+        assert!(splinter.remove(v));
+    }
+
+    // seed the splinter with some sample values
+    let samples = [L::Value::ZERO, L::Value::ONE, L::Value::max_value()];
+    for sample in samples {
+        assert!(splinter.insert(sample));
+        assert!(!splinter.insert(sample));
+        assert!(splinter.remove(sample));
+        assert!(!splinter.remove(sample));
+        assert!(splinter.insert(sample));
+    }
+
+    itertools::assert_equal(splinter.iter(), samples.into_iter());
+}
+
 pub fn mkchecksum(data: &[u8]) -> u64 {
     let mut c = crc64fast_nvme::Digest::new();
     c.write(&data);
     c.sum64()
 }
 
-/// appends a valid SplinterV2 Footer to data and returns it as Bytes
-pub fn mksplinterv2_manual(data: &[u8]) -> Bytes {
+/// appends a valid Splinter Footer to data and returns it as Bytes
+pub fn mksplinter_manual(data: &[u8]) -> Bytes {
     let mut buf = BytesMut::with_capacity(data.len() + Footer::SIZE);
     buf.put_slice(data);
     buf.put_slice(Footer::from_checksum(mkchecksum(data)).as_bytes());
@@ -461,13 +337,10 @@ pub fn mkpartition_buf<L: Level>(kind: PartitionKind, values: &[L::Value]) -> By
         .unwrap()
 }
 
-pub fn mksplinterv2(values: &[u32]) -> SplinterV2 {
-    SplinterV2::from_iter(values.iter().copied())
+pub fn mksplinter(values: &[u32]) -> Splinter {
+    Splinter::from_iter(values.iter().copied())
 }
 
-pub fn mksplinterv2_buf(values: &[u32]) -> BytesMut {
-    mksplinterv2(values)
-        .encode_to_bytes()
-        .try_into_mut()
-        .unwrap()
+pub fn mksplinter_buf(values: &[u32]) -> BytesMut {
+    mksplinter(values).encode_to_bytes().try_into_mut().unwrap()
 }

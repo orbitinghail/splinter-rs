@@ -5,10 +5,11 @@ use bytes::BufMut;
 use crc64fast_nvme::Digest;
 use zerocopy::{IntoBytes, transmute_ref};
 
-use crate::splinterv2::{
-    Partition, PartitionRead,
+use crate::{
+    PartitionRead,
     codec::{footer::Footer, runs_ref::EncodedRun, tree_ref::TreeIndexBuilder},
     level::{Block, Level},
+    partition::Partition,
     partition::PartitionKind,
     traits::TruncateFrom,
 };
@@ -33,31 +34,37 @@ impl<B: BufMut> Encoder<B> {
         self.buf
     }
 
+    /// Write an entire encoded splinter to the buffer
+    pub(crate) fn write_splinter(&mut self, splinter: &[u8]) {
+        self.buf.put_slice(splinter);
+        self.bytes_written += splinter.len();
+    }
+
     /// Write the checksum and Splinter Magic value to the buffer
-    pub fn write_footer(&mut self) {
+    pub(crate) fn write_footer(&mut self) {
         let footer = Footer::from_checksum(self.checksum.sum64());
         self.put_slice(footer.as_bytes());
     }
 
     /// The total number of bytes written to the buffer since this Encoder was
     /// initialized.
-    pub fn bytes_written(&self) -> usize {
+    pub(crate) fn bytes_written(&self) -> usize {
         self.bytes_written
     }
 
     /// Encode a Bitmap partition into the buffer.
-    pub fn put_bitmap_partition(&mut self, bitmap: &BitBox<u64, Lsb0>) {
+    pub(crate) fn put_bitmap_partition(&mut self, bitmap: &BitBox<u64, Lsb0>) {
         self.put_bitmap_raw(bitmap);
     }
 
     /// Encode a Vec partition into the buffer.
-    pub fn put_vec_partition<L: Level>(&mut self, values: &[L::Value]) {
+    pub(crate) fn put_vec_partition<L: Level>(&mut self, values: &[L::Value]) {
         self.put_iter::<L>(values.iter().copied());
         self.put_length::<L>(values.len());
     }
 
     /// Encode a Run partition into the buffer.
-    pub fn put_run_partition<L: Level>(
+    pub(crate) fn put_run_partition<L: Level>(
         &mut self,
         runs: impl Iterator<Item = RangeInclusive<L::Value>>,
     ) {
@@ -71,7 +78,7 @@ impl<B: BufMut> Encoder<B> {
     }
 
     /// Encode a Tree partition into the buffer.
-    pub fn put_tree_index<L: Level>(&mut self, tree_index_builder: TreeIndexBuilder<L>) {
+    pub(crate) fn put_tree_index<L: Level>(&mut self, tree_index_builder: TreeIndexBuilder<L>) {
         let (num_children, segments, offsets) = tree_index_builder.build();
         assert!(
             num_children > 0 && num_children <= Block::MAX_LEN,
@@ -88,6 +95,17 @@ impl<B: BufMut> Encoder<B> {
         }
 
         self.put_length::<Block>(num_children);
+    }
+
+    pub(crate) fn put_iter<L: Level>(&mut self, values: impl Iterator<Item = L::Value>) {
+        for value in values {
+            self.put_value::<L>(value);
+        }
+    }
+
+    pub(crate) fn put_kind(&mut self, k: PartitionKind) {
+        let d = [k as u8];
+        self.put_slice(&d)
     }
 
     #[inline]
@@ -107,17 +125,6 @@ impl<B: BufMut> Encoder<B> {
         static_assertions::assert_cfg!(target_endian = "little");
         let raw: &[zerocopy::U64<zerocopy::LittleEndian>] = transmute_ref!(raw);
         self.put_slice(raw.as_bytes());
-    }
-
-    pub fn put_iter<L: Level>(&mut self, values: impl Iterator<Item = L::Value>) {
-        for value in values {
-            self.put_value::<L>(value);
-        }
-    }
-
-    pub fn put_kind(&mut self, k: PartitionKind) {
-        let d = [k as u8];
-        self.put_slice(&d)
     }
 
     fn put_slice(&mut self, data: &[u8]) {

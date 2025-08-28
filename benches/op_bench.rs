@@ -1,32 +1,18 @@
 use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use roaring::RoaringBitmap;
-use splinter_rs::splinterv2::Optimizable;
-use splinter_rs::splinterv2::{
-    SplinterRefV2, SplinterV2, traits::PartitionRead, traits::PartitionWrite,
-};
-use splinter_rs::testutil::SetGen;
-use splinter_rs::{Splinter, SplinterRead, SplinterRef, SplinterWrite, ops::Intersection};
 use std::hint::black_box;
 
+use splinter_rs::{
+    Optimizable, PartitionRead, PartitionWrite, Splinter, SplinterRef, testutil::SetGen,
+};
+
 fn mksplinter(values: impl IntoIterator<Item = u32>) -> Splinter {
-    let mut splinter = Splinter::default();
-    for i in values {
-        splinter.insert(i);
-    }
-    splinter
+    Splinter::from_iter(values)
 }
 
 fn mksplinter_ref(values: impl IntoIterator<Item = u32>) -> SplinterRef<Bytes> {
-    SplinterRef::from_bytes(mksplinter(values).serialize_to_bytes()).unwrap()
-}
-
-fn mksplinter_v2(values: impl IntoIterator<Item = u32>) -> SplinterV2 {
-    SplinterV2::from_iter(values)
-}
-
-fn mksplinter_ref_v2(values: impl IntoIterator<Item = u32>) -> SplinterRefV2<Bytes> {
-    mksplinter_v2(values).encode_to_splinter_ref()
+    mksplinter(values).encode_to_splinter_ref()
 }
 
 fn benchmark_contains(c: &mut Criterion) {
@@ -46,38 +32,23 @@ fn benchmark_contains(c: &mut Criterion) {
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
+        group.bench_function(BenchmarkId::new("splinter optimized", cardinality), |b| {
+            let mut splinter = mksplinter(set.clone());
+            splinter.optimize();
+            assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
+            b.iter(|| splinter.contains(black_box(lookup)))
+        });
+
         group.bench_function(BenchmarkId::new("splinter ref", cardinality), |b| {
             let splinter = mksplinter_ref(set.clone());
             assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
-        group.bench_function(BenchmarkId::new("splinter v2", cardinality), |b| {
-            let splinter = mksplinter_v2(set.clone());
-            assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
-            b.iter(|| splinter.contains(black_box(lookup)))
-        });
-
         group.bench_function(
-            BenchmarkId::new("splinter v2 optimized", cardinality),
+            BenchmarkId::new("splinter ref optimized", cardinality),
             |b| {
-                let mut splinter = mksplinter_v2(set.clone());
-                splinter.optimize();
-                assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
-                b.iter(|| splinter.contains(black_box(lookup)))
-            },
-        );
-
-        group.bench_function(BenchmarkId::new("splinter ref v2", cardinality), |b| {
-            let splinter = mksplinter_ref_v2(set.clone());
-            assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
-            b.iter(|| splinter.contains(black_box(lookup)))
-        });
-
-        group.bench_function(
-            BenchmarkId::new("splinter ref v2 optimized", cardinality),
-            |b| {
-                let mut splinter = mksplinter_v2(set.clone());
+                let mut splinter = mksplinter(set.clone());
                 splinter.optimize();
                 let splinter = splinter.encode_to_splinter_ref();
                 assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
@@ -107,88 +78,26 @@ fn benchmark_insert(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("insert");
 
-    group.bench_function("splinter/warm", |b| {
-        let mut splinter = Splinter::default();
-        b.iter(|| splinter.insert(black_box(MAGIC)))
-    });
-
     group.bench_function("roaring/warm", |b| {
         let mut roaring_bitmap = RoaringBitmap::default();
         b.iter(|| roaring_bitmap.insert(black_box(MAGIC)))
     });
 
-    group.bench_function("splinter/cold", |b| {
-        b.iter(|| Splinter::default().insert(black_box(MAGIC)))
-    });
-
-    group.bench_function("splinter v2/warm", |b| {
-        let mut splinter = SplinterV2::default();
+    group.bench_function("splinter/warm", |b| {
+        let mut splinter = Splinter::EMPTY;
         b.iter(|| splinter.insert(black_box(MAGIC)))
-    });
-
-    group.bench_function("splinter v2/cold", |b| {
-        b.iter(|| SplinterV2::default().insert(black_box(MAGIC)))
     });
 
     group.bench_function("roaring/cold", |b| {
         b.iter(|| RoaringBitmap::default().insert(black_box(MAGIC)))
     });
 
-    group.finish();
-}
-
-fn benchmark_intersection(c: &mut Criterion) {
-    let cardinalities = [4u32, 16, 64, 256, 1024, 4096, 16384];
-
-    let mut group = c.benchmark_group("intersection");
-
-    for cardinality in &cardinalities {
-        group.bench_with_input(
-            BenchmarkId::new("splinter", cardinality),
-            cardinality,
-            |b, &cardinality| {
-                let splinter1 = mksplinter(0..cardinality);
-                let splinter2 = mksplinter(cardinality / 2..cardinality);
-
-                assert_eq!(splinter1.intersection(black_box(&splinter2)), splinter2);
-                b.iter(|| splinter1.intersection(black_box(&splinter2)))
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("splinter ref", cardinality),
-            cardinality,
-            |b, &cardinality| {
-                let splinter1 = mksplinter(0..cardinality);
-                let splinter2 = mksplinter(cardinality / 2..cardinality);
-                let splinter_ref2 = mksplinter_ref(cardinality / 2..cardinality);
-
-                assert_eq!(splinter1.intersection(black_box(&splinter_ref2)), splinter2);
-                b.iter(|| splinter1.intersection(black_box(&splinter_ref2)))
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("roaring", cardinality),
-            cardinality,
-            |b, &cardinality| {
-                let roaring1 = RoaringBitmap::from_sorted_iter(0..cardinality).unwrap();
-                let roaring2 =
-                    RoaringBitmap::from_sorted_iter(cardinality / 2..cardinality).unwrap();
-
-                assert_eq!((&roaring1 & black_box(&roaring2)), roaring2);
-                b.iter(|| (&roaring1 & black_box(&roaring2)))
-            },
-        );
-    }
+    group.bench_function("splinter/cold", |b| {
+        b.iter(|| Splinter::default().insert(black_box(MAGIC)))
+    });
 
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    benchmark_contains,
-    benchmark_insert,
-    benchmark_intersection
-);
+criterion_group!(benches, benchmark_contains, benchmark_insert);
 criterion_main!(benches);
