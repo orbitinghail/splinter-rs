@@ -392,10 +392,7 @@ mod tests {
     use super::*;
     use crate::{
         codec::Encodable,
-        testutil::{
-            SetGen, analyze_compression_patterns, mksplinter, ratio_to_marks, test_partition_read,
-            test_partition_write,
-        },
+        testutil::{SetGen, mksplinter, ratio_to_marks, test_partition_read, test_partition_write},
         traits::Optimizable,
     };
     use itertools::Itertools;
@@ -434,13 +431,13 @@ mod tests {
     #[test]
     fn test_wat() {
         let mut set_gen = SetGen::new(0xDEAD_BEEF);
-        let set = set_gen.random(1024);
+        let set = set_gen.distributed(4, 8, 16, 32);
         let baseline_size = set.len() * 4;
 
         let mut splinter = Splinter::from_iter(set.iter().copied());
         splinter.optimize();
 
-        dbg!(&splinter, splinter.encoded_size(), baseline_size);
+        dbg!(&splinter, splinter.encoded_size(), baseline_size, set.len());
         itertools::assert_equal(splinter.iter(), set.into_iter());
     }
 
@@ -509,9 +506,6 @@ mod tests {
                             expected_set_size: usize,
                             expected_splinter: usize,
                             expected_roaring: usize| {
-            println!("-------------------------------------");
-            println!("running test: {name}");
-
             assert_eq!(set.len(), expected_set_size, "Set size mismatch");
 
             let mut splinter = Splinter::from_iter(set.clone());
@@ -531,8 +525,6 @@ mod tests {
             );
 
             let roaring = to_roaring(set.iter().copied());
-
-            analyze_compression_patterns(&splinter);
 
             let splinter_lz4 = lz4::block::compress(&splinter, None, false).unwrap();
             let roaring_lz4 = lz4::block::compress(&roaring, None, false).unwrap();

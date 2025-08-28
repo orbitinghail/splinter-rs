@@ -25,8 +25,12 @@ pub struct TreeRef<'a, L: Level> {
 }
 
 impl<'a, L: Level> TreeRef<'a, L> {
-    pub(super) fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
+    pub(super) fn from_suffix(data: &'a [u8]) -> culprit::Result<Self, DecodeErr> {
         let (data, num_children) = decode_len_from_suffix::<Block>(data)?;
+        assert_ne!(
+            num_children, 0,
+            "BUG: encoded tree partition with 0 children"
+        );
 
         let (segments_size, segments_kind) =
             TreeIndexBuilder::<L>::pick_segments_store(num_children);
@@ -216,8 +220,12 @@ impl<L: Level> TreeIndexBuilder<L> {
 
     pub fn build(self) -> (usize, Partition<Block>, impl Iterator<Item = L::Value>) {
         let num_children = self.offsets.len();
-        assert_ne!(num_children, 0);
-        let last_offset = self.offsets.last().copied().unwrap();
+        assert_ne!(num_children, 0, "BUG: tree index builder with 0 children");
+        let last_offset = self
+            .offsets
+            .last()
+            .copied()
+            .expect("BUG: offsets must be non-empty if num_children is not zero");
         let offsets = self.offsets.into_iter().map(move |offset| {
             let relative = last_offset - offset;
             L::Value::truncate_from(relative)

@@ -1,9 +1,5 @@
 # Feature ideas
 
-## Avoid storing the last offset in a TreePartition
-
-The last offset is always 0, so we should be able to avoid storing it. This will optimize the very common case of single child tree partitions offering a large boost in compression performance.
-
 ## Inverted partitions
 
 When a partition is storing more than 50% of it's possible values, we should store it inverted. Thus partitions only grow until they hit 50% of their max storage, and then they start shrinking.
