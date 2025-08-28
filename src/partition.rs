@@ -3,7 +3,6 @@ use std::fmt::{self, Debug};
 use bytes::BufMut;
 use itertools::Itertools;
 use num::traits::{AsPrimitive, Bounded};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 use crate::{
     MultiIter,
@@ -12,6 +11,7 @@ use crate::{
     partition::{
         bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
     },
+    partition_kind::PartitionKind,
     traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
@@ -22,43 +22,6 @@ pub mod vec;
 
 /// Tree sparsity ratio limit
 const TREE_SPARSE_THRESHOLD: f64 = 0.5;
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    IntoBytes,
-    TryFromBytes,
-    Unaligned,
-    KnownLayout,
-    Immutable,
-    Default,
-)]
-#[repr(u8)]
-pub enum PartitionKind {
-    #[default]
-    Empty = 0x00,
-    Full = 0x01,
-    Bitmap = 0x02,
-    Vec = 0x03,
-    Run = 0x04,
-    Tree = 0x05,
-}
-
-impl PartitionKind {
-    pub fn build<L: Level>(self) -> Partition<L> {
-        match self {
-            PartitionKind::Empty => Partition::EMPTY,
-            PartitionKind::Full => Partition::Full,
-            PartitionKind::Bitmap => Partition::Bitmap(Default::default()),
-            PartitionKind::Vec => Partition::Vec(Default::default()),
-            PartitionKind::Run => Partition::Run(Default::default()),
-            PartitionKind::Tree => Partition::Tree(Default::default()),
-        }
-    }
-}
 
 #[derive(Clone, Eq)]
 pub enum Partition<L: Level> {
@@ -419,11 +382,10 @@ mod tests {
         PartitionRead,
         level::{High, Level, Low},
         partition::Partition,
+        partition_kind::PartitionKind,
         testutil::{LevelSetGen, mkpartition, test_partition_read, test_partition_write},
         traits::TruncateFrom,
     };
-
-    use super::PartitionKind;
 
     #[test]
     fn test_partition_full() {

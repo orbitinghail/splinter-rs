@@ -10,7 +10,7 @@ use crate::{
     codec::{footer::Footer, runs_ref::EncodedRun, tree_ref::TreeIndexBuilder},
     level::{Block, Level},
     partition::Partition,
-    partition::PartitionKind,
+    partition_kind::PartitionKind,
     traits::TruncateFrom,
 };
 

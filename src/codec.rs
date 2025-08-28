@@ -133,7 +133,7 @@ mod tests {
             partition_ref::PartitionRef,
         },
         level::{Block, Level, Low},
-        partition::PartitionKind,
+        partition_kind::PartitionKind,
         testutil::{
             LevelSetGen, mkpartition, mkpartition_buf, mksplinter_buf, mksplinter_manual,
             test_partition_read,

@@ -13,7 +13,8 @@ use crate::{
     PartitionRead, PartitionWrite,
     codec::{Encodable, footer::Footer},
     level::{High, Level},
-    partition::{Partition, PartitionKind},
+    partition::Partition,
+    partition_kind::PartitionKind,
     splinter::Splinter,
     traits::TruncateFrom,
 };

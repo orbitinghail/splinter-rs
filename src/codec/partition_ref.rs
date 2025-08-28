@@ -7,7 +7,8 @@ use crate::{
     MultiIter, PartitionRead,
     codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
     level::{Block, Level},
-    partition::{PartitionKind, bitmap::BitmapPartition},
+    partition::bitmap::BitmapPartition,
+    partition_kind::PartitionKind,
     traits::TruncateFrom,
 };
 

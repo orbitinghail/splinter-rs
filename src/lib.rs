@@ -24,6 +24,7 @@ pub mod count;
 
 mod never;
 mod partition;
+mod partition_kind;
 mod partition_ops;
 mod segment;
 mod util;

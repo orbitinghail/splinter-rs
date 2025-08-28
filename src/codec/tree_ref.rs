@@ -10,7 +10,8 @@ use crate::{
         partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len_from_suffix},
     },
     level::{Block, Level},
-    partition::{Partition, PartitionKind, bitmap::BitmapPartition},
+    partition::{Partition, bitmap::BitmapPartition},
+    partition_kind::PartitionKind,
     segment::{Segment, SplitSegment},
     traits::TruncateFrom,
 };
