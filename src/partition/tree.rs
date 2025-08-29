@@ -15,7 +15,7 @@ use crate::{
     count::count_runs_sorted,
     level::Level,
     partition::Partition,
-    segment::{Segment, SplitSegment},
+    segment::{IterSegmented, Segment, SplitSegment},
     traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
 };
 
@@ -84,11 +84,34 @@ impl<L: Level> Default for TreePartition<L> {
 
 impl<L: Level> FromIterator<L::Value> for TreePartition<L> {
     fn from_iter<T: IntoIterator<Item = L::Value>>(iter: T) -> Self {
-        let mut partition = TreePartition::default();
-        for value in iter {
-            partition.insert(value);
+        let mut segmented = IterSegmented::new(iter.into_iter());
+        let mut tree = TreePartition::default();
+
+        let Some((mut child_segment, first_value)) = segmented.next() else {
+            return tree;
+        };
+
+        // we amortize the cost of looking up child partitions to optimize the
+        // common case of initializing a tree partition from an iterator of
+        // sorted values
+
+        let mut child = tree.children.entry(child_segment).or_default();
+
+        child.insert(first_value);
+        tree.cardinality += 1;
+
+        for (segment, value) in segmented {
+            if segment != child_segment {
+                child_segment = segment;
+                child = tree.children.entry(child_segment).or_default();
+            }
+
+            if child.insert(value) {
+                tree.cardinality += 1;
+            }
         }
-        partition
+
+        tree
     }
 }
 

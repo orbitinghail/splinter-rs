@@ -250,6 +250,7 @@ impl<L: Level> Cut<RunsRef<'_, L>> for RunPartition<L> {
     }
 }
 
+#[must_use]
 struct MergeRuns<I, T> {
     inner: I,
     run: Option<(T, T)>,

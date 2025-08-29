@@ -29,13 +29,13 @@ pub trait Level: Sized {
         + Default
         + Debug
         + Clone
+        + Eq
         + PartialEq
+        + Merge
+        + Cut<Out = Self::Down>
         + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
         + for<'a> Merge<PartitionRef<'a, Self::LevelDown>>
-        + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>
-        + Eq
-        + Cut<Out = Self::Down>
-        + Merge;
+        + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>;
 
     type Value: num::PrimInt
         + AsPrimitive<usize>
@@ -63,7 +63,7 @@ pub trait Level: Sized {
     const BITS: usize;
     const MAX_LEN: usize = 1 << Self::BITS;
     const TREE_MIN: usize = 32;
-    const PREFER_TREE: bool = Self::BITS > 8;
+    const ALLOW_TREE: bool = Self::BITS > 8;
 }
 
 /// High is an internal type which is only exposed in docs due to it's usage in

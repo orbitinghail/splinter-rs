@@ -4,6 +4,7 @@ use std::iter::Peekable;
 #[macro_export]
 macro_rules! MultiIter {
     ($type:ident, $($name:ident),+) => {
+        #[must_use]
         pub(crate) enum $type<$($name),+> {
             $($name($name)),+
         }

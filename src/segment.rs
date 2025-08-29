@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use num::traits::AsPrimitive;
 use u24::u24;
 
@@ -53,3 +55,37 @@ impl SplitSegment for u8 {
         unreachable!()
     }
 }
+
+/// An iterator values that can be segmented into `(Segment, Rest)` pairs via the
+/// `SplitSegment` trait.
+#[must_use]
+pub struct IterSegmented<I> {
+    inner: I,
+}
+
+impl<I> IterSegmented<I> {
+    pub fn new(inner: I) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T: SplitSegment, I: Iterator<Item = T>> Iterator for IterSegmented<I> {
+    type Item = (Segment, T::Rest);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|v| v.split())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<T: SplitSegment, I: DoubleEndedIterator<Item = T>> DoubleEndedIterator for IterSegmented<I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|v| v.split())
+    }
+}
+
+impl<T: SplitSegment, I: FusedIterator<Item = T>> FusedIterator for IterSegmented<I> {}
+impl<T: SplitSegment, I: ExactSizeIterator<Item = T>> ExactSizeIterator for IterSegmented<I> {}

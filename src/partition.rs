@@ -50,6 +50,11 @@ impl<L: Level> Partition<L> {
             return;
         }
 
+        assert!(
+            L::ALLOW_TREE || kind != PartitionKind::Tree,
+            "BUG: Tree partitioning is not allowed at this level"
+        );
+
         *self = match kind {
             PartitionKind::Empty => {
                 debug_assert_eq!(self.cardinality(), 0, "Partition is not empty");
@@ -103,7 +108,7 @@ impl<L: Level> Partition<L> {
         }
 
         if cardinality == 0 {
-            if L::PREFER_TREE {
+            if L::ALLOW_TREE {
                 return PartitionKind::Tree;
             } else {
                 return PartitionKind::Vec;
@@ -116,7 +121,7 @@ impl<L: Level> Partition<L> {
                     // if we are already a tree, then we should only stay a tree
                     // if we are the smallest option
                     tree.encoded_size() + 1
-                } else if L::PREFER_TREE
+                } else if L::ALLOW_TREE
                     && cardinality > L::TREE_MIN
                     && self.sparsity_ratio() < TREE_SPARSE_THRESHOLD
                 {
@@ -173,7 +178,7 @@ impl<L: Level> Partition<L> {
     pub fn raw_remove(&mut self, value: L::Value) -> bool {
         match self {
             Partition::Full => {
-                self.switch_kind(if L::PREFER_TREE {
+                self.switch_kind(if L::ALLOW_TREE {
                     PartitionKind::Tree
                 } else {
                     PartitionKind::Run
