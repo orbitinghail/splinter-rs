@@ -392,6 +392,7 @@ mod tests {
     use super::*;
     use crate::{
         codec::Encodable,
+        level::Level,
         testutil::{SetGen, mksplinter, ratio_to_marks, test_partition_read, test_partition_write},
         traits::Optimizable,
     };
@@ -431,7 +432,7 @@ mod tests {
     #[test]
     fn test_wat() {
         let mut set_gen = SetGen::new(0xDEAD_BEEF);
-        let set = set_gen.distributed(4, 8, 16, 32);
+        let set = set_gen.random_max(64, 4096);
         let baseline_size = set.len() * 4;
 
         let mut splinter = Splinter::from_iter(set.iter().copied());
@@ -489,7 +490,7 @@ mod tests {
         }
 
         struct Report {
-            name: &'static str,
+            name: String,
             baseline: usize,
             //        (actual, expected)
             splinter: (usize, usize),
@@ -501,7 +502,7 @@ mod tests {
 
         let mut reports = vec![];
 
-        let mut run_test = |name: &'static str,
+        let mut run_test = |name: &str,
                             set: Vec<u32>,
                             expected_set_size: usize,
                             expected_splinter: usize,
@@ -540,7 +541,7 @@ mod tests {
             );
 
             reports.push(Report {
-                name,
+                name: name.to_owned(),
                 baseline: set.len() * std::mem::size_of::<u32>(),
                 splinter: (splinter.len(), expected_splinter),
                 roaring: (roaring.len(), expected_roaring),
@@ -569,7 +570,7 @@ mod tests {
 
         // 1 sparse block
         let set = set_gen.distributed(1, 1, 1, 16);
-        run_test("1 sparse block", set, 16, 81, 48);
+        run_test("1 sparse block", set, 16, 48, 48);
 
         // 8 half full blocks
         let set = set_gen.distributed(1, 1, 8, 128);
@@ -577,7 +578,7 @@ mod tests {
 
         // 8 sparse blocks
         let set = set_gen.distributed(1, 1, 8, 2);
-        run_test("8 sparse blocks", set, 16, 81, 48);
+        run_test("8 sparse blocks", set, 16, 60, 48);
 
         // 64 half full blocks
         let set = set_gen.distributed(4, 4, 4, 128);
@@ -585,7 +586,7 @@ mod tests {
 
         // 64 sparse blocks
         let set = set_gen.distributed(4, 4, 4, 2);
-        run_test("64 sparse blocks", set, 128, 434, 392);
+        run_test("64 sparse blocks", set, 128, 410, 392);
 
         // 256 half full blocks
         let set = set_gen.distributed(4, 8, 8, 128);
@@ -654,13 +655,36 @@ mod tests {
         let set = set_gen.dense(1, 32, 16, 8);
         run_test("dense mid/low", set, elements, 4113, 2376);
 
-        // fully random sets of varying sizes
-        run_test("random/32", set_gen.random(32), 32, 145, 328);
-        run_test("random/256", set_gen.random(256), 256, 1041, 2544);
-        run_test("random/1024", set_gen.random(1024), 1024, 4113, 10168);
-        run_test("random/4096", set_gen.random(4096), 4096, 14350, 40056);
-        run_test("random/16384", set_gen.random(16384), 16384, 51214, 148656);
-        run_test("random/65535", set_gen.random(65535), 65535, 198667, 461278);
+        let random_cases = [
+            // random sets drawing from the enire u32 range
+            (32, High::MAX_LEN, 145, 328),
+            (256, High::MAX_LEN, 1041, 2544),
+            (1024, High::MAX_LEN, 4113, 10168),
+            (4096, High::MAX_LEN, 14350, 40056),
+            (16384, High::MAX_LEN, 51214, 148656),
+            (65536, High::MAX_LEN, 198670, 461288),
+            // random sets with values < 65536
+            (32, 65536, 92, 80),
+            (256, 65536, 540, 528),
+            (1024, 65536, 2071, 2064),
+            (4096, 65536, 5147, 8208),
+            (65536, 65536, 25, 15),
+            // small sets with values < 1024
+            (8, 1024, 49, 32),
+            (16, 1024, 60, 48),
+            (32, 1024, 79, 80),
+            (64, 1024, 111, 144),
+            (128, 1024, 168, 272),
+        ];
+
+        for (count, max, s, r) in random_cases {
+            let name = if max == High::MAX_LEN {
+                format!("random/{count}")
+            } else {
+                format!("random/{count}/{max}")
+            };
+            run_test(&name, set_gen.random_max(count, max), count, s, r);
+        }
 
         let mut fail_test = false;
 

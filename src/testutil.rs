@@ -96,6 +96,14 @@ impl<L: Level> LevelSetGen<L> {
             .collect()
     }
 
+    pub fn random_max(&mut self, len: usize, max_val: usize) -> Vec<L::Value> {
+        index::sample(&mut self.rng(), max_val, len)
+            .into_iter()
+            .map(L::Value::truncate_from)
+            .sorted()
+            .collect()
+    }
+
     /// Generate a random set of values such that the probability any two values
     /// are sequential is `stickiness`.
     pub fn runs(&mut self, len: usize, stickiness: f64) -> Vec<L::Value> {

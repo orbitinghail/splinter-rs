@@ -62,7 +62,6 @@ pub trait Level: Sized {
 
     const BITS: usize;
     const MAX_LEN: usize = 1 << Self::BITS;
-    const TREE_MIN: usize = 32;
     const ALLOW_TREE: bool = Self::BITS > 8;
 }
 

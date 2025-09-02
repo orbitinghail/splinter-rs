@@ -121,12 +121,9 @@ impl<L: Level> Partition<L> {
                     // if we are already a tree, then we should only stay a tree
                     // if we are the smallest option
                     tree.encoded_size() + 1
-                } else if L::ALLOW_TREE
-                    && cardinality > L::TREE_MIN
-                    && self.sparsity_ratio() < TREE_SPARSE_THRESHOLD
-                {
+                } else if L::ALLOW_TREE && self.sparsity_ratio() < TREE_SPARSE_THRESHOLD {
                     // switch to tree if this level prefers it and the
-                    // cardinality + sparsity meet our thresholds
+                    // partition is sufficiently sparse
                     0
                 } else {
                     // otherwise we don't want to be a tree
