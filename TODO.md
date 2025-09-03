@@ -1,5 +1,9 @@
 # Feature ideas
 
+## Bench switching Tree partitions to HashMap
+
+Seems like BTreeMap may introduce more pointer chasing than needed. Also tree in tree seems silly.
+
 ## Inverted partitions
 
 When a partition is storing more than 50% of it's possible values, we should store it inverted. Thus partitions only grow until they hit 50% of their max storage, and then they start shrinking.
