@@ -15,7 +15,14 @@ pub enum Never {}
 
 impl Default for Never {
     fn default() -> Self {
-        unreachable!("Never::default")
+        if cfg!(any(debug_assertions, not(feature = "checked_never"))) {
+            unreachable!("Never::default")
+        } else {
+            unsafe extern "C" {
+                fn never() -> Never;
+            }
+            unsafe { never() }
+        }
     }
 }
 

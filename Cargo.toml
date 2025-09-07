@@ -50,6 +50,7 @@ codegen-units = 1
 [features]
 default = []
 testutil = ["dep:rand"]
+checked_never = []
 
 [[bench]]
 name = "op_bench"

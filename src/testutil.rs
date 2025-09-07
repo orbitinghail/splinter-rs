@@ -13,7 +13,7 @@ use crate::{
     PartitionRead, PartitionWrite,
     codec::{Encodable, footer::Footer},
     level::{High, Level},
-    partition::Partition,
+    partition::{OptimizableInner, Partition},
     partition_kind::PartitionKind,
     splinter::Splinter,
     traits::TruncateFrom,
@@ -256,7 +256,10 @@ pub fn mksplinter_manual(data: &[u8]) -> Bytes {
     buf.freeze()
 }
 
-pub fn mkpartition<L: Level>(kind: PartitionKind, values: &[L::Value]) -> Partition<L> {
+pub fn mkpartition<L: Level>(kind: PartitionKind, values: &[L::Value]) -> Partition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     let mut p = kind.build();
     for &v in values {
         p.raw_insert(v);
@@ -264,7 +267,10 @@ pub fn mkpartition<L: Level>(kind: PartitionKind, values: &[L::Value]) -> Partit
     p
 }
 
-pub fn mkpartition_buf<L: Level>(kind: PartitionKind, values: &[L::Value]) -> BytesMut {
+pub fn mkpartition_buf<L: Level>(kind: PartitionKind, values: &[L::Value]) -> BytesMut
+where
+    Partition<L>: OptimizableInner,
+{
     mkpartition::<L>(kind, values)
         .encode_to_bytes()
         .try_into_mut()

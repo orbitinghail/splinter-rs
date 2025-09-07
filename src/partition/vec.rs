@@ -7,7 +7,7 @@ use crate::{
     codec::{Encodable, encoder::Encoder},
     count::{count_runs_sorted, count_unique_sorted},
     level::Level,
-    partition::Partition,
+    partition::{OptimizableInner, Partition},
     segment::SplitSegment,
     traits::{Cut, Merge, PartitionRead, PartitionWrite},
     util::find_next_sorted,
@@ -166,7 +166,10 @@ impl<L: Level> Merge<&[L::ValueUnaligned]> for VecPartition<L> {
     }
 }
 
-impl<L: Level, P: PartitionRead<L>> Cut<P> for VecPartition<L> {
+impl<L: Level, P: PartitionRead<L>> Cut<P> for VecPartition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &P) -> Self::Out {

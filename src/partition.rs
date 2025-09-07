@@ -7,7 +7,7 @@ use num::traits::{AsPrimitive, Bounded};
 use crate::{
     MultiIter,
     codec::{Encodable, encoder::Encoder},
-    level::Level,
+    level::{Block, High, Level, Low, Mid},
     partition::{
         bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
     },
@@ -24,7 +24,10 @@ pub mod vec;
 const TREE_SPARSE_THRESHOLD: f64 = 0.5;
 
 #[derive(Clone, Eq)]
-pub enum Partition<L: Level> {
+pub enum Partition<L: Level>
+where
+    Self: OptimizableInner,
+{
     Full,
     Bitmap(BitmapPartition<L>),
     Vec(VecPartition<L>),
@@ -32,7 +35,73 @@ pub enum Partition<L: Level> {
     Tree(TreePartition<L>),
 }
 
-impl<L: Level> Partition<L> {
+#[doc(hidden)]
+/// The `SwitchKind` trait allows us to specialize `switch_kind` differently for
+/// partitions at different levels. Critically, we need to guarantee that a
+/// `TreePartition` is never created at the Block level, otherwise we could get
+/// a runtime exception. So to avoid this, we manually specialize `switch_kind`
+/// via this Trait on each instance of `Partition<L>` for `L` in `High`, `Mid`, `Low`,
+/// and `Block`. The `Block` level implementation panics if it would be called
+/// with `PartitionKind::Tree`.
+pub trait OptimizableInner {
+    fn optimize_inner(&mut self, full: bool);
+}
+
+macro_rules! impl_optimizable_inner {
+    ($($level:ty $(,)?)+) => {
+        $( impl_optimizable_inner!(@@ $level); )+
+    };
+
+    (@@ Block) => {
+        impl_optimizable_inner!(@@ Block, |self| { unimplemented!() });
+    };
+
+    (@@ $level:ty) => {
+        impl_optimizable_inner!(@@ $level, |self| {
+            Partition::Tree(self.iter().collect())
+        });
+    };
+
+    (@@ $level:ty, |$self:ident| $iftree:block) => {
+        impl OptimizableInner for Partition<$level> {
+            fn optimize_inner(&mut $self, full: bool) {
+                if $self.kind() == kind {
+                    return;
+                }
+
+                *$self = match kind {
+                    PartitionKind::Empty => {
+                        debug_assert_eq!($self.cardinality(), 0, "Partition is not empty");
+                        Partition::default()
+                    }
+                    PartitionKind::Full => {
+                        debug_assert_eq!(
+                            $self.cardinality(),
+                            <$level>::MAX_LEN,
+                            "Partition is not full"
+                        );
+                        Partition::Full
+                    }
+                    PartitionKind::Bitmap => Partition::Bitmap($self.iter().collect()),
+                    PartitionKind::Vec => {
+                        Partition::Vec(VecPartition::from_sorted_unique_unchecked($self.iter()))
+                    }
+                    PartitionKind::Run => {
+                        Partition::Run(RunPartition::from_sorted_unique_unchecked($self.iter()))
+                    }
+                    PartitionKind::Tree => $iftree,
+                }
+            }
+        }
+    };
+}
+
+impl_optimizable_inner!(High, Mid, Low, Block);
+
+impl<L: Level> Partition<L>
+where
+    Self: OptimizableInner,
+{
     pub const EMPTY: Self = Self::Vec(VecPartition::EMPTY);
 
     pub fn kind(&self) -> PartitionKind {
@@ -42,36 +111,6 @@ impl<L: Level> Partition<L> {
             Partition::Vec(_) => PartitionKind::Vec,
             Partition::Run(_) => PartitionKind::Run,
             Partition::Tree(_) => PartitionKind::Tree,
-        }
-    }
-
-    fn switch_kind(&mut self, kind: PartitionKind) {
-        if self.kind() == kind {
-            return;
-        }
-
-        assert!(
-            L::ALLOW_TREE || kind != PartitionKind::Tree,
-            "BUG: Tree partitioning is not allowed at this level"
-        );
-
-        *self = match kind {
-            PartitionKind::Empty => {
-                debug_assert_eq!(self.cardinality(), 0, "Partition is not empty");
-                Partition::default()
-            }
-            PartitionKind::Full => {
-                debug_assert_eq!(self.cardinality(), L::MAX_LEN, "Partition is not full");
-                Partition::Full
-            }
-            PartitionKind::Bitmap => Partition::Bitmap(self.iter().collect()),
-            PartitionKind::Vec => {
-                Partition::Vec(VecPartition::from_sorted_unique_unchecked(self.iter()))
-            }
-            PartitionKind::Run => {
-                Partition::Run(RunPartition::from_sorted_unique_unchecked(self.iter()))
-            }
-            PartitionKind::Tree => Partition::Tree(self.iter().collect()),
         }
     }
 
@@ -190,7 +229,10 @@ impl<L: Level> Partition<L> {
     }
 }
 
-impl<L: Level> Optimizable for Partition<L> {
+impl<L: Level> Optimizable for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn optimize(&mut self) {
         let this = &mut *self;
         let optimized = this.optimize_kind(false);
@@ -202,7 +244,10 @@ impl<L: Level> Optimizable for Partition<L> {
     }
 }
 
-impl<L: Level> Encodable for Partition<L> {
+impl<L: Level> Encodable for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn encoded_size(&self) -> usize {
         if self.is_empty() {
             // PartitionKind::Empty
@@ -249,13 +294,19 @@ impl<L: Level> Encodable for Partition<L> {
     }
 }
 
-impl<L: Level> Default for Partition<L> {
+impl<L: Level> Default for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn default() -> Self {
         Partition::EMPTY
     }
 }
 
-impl<L: Level> Debug for Partition<L> {
+impl<L: Level> Debug for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Partition::Full => write!(f, "Full"),
@@ -267,7 +318,10 @@ impl<L: Level> Debug for Partition<L> {
     }
 }
 
-impl<L: Level> PartitionRead<L> for Partition<L> {
+impl<L: Level> PartitionRead<L> for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn cardinality(&self) -> usize {
         match self {
             Partition::Full => L::MAX_LEN,
@@ -339,7 +393,10 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
     }
 }
 
-impl<L: Level> PartitionWrite<L> for Partition<L> {
+impl<L: Level> PartitionWrite<L> for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn insert(&mut self, value: L::Value) -> bool {
         let inserted = self.raw_insert(value);
         if inserted {
@@ -357,7 +414,10 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
     }
 }
 
-impl<L: Level> FromIterator<L::Value> for Partition<L> {
+impl<L: Level> FromIterator<L::Value> for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn from_iter<I: IntoIterator<Item = L::Value>>(iter: I) -> Self {
         let mut partition = Partition::Vec(iter.into_iter().collect());
         partition.optimize_fast();
@@ -365,7 +425,10 @@ impl<L: Level> FromIterator<L::Value> for Partition<L> {
     }
 }
 
-impl<L: Level> Extend<L::Value> for Partition<L> {
+impl<L: Level> Extend<L::Value> for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
         for el in iter {
             self.raw_insert(el);

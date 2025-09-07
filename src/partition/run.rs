@@ -10,7 +10,7 @@ use crate::{
     codec::{Encodable, encoder::Encoder, runs_ref::RunsRef},
     count::count_unique_sorted,
     level::Level,
-    partition::Partition,
+    partition::{OptimizableInner, Partition},
     segment::SplitSegment,
     traits::{Cut, Merge, PartitionRead, TruncateFrom},
 };
@@ -230,7 +230,10 @@ impl<L: Level> Merge<RunsRef<'_, L>> for RunPartition<L> {
     }
 }
 
-impl<L: Level> Cut for RunPartition<L> {
+impl<L: Level> Cut for RunPartition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &Self) -> Self::Out {
@@ -240,7 +243,10 @@ impl<L: Level> Cut for RunPartition<L> {
     }
 }
 
-impl<L: Level> Cut<RunsRef<'_, L>> for RunPartition<L> {
+impl<L: Level> Cut<RunsRef<'_, L>> for RunPartition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &RunsRef<'_, L>) -> Self::Out {

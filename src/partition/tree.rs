@@ -14,7 +14,7 @@ use crate::{
     },
     count::count_runs_sorted,
     level::Level,
-    partition::Partition,
+    partition::{OptimizableInner, Partition},
     segment::{IterSegmented, Segment, SplitSegment},
     traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
 };
@@ -244,7 +244,10 @@ impl<L: Level> Merge<TreeRef<'_, L>> for TreePartition<L> {
     }
 }
 
-impl<L: Level> Cut for TreePartition<L> {
+impl<L: Level> Cut for TreePartition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &Self) -> Partition<L> {
@@ -266,7 +269,10 @@ impl<L: Level> Cut for TreePartition<L> {
     }
 }
 
-impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L> {
+impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Partition<L>;
 
     fn cut(&mut self, rhs: &TreeRef<'_, L>) -> Self::Out {

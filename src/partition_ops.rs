@@ -2,11 +2,14 @@ use crate::{
     PartitionRead, PartitionWrite,
     codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
     level::Level,
-    partition::Partition,
+    partition::{OptimizableInner, Partition},
     traits::{Cut, Merge},
 };
 
-impl<L: Level> PartialEq for Partition<L> {
+impl<L: Level> PartialEq for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn eq(&self, other: &Partition<L>) -> bool {
         use Partition::*;
 
@@ -27,7 +30,10 @@ impl<L: Level> PartialEq for Partition<L> {
     }
 }
 
-impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L> {
+impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn eq(&self, other: &PartitionRef<'_, L>) -> bool {
         use NonRecursivePartitionRef::*;
         use PartitionRef::*;
@@ -46,7 +52,10 @@ impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L> {
     }
 }
 
-impl<L: Level> Merge for Partition<L> {
+impl<L: Level> Merge for Partition<L>
+where
+    Self: OptimizableInner,
+{
     fn merge(&mut self, rhs: &Self) {
         use Partition::*;
 
@@ -73,7 +82,10 @@ impl<L: Level> Merge for Partition<L> {
     }
 }
 
-impl<L: Level> Merge<PartitionRef<'_, L>> for Partition<L> {
+impl<L: Level> Merge<PartitionRef<'_, L>> for Partition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     fn merge(&mut self, rhs: &PartitionRef<'_, L>) {
         use NonRecursivePartitionRef::*;
         use PartitionRef::*;
@@ -102,7 +114,10 @@ impl<L: Level> Merge<PartitionRef<'_, L>> for Partition<L> {
     }
 }
 
-impl<L: Level> Cut for Partition<L> {
+impl<L: Level> Cut for Partition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Self;
 
     fn cut(&mut self, rhs: &Self) -> Self::Out {
@@ -136,7 +151,10 @@ impl<L: Level> Cut for Partition<L> {
     }
 }
 
-impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L> {
+impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Self;
 
     fn cut(&mut self, rhs: &PartitionRef<'_, L>) -> Self::Out {

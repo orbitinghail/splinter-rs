@@ -1,6 +1,6 @@
 use zerocopy::{KnownLayout, TryFromBytes};
 
-use crate::partition::Partition;
+use crate::partition::{OptimizableInner, Partition};
 
 use crate::level::Level;
 
@@ -19,7 +19,10 @@ pub enum PartitionKind {
 }
 
 impl PartitionKind {
-    pub fn build<L: Level>(self) -> Partition<L> {
+    pub fn build<L: Level>(self) -> Partition<L>
+    where
+        Partition<L>: OptimizableInner,
+    {
         match self {
             PartitionKind::Empty => Partition::EMPTY,
             PartitionKind::Full => Partition::Full,

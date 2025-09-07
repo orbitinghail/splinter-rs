@@ -14,7 +14,7 @@ use crate::{
     codec::{Encodable, encoder::Encoder},
     count::{count_bitmap_runs, count_unique_sorted},
     level::Level,
-    partition::Partition,
+    partition::{OptimizableInner, Partition},
     segment::SplitSegment,
     traits::{Cut, Merge, PartitionRead, PartitionWrite, TruncateFrom},
 };
@@ -179,7 +179,10 @@ where
     }
 }
 
-impl<L: Level> Cut for BitmapPartition<L> {
+impl<L: Level> Cut for BitmapPartition<L>
+where
+    Partition<L>: OptimizableInner,
+{
     type Out = Partition<L>;
 
     #[inline]
@@ -193,6 +196,7 @@ where
     L: Level,
     T: BitStore,
     O: BitOrder,
+    Partition<L>: OptimizableInner,
 {
     type Out = Partition<L>;
 

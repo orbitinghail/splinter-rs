@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait Level: Sized {
+pub trait Level: Sized + private::SealedLevel {
     const DEBUG_NAME: &'static str;
 
     type LevelDown: Level;
@@ -124,4 +124,19 @@ impl Level for Block {
     type ValueUnaligned = u8;
 
     const BITS: usize = 8;
+}
+
+mod private {
+    use crate::{
+        level::{Block, High, Low, Mid},
+        never::Never,
+    };
+
+    pub trait SealedLevel {}
+
+    impl SealedLevel for High {}
+    impl SealedLevel for Mid {}
+    impl SealedLevel for Low {}
+    impl SealedLevel for Block {}
+    impl SealedLevel for Never {}
 }

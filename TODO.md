@@ -1,5 +1,9 @@
 # Feature ideas
 
+## Merge + specialize optimize kind and switch kind to eliminate Never
+
+Goal is to eliminate any code paths (after DCE) that could construct Never.
+
 ## Bench switching Tree partitions to HashMap
 
 Seems like BTreeMap may introduce more pointer chasing than needed. Also tree in tree seems silly.
