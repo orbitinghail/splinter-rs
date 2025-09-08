@@ -292,23 +292,6 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRef<B> {
     }
 }
 
-impl<B: Deref<Target = [u8]>> PartialEq<Splinter> for SplinterRef<B> {
-    #[inline]
-    fn eq(&self, other: &Splinter) -> bool {
-        other == self
-    }
-}
-
-impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<SplinterRef<B2>>
-    for SplinterRef<B>
-{
-    fn eq(&self, other: &SplinterRef<B2>) -> bool {
-        self.load_unchecked() == other.load_unchecked()
-    }
-}
-
-impl<B: Deref<Target = [u8]>> Eq for SplinterRef<B> {}
-
 #[cfg(test)]
 mod test {
     use quickcheck::TestResult;

@@ -18,6 +18,7 @@ pub mod level;
 pub mod splinter;
 pub mod splinter_ops;
 pub mod splinter_ref;
+pub mod splinter_ref_ops;
 pub mod traits;
 
 #[doc(hidden)]
