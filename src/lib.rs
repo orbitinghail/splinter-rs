@@ -16,6 +16,7 @@ pub mod codec;
 pub mod cow;
 pub mod level;
 pub mod splinter;
+pub mod splinter_ops;
 pub mod splinter_ref;
 pub mod traits;
 

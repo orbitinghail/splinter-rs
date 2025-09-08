@@ -83,5 +83,12 @@ pub trait Cut<Rhs = Self> {
 
     /// Returns the intersection between self and other while removing the
     /// intersection from self
+    /// Equivalent to:
+    ///
+    /// ```rust
+    /// let cut = self & rhs;
+    /// self -= cut;
+    /// cut
+    /// ```
     fn cut(&mut self, rhs: &Rhs) -> Self::Out;
 }
