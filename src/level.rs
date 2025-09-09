@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display},
-    ops::BitOrAssign,
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
 };
 
 use ::u24::U24;
@@ -16,11 +16,13 @@ use crate::{
     never::Never,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{
+        Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom,
+    },
 };
 
 #[doc(hidden)]
-pub trait Level: Sized {
+pub trait Level: Sized + Clone + Copy {
     const DEBUG_NAME: &'static str;
 
     type LevelDown: Level;
@@ -30,15 +32,24 @@ pub trait Level: Sized {
         + Optimizable
         + Encodable
         + Default
+        + DefaultFull
         + Debug
         + Clone
         + Eq
         + PartialEq
+        + Complement
         + Cut<Out = Self::Down>
-        + for<'a> BitOrAssign<&'a Self::Down>
+        + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>
         + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
+        + for<'a> BitOrAssign<&'a Self::Down>
         + for<'a> BitOrAssign<&'a PartitionRef<'a, Self::LevelDown>>
-        + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>;
+        + for<'a> BitAndAssign<&'a Self::Down>
+        + for<'a> BitAndAssign<&'a PartitionRef<'a, Self::LevelDown>>
+        + for<'a> BitXorAssign<&'a Self::Down>
+        + for<'a> BitXorAssign<&'a PartitionRef<'a, Self::LevelDown>>
+        + for<'a> SubAssign<&'a Self::Down>
+        + for<'a> SubAssign<&'a PartitionRef<'a, Self::LevelDown>>
+        + for<'a> From<&'a PartitionRef<'a, Self::LevelDown>>;
 
     type Value: num::PrimInt
         + AsPrimitive<usize>

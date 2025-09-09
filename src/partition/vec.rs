@@ -1,15 +1,20 @@
-use std::{fmt::Debug, mem::size_of, ops::BitOrAssign};
+use std::{
+    fmt::Debug,
+    mem::size_of,
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+};
 
 use bytes::BufMut;
-use itertools::Itertools;
+use itertools::{EitherOrBoth, Itertools};
+use range_set_blaze::SortedDisjoint;
 
 use crate::{
     codec::{Encodable, encoder::Encoder},
     count::{count_runs_sorted, count_unique_sorted},
     level::Level,
-    partition::Partition,
+    partition::{Partition, run::MergeRuns},
     segment::SplitSegment,
-    traits::{Cut, PartitionRead, PartitionWrite},
+    traits::{Complement, Cut, PartitionRead, PartitionWrite},
     util::find_next_sorted,
 };
 
@@ -166,6 +171,66 @@ impl<L: Level> BitOrAssign<&[L::ValueUnaligned]> for VecPartition<L> {
     }
 }
 
+impl<L: Level> BitAndAssign<&VecPartition<L>> for VecPartition<L> {
+    fn bitand_assign(&mut self, rhs: &Self) {
+        let mut rhs = rhs.iter().peekable();
+        self.values
+            .retain(|x| find_next_sorted(&mut rhs, x).is_some());
+    }
+}
+
+impl<L: Level> BitAndAssign<&[L::ValueUnaligned]> for VecPartition<L> {
+    fn bitand_assign(&mut self, rhs: &[L::ValueUnaligned]) {
+        let mut rhs = rhs.iter().map(|&v| v.into()).peekable();
+        self.values
+            .retain(|x| find_next_sorted(&mut rhs, x).is_some());
+    }
+}
+
+impl<L: Level> BitXorAssign<&VecPartition<L>> for VecPartition<L> {
+    fn bitxor_assign(&mut self, rhs: &Self) {
+        self.values = self
+            .iter()
+            .merge_join_by(rhs.iter(), L::Value::cmp)
+            .flat_map(|x| match x {
+                EitherOrBoth::Both(_, _) => None,
+                EitherOrBoth::Left(v) => Some(v),
+                EitherOrBoth::Right(v) => Some(v),
+            })
+            .collect()
+    }
+}
+
+impl<L: Level> BitXorAssign<&[L::ValueUnaligned]> for VecPartition<L> {
+    fn bitxor_assign(&mut self, rhs: &[L::ValueUnaligned]) {
+        self.values = self
+            .iter()
+            .merge_join_by(rhs.iter().map(|&v| v.into()), L::Value::cmp)
+            .flat_map(|x| match x {
+                EitherOrBoth::Both(_, _) => None,
+                EitherOrBoth::Left(v) => Some(v),
+                EitherOrBoth::Right(v) => Some(v),
+            })
+            .collect()
+    }
+}
+
+impl<L: Level> SubAssign<&VecPartition<L>> for VecPartition<L> {
+    fn sub_assign(&mut self, rhs: &VecPartition<L>) {
+        let mut rhs = rhs.iter().peekable();
+        self.values
+            .retain(|x| !find_next_sorted(&mut rhs, x).is_some());
+    }
+}
+
+impl<L: Level> SubAssign<&[L::ValueUnaligned]> for VecPartition<L> {
+    fn sub_assign(&mut self, rhs: &[L::ValueUnaligned]) {
+        let mut rhs = rhs.iter().map(|&v| v.into()).peekable();
+        self.values
+            .retain(|x| !find_next_sorted(&mut rhs, x).is_some());
+    }
+}
+
 impl<L: Level, P: PartitionRead<L>> Cut<P> for VecPartition<L> {
     type Out = Partition<L>;
 
@@ -180,6 +245,18 @@ impl<L: Level, P: PartitionRead<L>> Cut<P> for VecPartition<L> {
             intersection.raw_insert(v);
         }
         intersection
+    }
+}
+
+impl<L: Level> Complement for VecPartition<L> {
+    fn complement(&mut self) {
+        let mut values = vec![];
+        for mut range in MergeRuns::new(self.iter()).complement() {
+            while let Some(next) = range_set_blaze::Integer::range_next(&mut range) {
+                values.push(next);
+            }
+        }
+        self.values = values;
     }
 }
 

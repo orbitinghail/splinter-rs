@@ -80,3 +80,12 @@ pub trait Cut<Rhs = Self> {
     /// intersection from self
     fn cut(&mut self, rhs: &Rhs) -> Self::Out;
 }
+
+pub trait DefaultFull {
+    fn full() -> Self;
+}
+
+pub trait Complement {
+    // self = !self
+    fn complement(&mut self);
+}

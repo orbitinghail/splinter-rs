@@ -1,4 +1,4 @@
-use std::ops::BitOrAssign;
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign};
 
 use bytes::BufMut;
 
@@ -6,7 +6,7 @@ use crate::{
     Encodable, PartitionRead, PartitionWrite,
     codec::{encoder::Encoder, partition_ref::PartitionRef},
     level::Level,
-    traits::{Cut, Optimizable},
+    traits::{Complement, Cut, DefaultFull, Optimizable},
 };
 
 /// The Never type is used to terminate the Level tree. It is never constructed
@@ -18,6 +18,12 @@ pub enum Never {}
 impl Default for Never {
     fn default() -> Self {
         unreachable!("Never::default")
+    }
+}
+
+impl DefaultFull for Never {
+    fn full() -> Self {
+        unreachable!("Never::full")
     }
 }
 
@@ -108,6 +114,48 @@ impl<L: Level> BitOrAssign<&PartitionRef<'_, L>> for Never {
     }
 }
 
+impl BitAndAssign<&Never> for Never {
+    fn bitand_assign(&mut self, _rhs: &Never) {
+        unreachable!("Never::bitand_assign")
+    }
+}
+
+impl<L: Level> BitAndAssign<&PartitionRef<'_, L>> for Never {
+    fn bitand_assign(&mut self, _rhs: &PartitionRef<'_, L>) {
+        unreachable!("Never::bitand_assign")
+    }
+}
+
+impl BitXorAssign<&Never> for Never {
+    fn bitxor_assign(&mut self, _rhs: &Never) {
+        unreachable!("Never::bitxor_assign")
+    }
+}
+
+impl<L: Level> BitXorAssign<&PartitionRef<'_, L>> for Never {
+    fn bitxor_assign(&mut self, _rhs: &PartitionRef<'_, L>) {
+        unreachable!("Never::bitxor_assign")
+    }
+}
+
+impl SubAssign<&Never> for Never {
+    fn sub_assign(&mut self, _rhs: &Never) {
+        unreachable!("Never::sub_assign")
+    }
+}
+
+impl<L: Level> SubAssign<&PartitionRef<'_, L>> for Never {
+    fn sub_assign(&mut self, _rhs: &PartitionRef<'_, L>) {
+        unreachable!("Never::sub_assign")
+    }
+}
+
+impl<L: Level> From<&PartitionRef<'_, L>> for Never {
+    fn from(_value: &PartitionRef<'_, L>) -> Self {
+        unreachable!("Never::from")
+    }
+}
+
 impl Cut for Never {
     type Out = Never;
     fn cut(&mut self, _rhs: &Self) -> Self::Out {
@@ -119,5 +167,11 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Never {
     type Out = Never;
     fn cut(&mut self, _rhs: &PartitionRef<'_, L>) -> Self::Out {
         unreachable!("Never::cut")
+    }
+}
+
+impl Complement for Never {
+    fn complement(&mut self) {
+        unreachable!("Never::complement")
     }
 }

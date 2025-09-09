@@ -2,13 +2,13 @@ use std::{
     fmt::Debug,
     iter::FusedIterator,
     mem::size_of,
-    ops::{BitOrAssign, RangeInclusive},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeInclusive, SubAssign},
 };
 
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
 use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
-use range_set_blaze::{CheckSortedDisjoint, Integer, RangeSetBlaze, SortedDisjoint};
+use range_set_blaze::{Integer, RangeSetBlaze, SortedDisjoint, SortedStarts};
 
 use crate::{
     PartitionWrite,
@@ -17,7 +17,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, PartitionRead, TruncateFrom},
+    traits::{Complement, Cut, PartitionRead, TruncateFrom},
 };
 
 pub(crate) trait Run<T> {
@@ -109,7 +109,7 @@ impl<L: Level> RunPartition<L> {
     /// SAFETY: undefined behavior if the iter is not sorted or contains duplicates
     pub fn from_sorted_unique_unchecked(values: impl Iterator<Item = L::Value>) -> Self {
         Self {
-            runs: CheckSortedDisjoint::new(MergeRuns::new(values)).into_range_set_blaze(),
+            runs: MergeRuns::new(values).into_range_set_blaze(),
         }
     }
 
@@ -235,6 +235,42 @@ impl<L: Level> BitOrAssign<&RunsRef<'_, L>> for RunPartition<L> {
     }
 }
 
+impl<L: Level> BitAndAssign<&RunPartition<L>> for RunPartition<L> {
+    fn bitand_assign(&mut self, rhs: &RunPartition<L>) {
+        self.runs = &self.runs & &rhs.runs;
+    }
+}
+
+impl<L: Level> BitAndAssign<&RunsRef<'_, L>> for RunPartition<L> {
+    fn bitand_assign(&mut self, rhs: &RunsRef<'_, L>) {
+        self.runs = (self.runs.ranges() & rhs.ranges()).into_range_set_blaze();
+    }
+}
+
+impl<L: Level> BitXorAssign<&RunPartition<L>> for RunPartition<L> {
+    fn bitxor_assign(&mut self, rhs: &RunPartition<L>) {
+        self.runs = &self.runs ^ &rhs.runs;
+    }
+}
+
+impl<L: Level> BitXorAssign<&RunsRef<'_, L>> for RunPartition<L> {
+    fn bitxor_assign(&mut self, rhs: &RunsRef<'_, L>) {
+        self.runs = (self.runs.ranges() ^ rhs.ranges()).into_range_set_blaze();
+    }
+}
+
+impl<L: Level> SubAssign<&RunPartition<L>> for RunPartition<L> {
+    fn sub_assign(&mut self, rhs: &RunPartition<L>) {
+        self.runs = &self.runs - &rhs.runs;
+    }
+}
+
+impl<L: Level> SubAssign<&RunsRef<'_, L>> for RunPartition<L> {
+    fn sub_assign(&mut self, rhs: &RunsRef<'_, L>) {
+        self.runs = (self.runs.ranges() - rhs.ranges()).into_range_set_blaze();
+    }
+}
+
 impl<L: Level> Cut for RunPartition<L> {
     type Out = Partition<L>;
 
@@ -255,8 +291,22 @@ impl<L: Level> Cut<RunsRef<'_, L>> for RunPartition<L> {
     }
 }
 
+impl<L: Level> Complement for RunPartition<L> {
+    fn complement(&mut self) {
+        self.runs = self.runs.ranges().complement().into_range_set_blaze();
+    }
+}
+
+impl<L: Level> From<RunsRef<'_, L>> for RunPartition<L> {
+    fn from(value: RunsRef<'_, L>) -> Self {
+        Self {
+            runs: value.ranges().into_range_set_blaze(),
+        }
+    }
+}
+
 #[must_use]
-struct MergeRuns<I, T> {
+pub(crate) struct MergeRuns<I, T> {
     inner: I,
     run: Option<(T, T)>,
 }
@@ -266,7 +316,7 @@ where
     T: PrimInt + ConstOne,
     I: Iterator<Item = T>,
 {
-    fn new(mut inner: I) -> Self {
+    pub(crate) fn new(mut inner: I) -> Self {
         let run = inner.next().map(|x| (x, x));
         Self { inner, run }
     }
@@ -300,6 +350,20 @@ where
         }
         self.run.take().map(|(a, b)| a..=b)
     }
+}
+
+impl<I, T> SortedStarts<T> for MergeRuns<I, T>
+where
+    T: PrimInt + ConstOne + range_set_blaze::Integer,
+    I: Iterator<Item = T>,
+{
+}
+
+impl<I, T> SortedDisjoint<T> for MergeRuns<I, T>
+where
+    T: PrimInt + ConstOne + range_set_blaze::Integer,
+    I: Iterator<Item = T>,
+{
 }
 
 #[cfg(test)]

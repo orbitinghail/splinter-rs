@@ -1,4 +1,8 @@
-use std::{fmt::Debug, marker::PhantomData, ops::BitOrAssign};
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+};
 
 use bitvec::{
     bitbox,
@@ -6,6 +10,7 @@ use bitvec::{
     order::{BitOrder, Lsb0},
     slice::BitSlice,
     store::BitStore,
+    vec::BitVec,
 };
 use bytes::BufMut;
 use num::traits::AsPrimitive;
@@ -16,7 +21,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Complement, Cut, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[derive(Clone, Eq)]
@@ -179,6 +184,63 @@ where
     }
 }
 
+impl<L: Level> BitAndAssign<&BitmapPartition<L>> for BitmapPartition<L> {
+    #[inline]
+    fn bitand_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap &= &rhs.bitmap
+    }
+}
+
+impl<L, T, O> BitAndAssign<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn bitand_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap &= rhs
+    }
+}
+
+impl<L: Level> BitXorAssign<&BitmapPartition<L>> for BitmapPartition<L> {
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap ^= &rhs.bitmap
+    }
+}
+
+impl<L, T, O> BitXorAssign<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap ^= rhs
+    }
+}
+
+impl<L: Level> SubAssign<&BitmapPartition<L>> for BitmapPartition<L> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap &= !rhs.bitmap.clone();
+    }
+}
+
+impl<L, T, O> SubAssign<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap &= (!BitBox::from_bitslice(rhs)).as_bitslice()
+    }
+}
+
 impl<L: Level> Cut for BitmapPartition<L> {
     type Out = Partition<L>;
 
@@ -203,6 +265,30 @@ where
             bitmap: intersection,
             _marker: PhantomData,
         })
+    }
+}
+
+impl<L: Level> Complement for BitmapPartition<L> {
+    fn complement(&mut self) {
+        for elem in self.bitmap.as_raw_mut_slice().iter_mut() {
+            elem.store_value(!elem.load_value());
+        }
+    }
+}
+
+impl<L, T, O> From<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    fn from(value: &BitSlice<T, O>) -> Self {
+        let mut bitvec = BitVec::new();
+        bitvec.extend_from_bitslice(value);
+        Self {
+            bitmap: bitvec.into_boxed_bitslice(),
+            _marker: PhantomData,
+        }
     }
 }
 

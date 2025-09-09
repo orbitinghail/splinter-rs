@@ -8,7 +8,7 @@ use crate::{
     MultiIter, PartitionRead,
     codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
     level::{Block, Level},
-    partition::bitmap::BitmapPartition,
+    partition::{Partition, bitmap::BitmapPartition, vec::VecPartition},
     partition_kind::PartitionKind,
     traits::TruncateFrom,
 };
@@ -205,6 +205,21 @@ impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
     }
 }
 
+impl<'a, L: Level> From<NonRecursivePartitionRef<'a, L>> for Partition<L> {
+    fn from(value: NonRecursivePartitionRef<'a, L>) -> Self {
+        use NonRecursivePartitionRef::*;
+        match value {
+            Empty => Partition::default(),
+            Full => Partition::Full,
+            Bitmap { bitmap } => Partition::Bitmap(bitmap.into()),
+            Vec { values } => Partition::Vec(VecPartition::from_sorted_unique_unchecked(
+                values.iter().map(|&v| v.into()),
+            )),
+            Run { runs } => Partition::Run(runs.into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq)]
 #[doc(hidden)]
 pub enum PartitionRef<'a, L: Level> {
@@ -320,6 +335,16 @@ impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
         match self {
             Self::NonRecursive(p) => p.into_iter(),
             Self::Tree(tree_ref) => tree_ref.into_iter(),
+        }
+    }
+}
+
+impl<'a, L: Level> From<PartitionRef<'a, L>> for Partition<L> {
+    fn from(value: PartitionRef<'a, L>) -> Self {
+        use PartitionRef::*;
+        match value {
+            NonRecursive(p) => p.into(),
+            Tree(t) => Partition::Tree(t.into()),
         }
     }
 }

@@ -1,11 +1,13 @@
-use std::ops::BitOrAssign;
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign};
+
+use itertools::{EitherOrBoth, Itertools};
 
 use crate::{
     PartitionRead, PartitionWrite,
     codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
     level::Level,
     partition::Partition,
-    traits::Cut,
+    traits::{Complement, Cut},
 };
 
 impl<L: Level> PartialEq for Partition<L> {
@@ -104,6 +106,128 @@ impl<L: Level> BitOrAssign<&PartitionRef<'_, L>> for Partition<L> {
     }
 }
 
+impl<L: Level> BitAndAssign<&Partition<L>> for Partition<L> {
+    fn bitand_assign(&mut self, rhs: &Partition<L>) {
+        use Partition::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Full, b) => *a = b.clone(),
+            (_, Full) => (),
+
+            // use fast physical ops if both partitions share storage
+            (Bitmap(a), Bitmap(b)) => a.bitand_assign(b),
+            (Vec(a), Vec(b)) => a.bitand_assign(b),
+            (Run(a), Run(b)) => a.bitand_assign(b),
+            (Tree(a), Tree(b)) => a.bitand_assign(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(_) => None,
+                        EitherOrBoth::Right(_) => None,
+                        EitherOrBoth::Both(l, _) => Some(l),
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitAndAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn bitand_assign(&mut self, rhs: &PartitionRef<'_, L>) {
+        use NonRecursivePartitionRef::*;
+        use PartitionRef::*;
+
+        match (&mut *self, rhs) {
+            // special cases for full and empty
+            (a @ Partition::Full, b) => *a = b.into(),
+            (a, NonRecursive(Empty)) => *a = Partition::default(),
+            (_, NonRecursive(Full)) => (),
+
+            // use fast physical ops if both partitions share storage
+            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.bitand_assign(*bitmap),
+            (Partition::Vec(a), NonRecursive(Vec { values })) => a.bitand_assign(*values),
+            (Partition::Run(a), NonRecursive(Run { runs })) => a.bitand_assign(runs),
+            (Partition::Tree(a), Tree(tree)) => a.bitand_assign(tree),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(_) => None,
+                        EitherOrBoth::Right(_) => None,
+                        EitherOrBoth::Both(l, _) => Some(l),
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitXorAssign<&Partition<L>> for Partition<L> {
+    fn bitxor_assign(&mut self, rhs: &Partition<L>) {
+        use Partition::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Full, b) => {
+                *a = b.clone();
+                a.complement();
+            }
+            (a, Full) => a.complement(),
+
+            // use fast physical ops if both partitions share storage
+            (Bitmap(a), Bitmap(b)) => a.bitxor_assign(b),
+            (Vec(a), Vec(b)) => a.bitxor_assign(b),
+            (Run(a), Run(b)) => a.bitxor_assign(b),
+            (Tree(a), Tree(b)) => a.bitxor_assign(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(l) => Some(l),
+                        EitherOrBoth::Right(r) => Some(r),
+                        EitherOrBoth::Both(_, _) => None,
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitXorAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn bitxor_assign(&mut self, rhs: &PartitionRef<'_, L>) {
+        todo!()
+    }
+}
+
+impl<L: Level> SubAssign<&Partition<L>> for Partition<L> {
+    fn sub_assign(&mut self, rhs: &Partition<L>) {
+        todo!()
+    }
+}
+
+impl<L: Level> SubAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn sub_assign(&mut self, rhs: &PartitionRef<'_, L>) {
+        todo!()
+    }
+}
+
 impl<L: Level> Cut for Partition<L> {
     type Out = Self;
 
@@ -173,5 +297,29 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L> {
         self.optimize_fast();
         intersection.optimize_fast();
         intersection
+    }
+}
+
+impl<L: Level> Complement for Partition<L> {
+    fn complement(&mut self) {
+        use Partition::*;
+
+        match &mut *self {
+            p @ Full => {
+                *p = Partition::EMPTY;
+            }
+            Bitmap(p) => p.complement(),
+            Vec(p) => p.complement(),
+            Run(p) => p.complement(),
+            Tree(p) => p.complement(),
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> From<&PartitionRef<'_, L>> for Partition<L> {
+    fn from(value: &PartitionRef<'_, L>) -> Self {
+        value.into()
     }
 }
