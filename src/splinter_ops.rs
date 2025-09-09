@@ -1,6 +1,6 @@
 use std::{
     mem,
-    ops::{BitOrAssign, Deref},
+    ops::{BitOr, BitOrAssign, Deref},
 };
 
 use crate::{CowSplinter, Cut, PartitionRead, Splinter, SplinterRef};
@@ -48,49 +48,110 @@ impl<B: Deref<Target = [u8]>> Cut<CowSplinter<B>> for Splinter {
     }
 }
 
+macro_rules! binary_bitop {
+    ($BitOp:tt, $bitop:ident, $bitassign:path) => {
+        impl $BitOp<Splinter> for Splinter {
+            type Output = Splinter;
+            fn $bitop(mut self, rhs: Splinter) -> Self::Output {
+                $bitassign(&mut self, rhs);
+                self
+            }
+        }
+        impl $BitOp<&Splinter> for Splinter {
+            type Output = Splinter;
+            fn $bitop(mut self, rhs: &Splinter) -> Self::Output {
+                $bitassign(&mut self, rhs);
+                self
+            }
+        }
+        impl $BitOp<Splinter> for &Splinter {
+            type Output = Splinter;
+            fn $bitop(self, mut rhs: Splinter) -> Self::Output {
+                $bitassign(&mut rhs, self);
+                rhs
+            }
+        }
+        impl $BitOp<&Splinter> for &Splinter {
+            type Output = Splinter;
+            fn $bitop(self, rhs: &Splinter) -> Self::Output {
+                self.clone() | rhs
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<SplinterRef<B>> for Splinter {
+            type Output = Splinter;
+            fn $bitop(mut self, rhs: SplinterRef<B>) -> Self::Output {
+                self |= rhs;
+                self
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<SplinterRef<B>> for &Splinter {
+            type Output = Splinter;
+            fn $bitop(self, rhs: SplinterRef<B>) -> Self::Output {
+                self.clone() | rhs
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for Splinter {
+            type Output = Splinter;
+            fn $bitop(mut self, rhs: &SplinterRef<B>) -> Self::Output {
+                self |= rhs;
+                self
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for &Splinter {
+            type Output = Splinter;
+            fn $bitop(self, rhs: &SplinterRef<B>) -> Self::Output {
+                self.clone() | rhs
+            }
+        }
+    };
+}
+
+macro_rules! unary_bitassign {
+    ($BitOpAssign:tt, $bitassign:ident) => {
+        impl $BitOpAssign<&Splinter> for Splinter {
+            fn $bitassign(&mut self, rhs: &Splinter) {
+                $BitOpAssign::$bitassign(self.inner_mut(), rhs.inner())
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOpAssign<SplinterRef<B>> for Splinter {
+            fn $bitassign(&mut self, rhs: SplinterRef<B>) {
+                $BitOpAssign::$bitassign(self.inner_mut(), &rhs.load_unchecked())
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOpAssign<&SplinterRef<B>> for Splinter {
+            fn $bitassign(&mut self, rhs: &SplinterRef<B>) {
+                $BitOpAssign::$bitassign(self.inner_mut(), &rhs.load_unchecked())
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOpAssign<CowSplinter<B>> for Splinter {
+            fn $bitassign(&mut self, rhs: CowSplinter<B>) {
+                match rhs {
+                    CowSplinter::Ref(splinter_ref) => $BitOpAssign::$bitassign(self, splinter_ref),
+                    CowSplinter::Owned(splinter) => $BitOpAssign::$bitassign(self, splinter),
+                }
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOpAssign<&CowSplinter<B>> for Splinter {
+            fn $bitassign(&mut self, rhs: &CowSplinter<B>) {
+                match rhs {
+                    CowSplinter::Ref(splinter_ref) => $BitOpAssign::$bitassign(self, splinter_ref),
+                    CowSplinter::Owned(splinter) => $BitOpAssign::$bitassign(self, splinter),
+                }
+            }
+        }
+    };
+}
+
+binary_bitop!(BitOr, bitor, BitOrAssign::bitor_assign);
+unary_bitassign!(BitOrAssign, bitor_assign);
+
 impl BitOrAssign<Splinter> for Splinter {
     fn bitor_assign(&mut self, mut rhs: Splinter) {
         // merge into the larger set
-        if rhs.cardinality() < self.cardinality() {
+        if rhs.cardinality() > self.cardinality() {
             mem::swap(self, &mut rhs);
         }
         self.inner_mut().bitor_assign(rhs.inner())
-    }
-}
-
-impl BitOrAssign<&Splinter> for Splinter {
-    fn bitor_assign(&mut self, rhs: &Splinter) {
-        self.inner_mut().bitor_assign(rhs.inner())
-    }
-}
-
-impl<B: Deref<Target = [u8]>> BitOrAssign<SplinterRef<B>> for Splinter {
-    fn bitor_assign(&mut self, rhs: SplinterRef<B>) {
-        self.inner_mut().bitor_assign(&rhs.load_unchecked())
-    }
-}
-
-impl<B: Deref<Target = [u8]>> BitOrAssign<&SplinterRef<B>> for Splinter {
-    fn bitor_assign(&mut self, rhs: &SplinterRef<B>) {
-        self.inner_mut().bitor_assign(&rhs.load_unchecked())
-    }
-}
-
-impl<B: Deref<Target = [u8]>> BitOrAssign<CowSplinter<B>> for Splinter {
-    fn bitor_assign(&mut self, rhs: CowSplinter<B>) {
-        match rhs {
-            CowSplinter::Ref(splinter_ref) => self.bitor_assign(splinter_ref),
-            CowSplinter::Owned(splinter) => self.bitor_assign(splinter),
-        }
-    }
-}
-
-impl<B: Deref<Target = [u8]>> BitOrAssign<&CowSplinter<B>> for Splinter {
-    fn bitor_assign(&mut self, rhs: &CowSplinter<B>) {
-        match rhs {
-            CowSplinter::Ref(splinter_ref) => self.bitor_assign(splinter_ref),
-            CowSplinter::Owned(splinter) => self.bitor_assign(splinter),
-        }
     }
 }
 
