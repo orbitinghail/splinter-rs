@@ -71,36 +71,30 @@ macro_rules! binary_bitop {
                 rhs
             }
         }
-        impl $BitOp<&Splinter> for &Splinter {
-            type Output = Splinter;
-            fn $bitop(self, rhs: &Splinter) -> Self::Output {
-                self.clone() | rhs
-            }
-        }
         impl<B: Deref<Target = [u8]>> $BitOp<SplinterRef<B>> for Splinter {
             type Output = Splinter;
             fn $bitop(mut self, rhs: SplinterRef<B>) -> Self::Output {
-                self |= rhs;
+                $bitassign(&mut self, rhs);
+                self
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for Splinter {
+            type Output = Splinter;
+            fn $bitop(mut self, rhs: &SplinterRef<B>) -> Self::Output {
+                $bitassign(&mut self, rhs);
                 self
             }
         }
         impl<B: Deref<Target = [u8]>> $BitOp<SplinterRef<B>> for &Splinter {
             type Output = Splinter;
             fn $bitop(self, rhs: SplinterRef<B>) -> Self::Output {
-                self.clone() | rhs
-            }
-        }
-        impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for Splinter {
-            type Output = Splinter;
-            fn $bitop(mut self, rhs: &SplinterRef<B>) -> Self::Output {
-                self |= rhs;
-                self
+                $BitOp::$bitop(self.clone(), rhs)
             }
         }
         impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for &Splinter {
             type Output = Splinter;
             fn $bitop(self, rhs: &SplinterRef<B>) -> Self::Output {
-                self.clone() | rhs
+                $BitOp::$bitop(self.clone(), rhs)
             }
         }
     };
@@ -144,6 +138,22 @@ macro_rules! unary_bitassign {
 
 binary_bitop!(BitOr, bitor, BitOrAssign::bitor_assign);
 unary_bitassign!(BitOrAssign, bitor_assign);
+
+impl BitOr<&Splinter> for &Splinter {
+    type Output = Splinter;
+    fn bitor(self, rhs: &Splinter) -> Self::Output {
+        // merge into the larger set
+        if rhs.cardinality() > self.cardinality() {
+            let mut result = rhs.clone();
+            result.inner_mut().bitor_assign(self.inner());
+            result
+        } else {
+            let mut result = self.clone();
+            result.inner_mut().bitor_assign(rhs.inner());
+            result
+        }
+    }
+}
 
 impl BitOrAssign<Splinter> for Splinter {
     fn bitor_assign(&mut self, mut rhs: Splinter) {
