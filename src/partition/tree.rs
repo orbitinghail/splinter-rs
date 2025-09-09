@@ -409,8 +409,8 @@ impl<L: Level> Complement for TreePartition<L> {
     }
 }
 
-impl<L: Level> From<TreeRef<'_, L>> for TreePartition<L> {
-    fn from(value: TreeRef<'_, L>) -> Self {
+impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
+    fn from(value: &TreeRef<'_, L>) -> Self {
         let children = value
             .segments()
             .zip(value.children())

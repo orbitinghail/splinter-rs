@@ -191,7 +191,7 @@ impl<B: Deref<Target = [u8]>> SplinterRef<B> {
     /// assert!(decoded.contains(200));
     /// ```
     pub fn decode_to_splinter(&self) -> Splinter {
-        Splinter::new(self.load_unchecked().into())
+        Splinter::new((&self.load_unchecked()).into())
     }
 
     /// Creates a `SplinterRef` from raw bytes, validating the format.

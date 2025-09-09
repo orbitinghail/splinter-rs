@@ -1,6 +1,6 @@
 use std::{
     mem,
-    ops::{BitOr, BitOrAssign, Deref},
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref, Sub, SubAssign},
 };
 
 use crate::{CowSplinter, Cut, PartitionRead, Splinter, SplinterRef};
@@ -139,6 +139,15 @@ macro_rules! unary_bitassign {
 binary_bitop!(BitOr, bitor, BitOrAssign::bitor_assign);
 unary_bitassign!(BitOrAssign, bitor_assign);
 
+binary_bitop!(BitAnd, bitand, BitAndAssign::bitand_assign);
+unary_bitassign!(BitAndAssign, bitand_assign);
+
+binary_bitop!(BitXor, bitxor, BitXorAssign::bitxor_assign);
+unary_bitassign!(BitXorAssign, bitxor_assign);
+
+binary_bitop!(Sub, sub, SubAssign::sub_assign);
+unary_bitassign!(SubAssign, sub_assign);
+
 impl BitOr<&Splinter> for &Splinter {
     type Output = Splinter;
     fn bitor(self, rhs: &Splinter) -> Self::Output {
@@ -165,15 +174,74 @@ impl BitOrAssign<Splinter> for Splinter {
     }
 }
 
+impl BitAnd<&Splinter> for &Splinter {
+    type Output = Splinter;
+    fn bitand(self, rhs: &Splinter) -> Self::Output {
+        // intersect into the smaller set
+        if rhs.cardinality() < self.cardinality() {
+            let mut result = rhs.clone();
+            result.inner_mut().bitand_assign(self.inner());
+            result
+        } else {
+            let mut result = self.clone();
+            result.inner_mut().bitand_assign(rhs.inner());
+            result
+        }
+    }
+}
+
+impl BitAndAssign<Splinter> for Splinter {
+    fn bitand_assign(&mut self, mut rhs: Splinter) {
+        // intersect into the smaller set
+        if rhs.cardinality() < self.cardinality() {
+            mem::swap(self, &mut rhs);
+        }
+        self.inner_mut().bitand_assign(rhs.inner())
+    }
+}
+
+impl BitXor<&Splinter> for &Splinter {
+    type Output = Splinter;
+    fn bitxor(self, rhs: &Splinter) -> Self::Output {
+        let mut result = self.clone();
+        result.inner_mut().bitxor_assign(rhs.inner());
+        result
+    }
+}
+
+impl BitXorAssign<Splinter> for Splinter {
+    fn bitxor_assign(&mut self, rhs: Splinter) {
+        self.inner_mut().bitxor_assign(rhs.inner())
+    }
+}
+
+impl Sub<&Splinter> for &Splinter {
+    type Output = Splinter;
+    fn sub(self, rhs: &Splinter) -> Self::Output {
+        let mut result = self.clone();
+        result.inner_mut().sub_assign(rhs.inner());
+        result
+    }
+}
+
+impl SubAssign<Splinter> for Splinter {
+    fn sub_assign(&mut self, rhs: Splinter) {
+        self.inner_mut().sub_assign(rhs.inner())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{
+        collections::HashSet,
+        ops::{BitOr, BitOrAssign},
+    };
 
     use itertools::Itertools;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 
-    use crate::{Optimizable, Splinter, testutil::mksplinter, traits::Cut};
+    use crate::{Optimizable, PartitionRead, Splinter, testutil::mksplinter, traits::Cut};
 
     #[quickcheck]
     fn test_splinter_equality_quickcheck(values: Vec<u32>) -> TestResult {
@@ -281,5 +349,46 @@ mod tests {
         TestResult::from_bool(
             actual_intersection == expected_intersection && source == expected_remaining,
         )
+    }
+
+    #[quickcheck]
+    fn test_bitor(a: HashSet<u32>, b: HashSet<u32>) -> bool {
+        let expected: Vec<u32> = a.union(&b).copied().collect();
+
+        let a = Splinter::from_iter(a);
+        let b = Splinter::from_iter(b);
+
+        // test all combinations of refs
+        itertools::equal((&a).bitor(&b).iter(), expected.clone());
+        itertools::equal((&a).bitor(b.clone()).iter(), expected.clone());
+        itertools::equal(a.clone().bitor(&b).iter(), expected.clone());
+        itertools::equal(a.clone().bitor(b.clone()).iter(), expected.clone());
+
+        // assignment operator
+        let mut c = a.clone();
+        c.bitor_assign(b.clone());
+        itertools::equal(c.iter(), expected.clone());
+
+        let mut c = a.clone();
+        c.bitor_assign(&b);
+        itertools::equal(c.iter(), expected.clone());
+
+        // against splinter ref
+        let b = b.encode_to_splinter_ref();
+        itertools::equal((&a).bitor(&b).iter(), expected.clone());
+        itertools::equal((&a).bitor(b.clone()).iter(), expected.clone());
+        itertools::equal(a.clone().bitor(&b).iter(), expected.clone());
+        itertools::equal(a.clone().bitor(b.clone()).iter(), expected.clone());
+
+        // assignment operator
+        let mut c = a.clone();
+        c.bitor_assign(b.clone());
+        itertools::equal(c.iter(), expected.clone());
+
+        let mut c = a.clone();
+        c.bitor_assign(&b);
+        itertools::equal(c.iter(), expected.clone());
+
+        true
     }
 }

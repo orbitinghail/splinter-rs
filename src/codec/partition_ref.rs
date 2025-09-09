@@ -205,13 +205,13 @@ impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
     }
 }
 
-impl<'a, L: Level> From<NonRecursivePartitionRef<'a, L>> for Partition<L> {
-    fn from(value: NonRecursivePartitionRef<'a, L>) -> Self {
+impl<'a, L: Level> From<&NonRecursivePartitionRef<'a, L>> for Partition<L> {
+    fn from(value: &NonRecursivePartitionRef<'a, L>) -> Self {
         use NonRecursivePartitionRef::*;
         match value {
-            Empty => Partition::default(),
+            Empty => Partition::EMPTY,
             Full => Partition::Full,
-            Bitmap { bitmap } => Partition::Bitmap(bitmap.into()),
+            Bitmap { bitmap } => Partition::Bitmap((*bitmap).into()),
             Vec { values } => Partition::Vec(VecPartition::from_sorted_unique_unchecked(
                 values.iter().map(|&v| v.into()),
             )),
@@ -335,16 +335,6 @@ impl<'a, L: Level> IntoIterator for PartitionRef<'a, L> {
         match self {
             Self::NonRecursive(p) => p.into_iter(),
             Self::Tree(tree_ref) => tree_ref.into_iter(),
-        }
-    }
-}
-
-impl<'a, L: Level> From<PartitionRef<'a, L>> for Partition<L> {
-    fn from(value: PartitionRef<'a, L>) -> Self {
-        use PartitionRef::*;
-        match value {
-            NonRecursive(p) => p.into(),
-            Tree(t) => Partition::Tree(t.into()),
         }
     }
 }

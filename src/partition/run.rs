@@ -297,8 +297,8 @@ impl<L: Level> Complement for RunPartition<L> {
     }
 }
 
-impl<L: Level> From<RunsRef<'_, L>> for RunPartition<L> {
-    fn from(value: RunsRef<'_, L>) -> Self {
+impl<L: Level> From<&RunsRef<'_, L>> for RunPartition<L> {
+    fn from(value: &RunsRef<'_, L>) -> Self {
         Self {
             runs: value.ranges().into_range_set_blaze(),
         }
