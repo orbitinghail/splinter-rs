@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::BitOrAssign,
+};
 
 use ::u24::U24;
 use num::{
@@ -13,7 +16,7 @@ use crate::{
     never::Never,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Cut, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[doc(hidden)]
@@ -31,10 +34,10 @@ pub trait Level: Sized {
         + Clone
         + Eq
         + PartialEq
-        + Merge
         + Cut<Out = Self::Down>
+        + for<'a> BitOrAssign<&'a Self::Down>
         + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
-        + for<'a> Merge<PartitionRef<'a, Self::LevelDown>>
+        + for<'a> BitOrAssign<&'a PartitionRef<'a, Self::LevelDown>>
         + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>;
 
     type Value: num::PrimInt

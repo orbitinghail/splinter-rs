@@ -1,4 +1,4 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, ops::BitOrAssign};
 
 use bitvec::{
     bitbox,
@@ -16,7 +16,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, Merge, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Cut, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[derive(Clone, Eq)]
@@ -160,22 +160,22 @@ where
     }
 }
 
-impl<L: Level> Merge for BitmapPartition<L> {
+impl<L: Level> BitOrAssign<&BitmapPartition<L>> for BitmapPartition<L> {
     #[inline]
-    fn merge(&mut self, rhs: &Self) {
-        self.bitmap |= rhs.bitmap.as_bitslice()
+    fn bitor_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap |= &rhs.bitmap
     }
 }
 
-impl<L, T, O> Merge<&BitSlice<T, O>> for BitmapPartition<L>
+impl<L, T, O> BitOrAssign<&BitSlice<T, O>> for BitmapPartition<L>
 where
     L: Level,
     T: BitStore,
     O: BitOrder,
 {
     #[inline]
-    fn merge(&mut self, rhs: &&BitSlice<T, O>) {
-        self.bitmap |= *rhs
+    fn bitor_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap |= rhs
     }
 }
 

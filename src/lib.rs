@@ -41,7 +41,7 @@ pub use splinter_ref::SplinterRef;
 #[doc(inline)]
 pub use crate::{
     codec::{DecodeErr, Encodable},
-    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
+    traits::{Cut, Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[cfg(any(test, feature = "testutil"))]

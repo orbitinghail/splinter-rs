@@ -1,4 +1,4 @@
-use std::{fmt::Debug, mem::size_of};
+use std::{fmt::Debug, mem::size_of, ops::BitOrAssign};
 
 use bytes::BufMut;
 use itertools::Itertools;
@@ -9,7 +9,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, Merge, PartitionRead, PartitionWrite},
+    traits::{Cut, PartitionRead, PartitionWrite},
     util::find_next_sorted,
 };
 
@@ -150,14 +150,14 @@ impl<L: Level> PartialEq<&[L::ValueUnaligned]> for VecPartition<L> {
     }
 }
 
-impl<L: Level> Merge for VecPartition<L> {
-    fn merge(&mut self, rhs: &Self) {
+impl<L: Level> BitOrAssign<&VecPartition<L>> for VecPartition<L> {
+    fn bitor_assign(&mut self, rhs: &Self) {
         self.values = self.iter().merge(rhs.iter()).dedup().collect_vec();
     }
 }
 
-impl<L: Level> Merge<&[L::ValueUnaligned]> for VecPartition<L> {
-    fn merge(&mut self, rhs: &&[L::ValueUnaligned]) {
+impl<L: Level> BitOrAssign<&[L::ValueUnaligned]> for VecPartition<L> {
+    fn bitor_assign(&mut self, rhs: &[L::ValueUnaligned]) {
         self.values = self
             .iter()
             .merge(rhs.iter().map(|&v| v.into()))

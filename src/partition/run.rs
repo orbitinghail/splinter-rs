@@ -1,4 +1,9 @@
-use std::{fmt::Debug, iter::FusedIterator, mem::size_of, ops::RangeInclusive};
+use std::{
+    fmt::Debug,
+    iter::FusedIterator,
+    mem::size_of,
+    ops::{BitOrAssign, RangeInclusive},
+};
 
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
@@ -12,7 +17,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, Merge, PartitionRead, TruncateFrom},
+    traits::{Cut, PartitionRead, TruncateFrom},
 };
 
 pub(crate) trait Run<T> {
@@ -216,14 +221,14 @@ impl<L: Level> PartialEq<&RunsRef<'_, L>> for &RunPartition<L> {
     }
 }
 
-impl<L: Level> Merge for RunPartition<L> {
-    fn merge(&mut self, rhs: &Self) {
+impl<L: Level> BitOrAssign<&RunPartition<L>> for RunPartition<L> {
+    fn bitor_assign(&mut self, rhs: &RunPartition<L>) {
         self.runs |= &rhs.runs;
     }
 }
 
-impl<L: Level> Merge<RunsRef<'_, L>> for RunPartition<L> {
-    fn merge(&mut self, rhs: &RunsRef<'_, L>) {
+impl<L: Level> BitOrAssign<&RunsRef<'_, L>> for RunPartition<L> {
+    fn bitor_assign(&mut self, rhs: &RunsRef<'_, L>) {
         for range in rhs.ranges() {
             self.runs.ranges_insert(range);
         }

@@ -1,10 +1,12 @@
+use std::ops::BitOrAssign;
+
 use bytes::BufMut;
 
 use crate::{
     Encodable, PartitionRead, PartitionWrite,
     codec::{encoder::Encoder, partition_ref::PartitionRef},
     level::Level,
-    traits::{Cut, Merge, Optimizable},
+    traits::{Cut, Optimizable},
 };
 
 /// The Never type is used to terminate the Level tree. It is never constructed
@@ -94,15 +96,15 @@ impl<L: Level> PartialEq<PartitionRef<'_, L>> for Never {
     }
 }
 
-impl Merge for Never {
-    fn merge(&mut self, _rhs: &Self) {
-        unreachable!("Never::merge")
+impl BitOrAssign<&Never> for Never {
+    fn bitor_assign(&mut self, _rhs: &Never) {
+        unreachable!("Never::bitor_assign")
     }
 }
 
-impl<L: Level> Merge<PartitionRef<'_, L>> for Never {
-    fn merge(&mut self, _rhs: &PartitionRef<'_, L>) {
-        unreachable!("Never::merge")
+impl<L: Level> BitOrAssign<&PartitionRef<'_, L>> for Never {
+    fn bitor_assign(&mut self, _rhs: &PartitionRef<'_, L>) {
+        unreachable!("Never::bitor_assign")
     }
 }
 

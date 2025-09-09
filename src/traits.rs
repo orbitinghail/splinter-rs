@@ -73,22 +73,10 @@ pub trait Optimizable {
     fn optimize(&mut self);
 }
 
-pub trait Merge<Rhs = Self> {
-    /// Merges rhs into self
-    fn merge(&mut self, rhs: &Rhs);
-}
-
 pub trait Cut<Rhs = Self> {
     type Out;
 
-    /// Returns the intersection between self and other while removing the
+    /// Returns the intersection between self and rhs while removing the
     /// intersection from self
-    /// Equivalent to:
-    ///
-    /// ```rust
-    /// let cut = self & rhs;
-    /// self -= cut;
-    /// cut
-    /// ```
     fn cut(&mut self, rhs: &Rhs) -> Self::Out;
 }

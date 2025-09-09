@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, btree_map::Entry},
     fmt::{self, Debug},
+    ops::BitOrAssign,
 };
 
 use bytes::BufMut;
@@ -16,7 +17,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::{IterSegmented, Segment, SplitSegment},
-    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
+    traits::{Cut, Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, Eq)]
@@ -225,20 +226,26 @@ impl<L: Level> PartialEq<TreeRef<'_, L>> for TreePartition<L> {
     }
 }
 
-impl<L: Level> Merge for TreePartition<L> {
-    fn merge(&mut self, rhs: &Self) {
+impl<L: Level> BitOrAssign<&TreePartition<L>> for TreePartition<L> {
+    fn bitor_assign(&mut self, rhs: &Self) {
         for (&segment, child) in rhs.children.iter() {
-            self.children.entry(segment).or_default().merge(child);
+            self.children
+                .entry(segment)
+                .or_default()
+                .bitor_assign(child);
         }
         self.refresh_cardinality();
     }
 }
 
-impl<L: Level> Merge<TreeRef<'_, L>> for TreePartition<L> {
-    fn merge(&mut self, rhs: &TreeRef<'_, L>) {
+impl<L: Level> BitOrAssign<&TreeRef<'_, L>> for TreePartition<L> {
+    fn bitor_assign(&mut self, rhs: &TreeRef<'_, L>) {
         let zipped = rhs.segments().zip(rhs.children());
         for (segment, child) in zipped {
-            self.children.entry(segment).or_default().merge(&child);
+            self.children
+                .entry(segment)
+                .or_default()
+                .bitor_assign(&child);
         }
         self.refresh_cardinality();
     }

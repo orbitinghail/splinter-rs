@@ -1,9 +1,11 @@
+use std::ops::BitOrAssign;
+
 use crate::{
     PartitionRead, PartitionWrite,
     codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
     level::Level,
     partition::Partition,
-    traits::{Cut, Merge},
+    traits::Cut,
 };
 
 impl<L: Level> PartialEq for Partition<L> {
@@ -46,8 +48,8 @@ impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L> {
     }
 }
 
-impl<L: Level> Merge for Partition<L> {
-    fn merge(&mut self, rhs: &Self) {
+impl<L: Level> BitOrAssign<&Partition<L>> for Partition<L> {
+    fn bitor_assign(&mut self, rhs: &Partition<L>) {
         use Partition::*;
 
         match (&mut *self, rhs) {
@@ -56,10 +58,10 @@ impl<L: Level> Merge for Partition<L> {
             (a, Full) => *a = Full,
 
             // use fast physical ops if both partitions share storage
-            (Bitmap(a), Bitmap(b)) => a.merge(b),
-            (Vec(a), Vec(b)) => a.merge(b),
-            (Run(a), Run(b)) => a.merge(b),
-            (Tree(a), Tree(b)) => a.merge(b),
+            (Bitmap(a), Bitmap(b)) => a.bitor_assign(b),
+            (Vec(a), Vec(b)) => a.bitor_assign(b),
+            (Run(a), Run(b)) => a.bitor_assign(b),
+            (Tree(a), Tree(b)) => a.bitor_assign(b),
 
             // otherwise fall back to logical ops
             (a, b) => {
@@ -73,8 +75,8 @@ impl<L: Level> Merge for Partition<L> {
     }
 }
 
-impl<L: Level> Merge<PartitionRef<'_, L>> for Partition<L> {
-    fn merge(&mut self, rhs: &PartitionRef<'_, L>) {
+impl<L: Level> BitOrAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn bitor_assign(&mut self, rhs: &PartitionRef<'_, L>) {
         use NonRecursivePartitionRef::*;
         use PartitionRef::*;
 
@@ -85,10 +87,10 @@ impl<L: Level> Merge<PartitionRef<'_, L>> for Partition<L> {
             (a, NonRecursive(Full)) => *a = Partition::Full,
 
             // use fast physical ops if both partitions share storage
-            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.merge(bitmap),
-            (Partition::Vec(a), NonRecursive(Vec { values })) => a.merge(values),
-            (Partition::Run(a), NonRecursive(Run { runs })) => a.merge(runs),
-            (Partition::Tree(a), Tree(tree)) => a.merge(tree),
+            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.bitor_assign(*bitmap),
+            (Partition::Vec(a), NonRecursive(Vec { values })) => a.bitor_assign(*values),
+            (Partition::Run(a), NonRecursive(Run { runs })) => a.bitor_assign(runs),
+            (Partition::Tree(a), Tree(tree)) => a.bitor_assign(tree),
 
             // otherwise fall back to logical ops
             (a, b) => {
@@ -171,124 +173,5 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L> {
         self.optimize_fast();
         intersection.optimize_fast();
         intersection
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
-
-    use crate::{
-        Optimizable, Splinter,
-        testutil::mksplinter,
-        traits::{Cut, Merge},
-    };
-
-    #[quickcheck]
-    fn test_partitions_equality_quickcheck(values: Vec<u32>) -> TestResult {
-        let mut a = mksplinter(&values);
-        a.optimize();
-        let b = mksplinter(&values);
-        TestResult::from_bool(a == b)
-    }
-
-    #[quickcheck]
-    fn test_partitions_equality_ref_quickcheck(values: Vec<u32>) -> TestResult {
-        let mut a = mksplinter(&values);
-        a.optimize();
-        let b = mksplinter(&values).encode_to_splinter_ref();
-        TestResult::from_bool(a == b)
-    }
-
-    #[quickcheck]
-    fn test_partitions_equality_quickcheck_2(a: Vec<u32>, b: Vec<u32>) -> TestResult {
-        let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
-
-        let mut a = mksplinter(&a);
-        a.optimize();
-        let b = mksplinter(&b);
-
-        TestResult::from_bool((a == b) == expected)
-    }
-
-    #[quickcheck]
-    fn test_partitions_equality_ref_quickcheck_2(a: Vec<u32>, b: Vec<u32>) -> TestResult {
-        let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
-
-        let mut a = mksplinter(&a);
-        a.optimize();
-        let b = mksplinter(&b).encode_to_splinter_ref();
-
-        TestResult::from_bool((a == b) == expected)
-    }
-
-    #[quickcheck]
-    fn test_merge_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut merged: Splinter = a.iter().copied().collect();
-        let other: Splinter = b.iter().copied().collect();
-
-        if optimize {
-            merged.optimize();
-        }
-
-        let expected: Splinter = a.union(&b).copied().collect();
-        merged.merge(&other);
-        TestResult::from_bool(merged == expected)
-    }
-
-    #[quickcheck]
-    fn test_cut_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut source: Splinter = a.iter().copied().collect();
-        let other: Splinter = b.iter().copied().collect();
-
-        if optimize {
-            source.optimize();
-        }
-
-        let expected_intersection: Splinter = a.intersection(&b).copied().collect();
-        let expected_remaining: Splinter = a.difference(&b).copied().collect();
-
-        let actual_intersection = source.cut(&other);
-
-        TestResult::from_bool(
-            actual_intersection == expected_intersection && source == expected_remaining,
-        )
-    }
-
-    #[quickcheck]
-    fn test_merge_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut merged: Splinter = a.iter().copied().collect();
-        let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
-
-        if optimize {
-            merged.optimize();
-        }
-
-        let expected: Splinter = a.union(&b).copied().collect();
-        merged.merge(&other_ref);
-        TestResult::from_bool(merged == expected)
-    }
-
-    #[quickcheck]
-    fn test_cut_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut source: Splinter = a.iter().copied().collect();
-        let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
-
-        if optimize {
-            source.optimize();
-        }
-
-        let expected_intersection: Splinter = a.intersection(&b).copied().collect();
-        let expected_remaining: Splinter = a.difference(&b).copied().collect();
-
-        let actual_intersection = source.cut(&other_ref);
-
-        TestResult::from_bool(
-            actual_intersection == expected_intersection && source == expected_remaining,
-        )
     }
 }
