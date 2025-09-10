@@ -263,8 +263,7 @@ impl<L: Level> Complement for VecPartition<L> {
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
 
     use crate::{
         level::Block,
@@ -272,18 +271,18 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
-    #[quickcheck]
-    fn test_vec_small_read_quickcheck(set: Vec<u8>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        let partition = VecPartition::<Block>::from_iter(set);
-        test_partition_read(&partition, &expected);
-        TestResult::passed()
-    }
+    proptest! {
+        #[test]
+        fn test_vec_small_read_proptest(set: Vec<u8>)  {
+            let expected = set.iter().copied().sorted().dedup().collect_vec();
+            let partition = VecPartition::<Block>::from_iter(set);
+            test_partition_read(&partition, &expected);
+        }
 
-    #[quickcheck]
-    fn test_vec_small_write_quickcheck(set: Vec<u8>) -> TestResult {
-        let mut partition = VecPartition::<Block>::from_iter(set);
-        test_partition_write(&mut partition);
-        TestResult::passed()
+        #[test]
+        fn test_vec_small_write_proptest(set: Vec<u8>)  {
+            let mut partition = VecPartition::<Block>::from_iter(set);
+            test_partition_write(&mut partition);
+        }
     }
 }

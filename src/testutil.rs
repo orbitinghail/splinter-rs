@@ -6,7 +6,6 @@ use num::{
     CheckedAdd, Saturating,
     traits::{Bounded, ConstOne, ConstZero},
 };
-use quickcheck::Arbitrary;
 use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
 use zerocopy::IntoBytes;
 
@@ -286,19 +285,3 @@ macro_rules! assert_error {
         assert_matches::assert_matches!(($expr).expect_err("expected an error").ctx(), $err $(, $($rest),+)?)
     };
 }
-
-// impl Arbitrary for Splinter {
-//     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-
-//         let choices = [
-//             || Splinter::EMPTY,
-//             || Splinter::from_iter(0..=0),
-//             || Splinter::from_iter(u32::MAX..=u32::MAX),
-
-//             || {
-//                 Splinter
-//             }
-//         ];
-//         g.choose(&choices).unwrap()()
-//     }
-// }

@@ -262,166 +262,167 @@ mod tests {
     };
 
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
 
     use crate::{Optimizable, Splinter, testutil::mksplinter, traits::Cut};
 
     macro_rules! test_bitop {
         ($test_name:ident, $op_method:ident, $op_assign_method:ident, $hashset_method:ident) => {
-            #[quickcheck]
-            fn $test_name(a: HashSet<u32>, b: HashSet<u32>) -> bool {
-                let expected: Splinter = a.$hashset_method(&b).copied().collect();
+            proptest! {
+                #[test]
+                fn $test_name(a: HashSet<u32>, b: HashSet<u32>) {
+                    let expected: Splinter = a.$hashset_method(&b).copied().collect();
 
-                let a = Splinter::from_iter(a);
-                let b = Splinter::from_iter(b);
+                    let a = Splinter::from_iter(a);
+                    let b = Splinter::from_iter(b);
 
-                println!("a={a:?}, b={b:?}");
+                    println!("a={a:?}, b={b:?}");
 
-                // test all combinations of refs
-                assert_eq!((&a).$op_method(&b), expected, "&a, &b");
-                assert_eq!((&a).$op_method(b.clone()), expected, "&a, b");
-                assert_eq!(a.clone().$op_method(&b), expected, "a, &b");
-                assert_eq!(a.clone().$op_method(b.clone()), expected, "a, b");
+                    // test all combinations of refs
+                    assert_eq!((&a).$op_method(&b), expected, "&a, &b");
+                    assert_eq!((&a).$op_method(b.clone()), expected, "&a, b");
+                    assert_eq!(a.clone().$op_method(&b), expected, "a, &b");
+                    assert_eq!(a.clone().$op_method(b.clone()), expected, "a, b");
 
-                // assignment operator
-                let mut c = a.clone();
-                c.$op_assign_method(b.clone());
-                assert_eq!(c, expected, "c assign b");
+                    // assignment operator
+                    let mut c = a.clone();
+                    c.$op_assign_method(b.clone());
+                    assert_eq!(c, expected, "c assign b");
 
-                let mut c = a.clone();
-                c.$op_assign_method(&b);
-                assert_eq!(c, expected, "c assign &b");
+                    let mut c = a.clone();
+                    c.$op_assign_method(&b);
+                    assert_eq!(c, expected, "c assign &b");
 
-                // do it all again but against a splinter ref
-                println!("splinter ref tests");
-                let b = b.encode_to_splinter_ref();
+                    // do it all again but against a splinter ref
+                    println!("splinter ref tests");
+                    let b = b.encode_to_splinter_ref();
 
-                assert_eq!((&a).$op_method(&b), expected, "&a, &b");
-                assert_eq!((&a).$op_method(b.clone()), expected, "&a, b");
-                assert_eq!(a.clone().$op_method(&b), expected, "a, &b");
-                assert_eq!(a.clone().$op_method(b.clone()), expected, "a, b");
+                    assert_eq!((&a).$op_method(&b), expected, "&a, &b");
+                    assert_eq!((&a).$op_method(b.clone()), expected, "&a, b");
+                    assert_eq!(a.clone().$op_method(&b), expected, "a, &b");
+                    assert_eq!(a.clone().$op_method(b.clone()), expected, "a, b");
 
-                // assignment operator
-                let mut c = a.clone();
-                c.$op_assign_method(b.clone());
-                assert_eq!(c, expected, "c assign b");
+                    // assignment operator
+                    let mut c = a.clone();
+                    c.$op_assign_method(b.clone());
+                    assert_eq!(c, expected, "c assign b");
 
-                let mut c = a.clone();
-                c.$op_assign_method(&b);
-                assert_eq!(c, expected, "c assign &b");
-
-                true
+                    let mut c = a.clone();
+                    c.$op_assign_method(&b);
+                    assert_eq!(c, expected, "c assign &b");
+                }
             }
         };
     }
 
-    #[quickcheck]
-    fn test_splinter_equality_quickcheck(values: Vec<u32>) -> TestResult {
-        let mut a = mksplinter(&values);
-        a.optimize();
-        let b = mksplinter(&values);
-        TestResult::from_bool(a == b)
-    }
-
-    #[quickcheck]
-    fn test_splinter_equality_ref_quickcheck(values: Vec<u32>) -> TestResult {
-        let mut a = mksplinter(&values);
-        a.optimize();
-        let b = mksplinter(&values).encode_to_splinter_ref();
-        TestResult::from_bool(a == b)
-    }
-
-    #[quickcheck]
-    fn test_splinter_equality_quickcheck_2(a: Vec<u32>, b: Vec<u32>) -> TestResult {
-        let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
-
-        let mut a = mksplinter(&a);
-        a.optimize();
-        let b = mksplinter(&b);
-
-        TestResult::from_bool((a == b) == expected)
-    }
-
-    #[quickcheck]
-    fn test_splinter_equality_ref_quickcheck_2(a: Vec<u32>, b: Vec<u32>) -> TestResult {
-        let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
-
-        let mut a = mksplinter(&a);
-        a.optimize();
-        let b = mksplinter(&b).encode_to_splinter_ref();
-
-        TestResult::from_bool((a == b) == expected)
-    }
-
-    #[quickcheck]
-    fn test_bitor_assign_quickcheck(
-        optimize: bool,
-        a: HashSet<u32>,
-        b: HashSet<u32>,
-    ) -> TestResult {
-        let mut set: Splinter = a.iter().copied().collect();
-        let other: Splinter = b.iter().copied().collect();
-
-        if optimize {
-            set.optimize();
+    proptest! {
+        #[test]
+        fn test_splinter_equality_proptest(values: Vec<u32>) {
+            let mut a = mksplinter(&values);
+            a.optimize();
+            let b = mksplinter(&values);
+            assert!(a == b)
         }
 
-        let expected: Splinter = a.union(&b).copied().collect();
-        set |= other;
-        TestResult::from_bool(set == expected)
-    }
-
-    #[quickcheck]
-    fn test_cut_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut source: Splinter = a.iter().copied().collect();
-        let other: Splinter = b.iter().copied().collect();
-
-        if optimize {
-            source.optimize();
+        #[test]
+        fn test_splinter_equality_ref_proptest(values: Vec<u32>) {
+            let mut a = mksplinter(&values);
+            a.optimize();
+            let b = mksplinter(&values).encode_to_splinter_ref();
+            assert!(a == b)
         }
 
-        let expected_intersection: Splinter = a.intersection(&b).copied().collect();
-        let expected_remaining: Splinter = a.difference(&b).copied().collect();
+        #[test]
+        fn test_splinter_equality_proptest_2(a: Vec<u32>, b: Vec<u32>) {
+            let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
 
-        let actual_intersection = source.cut(&other);
+            let mut a = mksplinter(&a);
+            a.optimize();
+            let b = mksplinter(&b);
 
-        TestResult::from_bool(
-            actual_intersection == expected_intersection && source == expected_remaining,
-        )
-    }
-
-    #[quickcheck]
-    fn test_bitor_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut set: Splinter = a.iter().copied().collect();
-        let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
-
-        if optimize {
-            set.optimize();
+            assert!((a == b) == expected)
         }
 
-        let expected: Splinter = a.union(&b).copied().collect();
-        set |= other_ref;
-        TestResult::from_bool(set == expected)
-    }
+        #[test]
+        fn test_splinter_equality_ref_proptest_2(a: Vec<u32>, b: Vec<u32>) {
+            let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
 
-    #[quickcheck]
-    fn test_cut_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut source: Splinter = a.iter().copied().collect();
-        let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
+            let mut a = mksplinter(&a);
+            a.optimize();
+            let b = mksplinter(&b).encode_to_splinter_ref();
 
-        if optimize {
-            source.optimize();
+            assert!((a == b) == expected)
         }
 
-        let expected_intersection: Splinter = a.intersection(&b).copied().collect();
-        let expected_remaining: Splinter = a.difference(&b).copied().collect();
+        #[test]
+        fn test_bitor_assign_proptest(
+            optimize: bool,
+            a: HashSet<u32>,
+            b: HashSet<u32>,
+        ) {
+            let mut set: Splinter = a.iter().copied().collect();
+            let other: Splinter = b.iter().copied().collect();
 
-        let actual_intersection = source.cut(&other_ref);
+            if optimize {
+                set.optimize();
+            }
 
-        TestResult::from_bool(
-            actual_intersection == expected_intersection && source == expected_remaining,
-        )
+            let expected: Splinter = a.union(&b).copied().collect();
+            set |= other;
+            assert!(set == expected)
+        }
+
+        #[test]
+        fn test_cut_proptest(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) {
+            let mut source: Splinter = a.iter().copied().collect();
+            let other: Splinter = b.iter().copied().collect();
+
+            if optimize {
+                source.optimize();
+            }
+
+            let expected_intersection: Splinter = a.intersection(&b).copied().collect();
+            let expected_remaining: Splinter = a.difference(&b).copied().collect();
+
+            let actual_intersection = source.cut(&other);
+
+            assert!(
+                actual_intersection == expected_intersection && source == expected_remaining,
+            )
+        }
+
+        #[test]
+        fn test_bitor_ref_proptest(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) {
+            let mut set: Splinter = a.iter().copied().collect();
+            let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
+
+            if optimize {
+                set.optimize();
+            }
+
+            let expected: Splinter = a.union(&b).copied().collect();
+            set |= other_ref;
+            assert!(set == expected)
+        }
+
+        #[test]
+        fn test_cut_ref_proptest(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) {
+            let mut source: Splinter = a.iter().copied().collect();
+            let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
+
+            if optimize {
+                source.optimize();
+            }
+
+            let expected_intersection: Splinter = a.intersection(&b).copied().collect();
+            let expected_remaining: Splinter = a.difference(&b).copied().collect();
+
+            let actual_intersection = source.cut(&other_ref);
+
+            assert!(
+                actual_intersection == expected_intersection && source == expected_remaining,
+            )
+        }
     }
 
     test_bitop!(test_bitor, bitor, bitor_assign, union);

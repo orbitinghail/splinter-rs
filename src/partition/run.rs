@@ -368,8 +368,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+
+    use proptest::proptest;
 
     use crate::{
         level::Block,
@@ -409,18 +409,18 @@ mod tests {
         itertools::assert_equal(merged, [1..=3, 5..=5, 7..=8, 10..=10]);
     }
 
-    #[quickcheck]
-    fn test_run_small_read_quickcheck(set: Vec<u8>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        let partition = RunPartition::<Block>::from_iter(set);
-        test_partition_read(&partition, &expected);
-        TestResult::passed()
-    }
+    proptest! {
+        #[test]
+        fn test_run_small_read_proptest(set: Vec<u8>) {
+            let expected = set.iter().copied().sorted().dedup().collect_vec();
+            let partition = RunPartition::<Block>::from_iter(set);
+            test_partition_read(&partition, &expected);
+        }
 
-    #[quickcheck]
-    fn test_run_small_write_quickcheck(set: Vec<u8>) -> TestResult {
-        let mut partition = RunPartition::<Block>::from_iter(set);
-        test_partition_write(&mut partition);
-        TestResult::passed()
+        #[test]
+        fn test_run_small_write_proptest(set: Vec<u8>) {
+            let mut partition = RunPartition::<Block>::from_iter(set);
+            test_partition_write(&mut partition);
+        }
     }
 }

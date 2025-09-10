@@ -347,8 +347,7 @@ mod tests {
         traits::Optimizable,
     };
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
     use roaring::RoaringBitmap;
 
     #[test]
@@ -392,40 +391,40 @@ mod tests {
         itertools::assert_equal(splinter.iter(), set.into_iter());
     }
 
-    #[quickcheck]
-    fn test_splinter_read_quickcheck(set: Vec<u32>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        test_partition_read(&Splinter::from_iter(set), &expected);
-        TestResult::passed()
-    }
-
-    #[quickcheck]
-    fn test_splinter_write_quickcheck(set: Vec<u32>) -> TestResult {
-        let mut splinter = Splinter::from_iter(set);
-        test_partition_write(&mut splinter);
-        TestResult::passed()
-    }
-
-    #[quickcheck]
-    fn test_splinter_quickcheck(set: Vec<u32>) -> bool {
-        let splinter = mksplinter(&set);
-        if set.is_empty() {
-            !splinter.contains(123)
-        } else {
-            let lookup = set[set.len() / 3];
-            splinter.contains(lookup)
+    proptest! {
+        #[test]
+        fn test_splinter_read_proptest(set: Vec<u32>) {
+            let expected = set.iter().copied().sorted().dedup().collect_vec();
+            test_partition_read(&Splinter::from_iter(set), &expected);
         }
-    }
 
-    #[quickcheck]
-    fn test_splinter_opt_quickcheck(set: Vec<u32>) -> bool {
-        let mut splinter = mksplinter(&set);
-        splinter.optimize();
-        if set.is_empty() {
-            !splinter.contains(123)
-        } else {
-            let lookup = set[set.len() / 3];
-            splinter.contains(lookup)
+        #[test]
+        fn test_splinter_write_proptest(set: Vec<u32>) {
+            let mut splinter = Splinter::from_iter(set);
+            test_partition_write(&mut splinter);
+        }
+
+        #[test]
+        fn test_splinter_proptest(set: Vec<u32>) {
+            let splinter = mksplinter(&set);
+            if set.is_empty() {
+                assert!(!splinter.contains(123));
+            } else {
+                let lookup = set[set.len() / 3];
+                assert!(splinter.contains(lookup));
+            }
+        }
+
+        #[test]
+        fn test_splinter_opt_proptest(set: Vec<u32>)  {
+            let mut splinter = mksplinter(&set);
+            splinter.optimize();
+            if set.is_empty() {
+                assert!(!splinter.contains(123));
+            } else {
+                let lookup = set[set.len() / 3];
+                assert!(splinter.contains(lookup));
+            }
         }
     }
 

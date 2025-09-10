@@ -429,8 +429,7 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
 
     use crate::{
         level::Low,
@@ -438,18 +437,18 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
-    #[quickcheck]
-    fn test_tree_small_read_quickcheck(set: Vec<u16>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        let partition = TreePartition::<Low>::from_iter(set);
-        test_partition_read(&partition, &expected);
-        TestResult::passed()
-    }
+    proptest! {
+        #[test]
+        fn test_tree_small_read_proptest(set: Vec<u16>)  {
+            let expected = set.iter().copied().sorted().dedup().collect_vec();
+            let partition = TreePartition::<Low>::from_iter(set);
+            test_partition_read(&partition, &expected);
+        }
 
-    #[quickcheck]
-    fn test_tree_small_write_quickcheck(set: Vec<u16>) -> TestResult {
-        let mut partition = TreePartition::<Low>::from_iter(set);
-        test_partition_write(&mut partition);
-        TestResult::passed()
+        #[test]
+        fn test_tree_small_write_proptest(set: Vec<u16>)  {
+            let mut partition = TreePartition::<Low>::from_iter(set);
+            test_partition_write(&mut partition);
+        }
     }
 }
