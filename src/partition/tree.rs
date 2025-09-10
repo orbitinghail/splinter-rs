@@ -1,10 +1,12 @@
 use std::{
     collections::{BTreeMap, btree_map::Entry},
     fmt::{self, Debug},
+    marker::PhantomData,
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
 };
 
 use bytes::BufMut;
-use itertools::{FoldWhile, Itertools};
+use itertools::{EitherOrBoth, FoldWhile, Itertools};
 
 use crate::{
     codec::{
@@ -16,7 +18,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::{IterSegmented, Segment, SplitSegment},
-    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
+    traits::{Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[derive(Clone, Eq)]
@@ -225,21 +227,120 @@ impl<L: Level> PartialEq<TreeRef<'_, L>> for TreePartition<L> {
     }
 }
 
-impl<L: Level> Merge for TreePartition<L> {
-    fn merge(&mut self, rhs: &Self) {
+impl<L: Level> BitOrAssign<&TreePartition<L>> for TreePartition<L> {
+    fn bitor_assign(&mut self, rhs: &Self) {
         for (&segment, child) in rhs.children.iter() {
-            self.children.entry(segment).or_default().merge(child);
+            self.children
+                .entry(segment)
+                .or_default()
+                .bitor_assign(child);
         }
         self.refresh_cardinality();
     }
 }
 
-impl<L: Level> Merge<TreeRef<'_, L>> for TreePartition<L> {
-    fn merge(&mut self, rhs: &TreeRef<'_, L>) {
+impl<L: Level> BitOrAssign<&TreeRef<'_, L>> for TreePartition<L> {
+    fn bitor_assign(&mut self, rhs: &TreeRef<'_, L>) {
         let zipped = rhs.segments().zip(rhs.children());
         for (segment, child) in zipped {
-            self.children.entry(segment).or_default().merge(&child);
+            self.children
+                .entry(segment)
+                .or_default()
+                .bitor_assign(&child);
         }
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> BitAndAssign<&TreePartition<L>> for TreePartition<L> {
+    fn bitand_assign(&mut self, rhs: &Self) {
+        self.children.retain(|segment, child| {
+            if let Some(rhs_child) = rhs.children.get(segment) {
+                child.bitand_assign(rhs_child);
+                !child.is_empty()
+            } else {
+                false
+            }
+        });
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> BitAndAssign<&TreeRef<'_, L>> for TreePartition<L> {
+    fn bitand_assign(&mut self, rhs: &TreeRef<'_, L>) {
+        self.children.retain(|&segment, child| {
+            if let Some(rhs_child) = rhs.load_child_at_segment(segment) {
+                child.bitand_assign(&rhs_child);
+                !child.is_empty()
+            } else {
+                false
+            }
+        });
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> BitXorAssign<&TreePartition<L>> for TreePartition<L> {
+    fn bitxor_assign(&mut self, rhs: &Self) {
+        self.children = std::mem::take(&mut self.children)
+            .into_iter()
+            .merge_join_by(rhs.children.iter(), |(l, _), (r, _)| l.cmp(r))
+            .flat_map(|x| match x {
+                EitherOrBoth::Both((s, mut l), (_, r)) => {
+                    l.bitxor_assign(r);
+                    (!l.is_empty()).then_some((s, l))
+                }
+                EitherOrBoth::Left(l) => Some(l),
+                EitherOrBoth::Right((&s, r)) => Some((s, r.clone())),
+            })
+            .collect();
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> BitXorAssign<&TreeRef<'_, L>> for TreePartition<L> {
+    fn bitxor_assign(&mut self, rhs: &TreeRef<'_, L>) {
+        let zipped = rhs.segments().zip(rhs.children());
+        self.children = std::mem::take(&mut self.children)
+            .into_iter()
+            .merge_join_by(zipped, |(l, _), (r, _)| l.cmp(r))
+            .flat_map(|x| match x {
+                EitherOrBoth::Both((s, mut l), (_, r)) => {
+                    l.bitxor_assign(&r);
+                    (!l.is_empty()).then_some((s, l))
+                }
+                EitherOrBoth::Left(l) => Some(l),
+                EitherOrBoth::Right((s, r)) => Some((s, L::Down::from(&r))),
+            })
+            .collect();
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> SubAssign<&TreePartition<L>> for TreePartition<L> {
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.children.retain(|segment, child| {
+            if let Some(rhs_child) = rhs.children.get(segment) {
+                child.sub_assign(rhs_child);
+                !child.is_empty()
+            } else {
+                true
+            }
+        });
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> SubAssign<&TreeRef<'_, L>> for TreePartition<L> {
+    fn sub_assign(&mut self, rhs: &TreeRef<'_, L>) {
+        self.children.retain(|&segment, child| {
+            if let Some(rhs_child) = rhs.load_child_at_segment(segment) {
+                child.sub_assign(&rhs_child);
+                !child.is_empty()
+            } else {
+                true
+            }
+        });
         self.refresh_cardinality();
     }
 }
@@ -250,14 +351,17 @@ impl<L: Level> Cut for TreePartition<L> {
     fn cut(&mut self, rhs: &Self) -> Partition<L> {
         let mut intersection = Self::default();
 
-        for (segment, child) in self.children.iter_mut() {
-            if let Some(other) = rhs.children.get(segment) {
-                intersection.children.insert(*segment, child.cut(other));
+        self.children.retain(|&segment, child| {
+            if let Some(other) = rhs.children.get(&segment) {
+                let child_intersection = child.cut(other);
+                if !child_intersection.is_empty() {
+                    intersection.children.insert(segment, child_intersection);
+                }
+                !child.is_empty()
+            } else {
+                true
             }
-        }
-
-        // remove empty children
-        self.children.retain(|_, c| !c.is_empty());
+        });
 
         self.refresh_cardinality();
         intersection.refresh_cardinality();
@@ -275,7 +379,10 @@ impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L> {
 
         for (segment, other) in zipped {
             if let Some(child) = self.children.get_mut(&segment) {
-                intersection.children.insert(segment, child.cut(&other));
+                let child_intersection = child.cut(&other);
+                if !child_intersection.is_empty() {
+                    intersection.children.insert(segment, child_intersection);
+                }
             }
         }
 
@@ -289,11 +396,48 @@ impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L> {
     }
 }
 
+impl<L: Level> Complement for TreePartition<L> {
+    fn complement(&mut self) {
+        for segment in 0..=Segment::MAX {
+            match self.children.entry(segment) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(L::Down::full());
+                }
+                Entry::Occupied(mut child) => {
+                    child.get_mut().complement();
+                    if child.get().is_empty() {
+                        child.remove();
+                    }
+                }
+            }
+        }
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
+    fn from(value: &TreeRef<'_, L>) -> Self {
+        let children = value
+            .segments()
+            .zip(value.children())
+            .map(|(s, c)| (s, L::Down::from(&c)))
+            .collect();
+        let mut partition = TreePartition {
+            children,
+            cardinality: 0,
+            _marker: PhantomData,
+        };
+        partition.refresh_cardinality();
+        partition
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
 
     use crate::{
         level::Low,
@@ -301,18 +445,18 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
-    #[quickcheck]
-    fn test_tree_small_read_quickcheck(set: Vec<u16>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        let partition = TreePartition::<Low>::from_iter(set);
-        test_partition_read(&partition, &expected);
-        TestResult::passed()
-    }
+    proptest! {
+        #[test]
+        fn test_tree_small_read_proptest(set: HashSet<u16>)  {
+            let expected = set.iter().copied().sorted().collect_vec();
+            let partition = TreePartition::<Low>::from_iter(set);
+            test_partition_read(&partition, &expected);
+        }
 
-    #[quickcheck]
-    fn test_tree_small_write_quickcheck(set: Vec<u16>) -> TestResult {
-        let mut partition = TreePartition::<Low>::from_iter(set);
-        test_partition_write(&mut partition);
-        TestResult::passed()
+        #[test]
+        fn test_tree_small_write_proptest(set: HashSet<u16>)  {
+            let mut partition = TreePartition::<Low>::from_iter(set);
+            test_partition_write(&mut partition);
+        }
     }
 }

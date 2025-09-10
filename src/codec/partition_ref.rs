@@ -8,7 +8,7 @@ use crate::{
     MultiIter, PartitionRead,
     codec::{DecodeErr, runs_ref::RunsRef, tree_ref::TreeRef},
     level::{Block, Level},
-    partition::bitmap::BitmapPartition,
+    partition::{Partition, bitmap::BitmapPartition, vec::VecPartition},
     partition_kind::PartitionKind,
     traits::TruncateFrom,
 };
@@ -195,12 +195,34 @@ impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
     fn eq(&self, other: &Self) -> bool {
         use NonRecursivePartitionRef::*;
         match (self, other) {
+            // use fast physical ops if both partitions share storage
             (Bitmap { bitmap: l }, Bitmap { bitmap: r }) => l == r,
             (Vec { values: l }, Vec { values: r }) => l == r,
             (Run { runs: l }, Run { runs: r }) => l == r,
             (Empty, Empty) => true,
             (Full, Full) => true,
-            _ => false,
+
+            // special case empty
+            (Empty, b) => b.is_empty(),
+            (a, Empty) => a.is_empty(),
+
+            // otherwise fall back to logical ops
+            (a, b) => itertools::equal(a.iter(), b.iter()),
+        }
+    }
+}
+
+impl<'a, L: Level> From<&NonRecursivePartitionRef<'a, L>> for Partition<L> {
+    fn from(value: &NonRecursivePartitionRef<'a, L>) -> Self {
+        use NonRecursivePartitionRef::*;
+        match value {
+            Empty => Partition::EMPTY,
+            Full => Partition::Full,
+            Bitmap { bitmap } => Partition::Bitmap((*bitmap).into()),
+            Vec { values } => Partition::Vec(VecPartition::from_sorted_unique_unchecked(
+                values.iter().map(|&v| v.into()),
+            )),
+            Run { runs } => Partition::Run(runs.into()),
         }
     }
 }
@@ -286,9 +308,12 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
 impl<'a, L: Level> PartialEq for PartitionRef<'a, L> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            // use fast physical ops if both partitions share storage
             (Self::NonRecursive(l0), Self::NonRecursive(r0)) => l0 == r0,
             (Self::Tree(l0), Self::Tree(r0)) => l0 == r0,
-            _ => false,
+
+            // otherwise fall back to logical ops
+            (a, b) => itertools::equal(a.iter(), b.iter()),
         }
     }
 }

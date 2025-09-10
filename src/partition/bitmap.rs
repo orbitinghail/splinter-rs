@@ -1,4 +1,8 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+};
 
 use bitvec::{
     bitbox,
@@ -6,6 +10,7 @@ use bitvec::{
     order::{BitOrder, Lsb0},
     slice::BitSlice,
     store::BitStore,
+    vec::BitVec,
 };
 use bytes::BufMut;
 use num::traits::AsPrimitive;
@@ -16,7 +21,7 @@ use crate::{
     level::Level,
     partition::Partition,
     segment::SplitSegment,
-    traits::{Cut, Merge, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{Complement, Cut, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 #[derive(Clone, Eq)]
@@ -160,22 +165,79 @@ where
     }
 }
 
-impl<L: Level> Merge for BitmapPartition<L> {
+impl<L: Level> BitOrAssign<&BitmapPartition<L>> for BitmapPartition<L> {
     #[inline]
-    fn merge(&mut self, rhs: &Self) {
-        self.bitmap |= rhs.bitmap.as_bitslice()
+    fn bitor_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap |= &rhs.bitmap
     }
 }
 
-impl<L, T, O> Merge<&BitSlice<T, O>> for BitmapPartition<L>
+impl<L, T, O> BitOrAssign<&BitSlice<T, O>> for BitmapPartition<L>
 where
     L: Level,
     T: BitStore,
     O: BitOrder,
 {
     #[inline]
-    fn merge(&mut self, rhs: &&BitSlice<T, O>) {
-        self.bitmap |= *rhs
+    fn bitor_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap |= rhs
+    }
+}
+
+impl<L: Level> BitAndAssign<&BitmapPartition<L>> for BitmapPartition<L> {
+    #[inline]
+    fn bitand_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap &= &rhs.bitmap
+    }
+}
+
+impl<L, T, O> BitAndAssign<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn bitand_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap &= rhs
+    }
+}
+
+impl<L: Level> BitXorAssign<&BitmapPartition<L>> for BitmapPartition<L> {
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap ^= &rhs.bitmap
+    }
+}
+
+impl<L, T, O> BitXorAssign<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap ^= rhs
+    }
+}
+
+impl<L: Level> SubAssign<&BitmapPartition<L>> for BitmapPartition<L> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: &BitmapPartition<L>) {
+        self.bitmap &= !rhs.bitmap.clone();
+    }
+}
+
+impl<L, T, O> SubAssign<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: &BitSlice<T, O>) {
+        self.bitmap &= (!BitBox::from_bitslice(rhs)).as_bitslice()
     }
 }
 
@@ -206,11 +268,36 @@ where
     }
 }
 
+impl<L: Level> Complement for BitmapPartition<L> {
+    fn complement(&mut self) {
+        for elem in self.bitmap.as_raw_mut_slice().iter_mut() {
+            elem.store_value(!elem.load_value());
+        }
+    }
+}
+
+impl<L, T, O> From<&BitSlice<T, O>> for BitmapPartition<L>
+where
+    L: Level,
+    T: BitStore,
+    O: BitOrder,
+{
+    fn from(value: &BitSlice<T, O>) -> Self {
+        let mut bitvec = BitVec::new();
+        bitvec.extend_from_bitslice(value);
+        Self {
+            bitmap: bitvec.into_boxed_bitslice(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
 
     use crate::{
         level::Block,
@@ -218,18 +305,18 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
-    #[quickcheck]
-    fn test_bitmap_small_read_quickcheck(set: Vec<u8>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        let partition = BitmapPartition::<Block>::from_iter(set);
-        test_partition_read(&partition, &expected);
-        TestResult::passed()
-    }
+    proptest! {
+        #[test]
+        fn test_bitmap_small_read_proptest(set: HashSet<u8>) {
+            let expected = set.iter().copied().sorted().collect_vec();
+            let partition = BitmapPartition::<Block>::from_iter(set);
+            test_partition_read(&partition, &expected);
+        }
 
-    #[quickcheck]
-    fn test_bitmap_small_write_quickcheck(set: Vec<u8>) -> TestResult {
-        let mut partition = BitmapPartition::<Block>::from_iter(set);
-        test_partition_write(&mut partition);
-        TestResult::passed()
+        #[test]
+        fn test_bitmap_small_write_proptest(set: HashSet<u8>) {
+            let mut partition = BitmapPartition::<Block>::from_iter(set);
+            test_partition_write(&mut partition);
+        }
     }
 }

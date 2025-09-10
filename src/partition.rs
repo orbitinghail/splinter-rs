@@ -12,7 +12,7 @@ use crate::{
         bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
     },
     partition_kind::PartitionKind,
-    traits::{Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    traits::{DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
 pub mod bitmap;
@@ -187,6 +187,13 @@ impl<L: Level> Partition<L> {
             Partition::Run(partition) => partition.remove(value),
             Partition::Tree(partition) => partition.remove(value),
         }
+    }
+}
+
+impl<L: Level> DefaultFull for Partition<L> {
+    #[inline]
+    fn full() -> Self {
+        Self::Full
     }
 }
 

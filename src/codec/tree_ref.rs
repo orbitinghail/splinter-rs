@@ -63,6 +63,18 @@ impl<'a, L: Level> TreeRef<'a, L> {
         PartitionRef::from_suffix(&self.children[..offset]).unwrap()
     }
 
+    pub(crate) fn load_child_at_segment(
+        &self,
+        segment: Segment,
+    ) -> Option<PartitionRef<'a, L::LevelDown>> {
+        if self.segments.contains(segment) {
+            let rank = self.segments.rank(segment) - 1;
+            Some(self.load_child(rank))
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn segments(&self) -> impl Iterator<Item = Segment> {
         self.segments.iter()
     }
@@ -83,9 +95,8 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
 
     fn contains(&self, value: L::Value) -> bool {
         let (segment, value) = value.split();
-        if self.segments.contains(segment) {
-            let rank = self.segments.rank(segment) - 1;
-            self.load_child(rank).contains(value)
+        if let Some(child) = self.load_child_at_segment(segment) {
+            child.contains(value)
         } else {
             false
         }

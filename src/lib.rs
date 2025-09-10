@@ -16,7 +16,9 @@ pub mod codec;
 pub mod cow;
 pub mod level;
 pub mod splinter;
+pub mod splinter_ops;
 pub mod splinter_ref;
+pub mod splinter_ref_ops;
 pub mod traits;
 
 #[doc(hidden)]
@@ -39,7 +41,7 @@ pub use splinter_ref::SplinterRef;
 #[doc(inline)]
 pub use crate::{
     codec::{DecodeErr, Encodable},
-    traits::{Cut, Merge, Optimizable, PartitionRead, PartitionWrite},
+    traits::{Cut, Optimizable, PartitionRead, PartitionWrite},
 };
 
 #[cfg(any(test, feature = "testutil"))]

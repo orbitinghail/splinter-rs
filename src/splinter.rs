@@ -1,11 +1,10 @@
-use std::{fmt::Debug, ops::Deref};
+use std::fmt::Debug;
 
 use bytes::Bytes;
 
 use crate::{
-    Cut, Encodable, Merge, Optimizable, SplinterRef,
+    Encodable, Optimizable, SplinterRef,
     codec::{encoder::Encoder, footer::Footer},
-    cow::CowSplinter,
     level::High,
     partition::Partition,
     traits::{PartitionRead, PartitionWrite},
@@ -87,6 +86,21 @@ impl Splinter {
     /// ```
     pub fn encode_to_splinter_ref(&self) -> SplinterRef<Bytes> {
         SplinterRef { data: self.encode_to_bytes() }
+    }
+
+    #[inline(always)]
+    pub(crate) fn new(inner: Partition<High>) -> Self {
+        Self(inner)
+    }
+
+    #[inline(always)]
+    pub(crate) fn inner(&self) -> &Partition<High> {
+        &self.0
+    }
+
+    #[inline(always)]
+    pub(crate) fn inner_mut(&mut self) -> &mut Partition<High> {
+        &mut self.0
     }
 }
 
@@ -323,70 +337,6 @@ impl Optimizable for Splinter {
     }
 }
 
-impl Merge for Splinter {
-    fn merge(&mut self, rhs: &Self) {
-        self.0.merge(&rhs.0)
-    }
-}
-
-impl<B: Deref<Target = [u8]>> Merge<SplinterRef<B>> for Splinter {
-    fn merge(&mut self, rhs: &SplinterRef<B>) {
-        self.0.merge(&rhs.load_unchecked())
-    }
-}
-
-impl<B: Deref<Target = [u8]>> Merge<CowSplinter<B>> for Splinter {
-    fn merge(&mut self, rhs: &CowSplinter<B>) {
-        match rhs {
-            CowSplinter::Ref(splinter_ref) => self.merge(splinter_ref),
-            CowSplinter::Owned(splinter) => self.merge(splinter),
-        }
-    }
-}
-
-impl Cut for Splinter {
-    type Out = Self;
-
-    fn cut(&mut self, rhs: &Self) -> Self::Out {
-        Self(self.0.cut(&rhs.0))
-    }
-}
-
-impl<B: Deref<Target = [u8]>> Cut<SplinterRef<B>> for Splinter {
-    type Out = Self;
-
-    fn cut(&mut self, rhs: &SplinterRef<B>) -> Self::Out {
-        Self(self.0.cut(&rhs.load_unchecked()))
-    }
-}
-
-impl<B: Deref<Target = [u8]>> Cut<CowSplinter<B>> for Splinter {
-    type Out = Self;
-
-    fn cut(&mut self, rhs: &CowSplinter<B>) -> Self::Out {
-        match rhs {
-            CowSplinter::Ref(splinter_ref) => self.cut(splinter_ref),
-            CowSplinter::Owned(splinter) => self.cut(splinter),
-        }
-    }
-}
-
-impl<B: Deref<Target = [u8]>> PartialEq<SplinterRef<B>> for Splinter {
-    #[inline]
-    fn eq(&self, other: &SplinterRef<B>) -> bool {
-        self.0 == other.load_unchecked()
-    }
-}
-
-impl<B: Deref<Target = [u8]>> PartialEq<CowSplinter<B>> for Splinter {
-    fn eq(&self, other: &CowSplinter<B>) -> bool {
-        match other {
-            CowSplinter::Ref(splinter_ref) => self.eq(splinter_ref),
-            CowSplinter::Owned(splinter) => self.eq(splinter),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,8 +347,10 @@ mod tests {
         traits::Optimizable,
     };
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::{
+        collection::{hash_set, vec},
+        proptest,
+    };
     use roaring::RoaringBitmap;
 
     #[test]
@@ -442,40 +394,54 @@ mod tests {
         itertools::assert_equal(splinter.iter(), set.into_iter());
     }
 
-    #[quickcheck]
-    fn test_splinter_read_quickcheck(set: Vec<u32>) -> TestResult {
-        let expected = set.iter().copied().sorted().dedup().collect_vec();
-        test_partition_read(&Splinter::from_iter(set), &expected);
-        TestResult::passed()
-    }
-
-    #[quickcheck]
-    fn test_splinter_write_quickcheck(set: Vec<u32>) -> TestResult {
-        let mut splinter = Splinter::from_iter(set);
-        test_partition_write(&mut splinter);
-        TestResult::passed()
-    }
-
-    #[quickcheck]
-    fn test_splinter_quickcheck(set: Vec<u32>) -> bool {
-        let splinter = mksplinter(&set);
-        if set.is_empty() {
-            !splinter.contains(123)
-        } else {
-            let lookup = set[set.len() / 3];
-            splinter.contains(lookup)
+    proptest! {
+        #[test]
+        fn test_splinter_read_proptest(set in hash_set(0u32..16384, 0..1024)) {
+            let expected = set.iter().copied().sorted().collect_vec();
+            test_partition_read(&Splinter::from_iter(set), &expected);
         }
-    }
 
-    #[quickcheck]
-    fn test_splinter_opt_quickcheck(set: Vec<u32>) -> bool {
-        let mut splinter = mksplinter(&set);
-        splinter.optimize();
-        if set.is_empty() {
-            !splinter.contains(123)
-        } else {
-            let lookup = set[set.len() / 3];
-            splinter.contains(lookup)
+        #[test]
+        fn test_splinter_write_proptest(set in hash_set(0u32..16384, 0..1024)) {
+            let mut splinter = Splinter::from_iter(set);
+            test_partition_write(&mut splinter);
+        }
+
+        #[test]
+        fn test_splinter_proptest(set in vec(0u32..16384, 0..1024)) {
+            let splinter = mksplinter(&set);
+            if set.is_empty() {
+                assert!(!splinter.contains(123));
+            } else {
+                let lookup = set[set.len() / 3];
+                assert!(splinter.contains(lookup));
+            }
+        }
+
+        #[test]
+        fn test_splinter_opt_proptest(set in vec(0u32..16384, 0..1024))  {
+            let mut splinter = mksplinter(&set);
+            splinter.optimize();
+            if set.is_empty() {
+                assert!(!splinter.contains(123));
+            } else {
+                let lookup = set[set.len() / 3];
+                assert!(splinter.contains(lookup));
+            }
+        }
+
+        #[test]
+        fn test_splinter_eq_proptest(set in vec(0u32..16384, 0..1024)) {
+            let a = mksplinter(&set);
+            assert_eq!(a, a.clone());
+        }
+
+        #[test]
+        fn test_splinter_opt_eq_proptest(set in vec(0u32..16384, 0..1024)) {
+            let mut a = mksplinter(&set);
+            let b = mksplinter(&set);
+            a.optimize();
+            assert_eq!(a, b);
         }
     }
 

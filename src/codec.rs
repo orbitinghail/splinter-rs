@@ -124,8 +124,7 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
+    use proptest::proptest;
 
     use crate::{
         Encodable, Splinter, SplinterRef, assert_error,
@@ -188,22 +187,24 @@ mod tests {
         }
     }
 
-    #[quickcheck]
-    fn test_encode_decode_quickcheck(values: Vec<u32>) -> TestResult {
-        let expected = values.iter().copied().sorted().dedup().collect_vec();
-        let mut splinter = Splinter::from_iter(values);
-        splinter.optimize();
-        let buf = splinter.encode_to_bytes();
-        assert_eq!(
-            buf.len(),
-            splinter.encoded_size(),
-            "encoded_size doesn't match actual size"
-        );
-        let splinter_ref = SplinterRef::from_bytes(buf).unwrap();
+    proptest! {
+        #[test]
+        fn test_encode_decode_proptest(
+            values in proptest::collection::vec(0u32..16384, 0..1024),
+        ) {
+            let expected = values.iter().copied().sorted().dedup().collect_vec();
+            let mut splinter = Splinter::from_iter(values);
+            splinter.optimize();
+            let buf = splinter.encode_to_bytes();
+            assert_eq!(
+                buf.len(),
+                splinter.encoded_size(),
+                "encoded_size doesn't match actual size"
+            );
+            let splinter_ref = SplinterRef::from_bytes(buf).unwrap();
 
-        test_partition_read(&splinter_ref, &expected);
-
-        TestResult::passed()
+            test_partition_read(&splinter_ref, &expected);
+        }
     }
 
     #[test]

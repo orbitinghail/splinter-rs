@@ -1,9 +1,13 @@
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign};
+
+use itertools::{EitherOrBoth, Itertools};
+
 use crate::{
     PartitionRead, PartitionWrite,
     codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
     level::Level,
     partition::Partition,
-    traits::{Cut, Merge},
+    traits::{Complement, Cut},
 };
 
 impl<L: Level> PartialEq for Partition<L> {
@@ -46,8 +50,8 @@ impl<L: Level> PartialEq<PartitionRef<'_, L>> for Partition<L> {
     }
 }
 
-impl<L: Level> Merge for Partition<L> {
-    fn merge(&mut self, rhs: &Self) {
+impl<L: Level> BitOrAssign<&Partition<L>> for Partition<L> {
+    fn bitor_assign(&mut self, rhs: &Partition<L>) {
         use Partition::*;
 
         match (&mut *self, rhs) {
@@ -55,11 +59,15 @@ impl<L: Level> Merge for Partition<L> {
             (Full, _) => (),
             (a, Full) => *a = Full,
 
+            // special case empty
+            (_, b) if b.is_empty() => (),
+            (a, b) if a.is_empty() => *a = b.clone(),
+
             // use fast physical ops if both partitions share storage
-            (Bitmap(a), Bitmap(b)) => a.merge(b),
-            (Vec(a), Vec(b)) => a.merge(b),
-            (Run(a), Run(b)) => a.merge(b),
-            (Tree(a), Tree(b)) => a.merge(b),
+            (Bitmap(a), Bitmap(b)) => a.bitor_assign(b),
+            (Vec(a), Vec(b)) => a.bitor_assign(b),
+            (Run(a), Run(b)) => a.bitor_assign(b),
+            (Tree(a), Tree(b)) => a.bitor_assign(b),
 
             // otherwise fall back to logical ops
             (a, b) => {
@@ -73,28 +81,265 @@ impl<L: Level> Merge for Partition<L> {
     }
 }
 
-impl<L: Level> Merge<PartitionRef<'_, L>> for Partition<L> {
-    fn merge(&mut self, rhs: &PartitionRef<'_, L>) {
+impl<L: Level> BitOrAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn bitor_assign(&mut self, rhs: &PartitionRef<'_, L>) {
         use NonRecursivePartitionRef::*;
         use PartitionRef::*;
 
         match (&mut *self, rhs) {
-            // special cases for full and empty
+            // special case full
             (Partition::Full, _) => (),
-            (_, NonRecursive(Empty)) => (),
             (a, NonRecursive(Full)) => *a = Partition::Full,
 
+            // special case empty
+            (_, NonRecursive(Empty)) => (),
+            (a, b) if a.is_empty() => *a = b.into(),
+
             // use fast physical ops if both partitions share storage
-            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.merge(bitmap),
-            (Partition::Vec(a), NonRecursive(Vec { values })) => a.merge(values),
-            (Partition::Run(a), NonRecursive(Run { runs })) => a.merge(runs),
-            (Partition::Tree(a), Tree(tree)) => a.merge(tree),
+            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.bitor_assign(*bitmap),
+            (Partition::Vec(a), NonRecursive(Vec { values })) => a.bitor_assign(*values),
+            (Partition::Run(a), NonRecursive(Run { runs })) => a.bitor_assign(runs),
+            (Partition::Tree(a), Tree(tree)) => a.bitor_assign(tree),
 
             // otherwise fall back to logical ops
             (a, b) => {
                 for el in b.iter() {
                     a.raw_insert(el);
                 }
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitAndAssign<&Partition<L>> for Partition<L> {
+    fn bitand_assign(&mut self, rhs: &Partition<L>) {
+        use Partition::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Full, b) => *a = b.clone(),
+            (_, Full) => (),
+
+            // special case empty
+            (a, b) if a.is_empty() || b.is_empty() => *a = Partition::EMPTY,
+
+            // use fast physical ops if both partitions share storage
+            (Bitmap(a), Bitmap(b)) => a.bitand_assign(b),
+            (Vec(a), Vec(b)) => a.bitand_assign(b),
+            (Run(a), Run(b)) => a.bitand_assign(b),
+            (Tree(a), Tree(b)) => a.bitand_assign(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(_) => None,
+                        EitherOrBoth::Right(_) => None,
+                        EitherOrBoth::Both(l, _) => Some(l),
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitAndAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn bitand_assign(&mut self, rhs: &PartitionRef<'_, L>) {
+        use NonRecursivePartitionRef::*;
+        use PartitionRef::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Partition::Full, b) => *a = b.into(),
+            (_, NonRecursive(Full)) => (),
+
+            // special case empty
+            (a, NonRecursive(Empty)) => *a = Partition::EMPTY,
+            (a, _) if a.is_empty() => (),
+
+            // use fast physical ops if both partitions share storage
+            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.bitand_assign(*bitmap),
+            (Partition::Vec(a), NonRecursive(Vec { values })) => a.bitand_assign(*values),
+            (Partition::Run(a), NonRecursive(Run { runs })) => a.bitand_assign(runs),
+            (Partition::Tree(a), Tree(tree)) => a.bitand_assign(tree),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(_) => None,
+                        EitherOrBoth::Right(_) => None,
+                        EitherOrBoth::Both(l, _) => Some(l),
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitXorAssign<&Partition<L>> for Partition<L> {
+    fn bitxor_assign(&mut self, rhs: &Partition<L>) {
+        use Partition::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Full, b) => {
+                *a = b.clone();
+                a.complement();
+            }
+            (a, Full) => a.complement(),
+
+            // special case empty
+            (_, b) if b.is_empty() => (),
+            (a, b) if a.is_empty() => *a = b.clone(),
+
+            // use fast physical ops if both partitions share storage
+            (Bitmap(a), Bitmap(b)) => a.bitxor_assign(b),
+            (Vec(a), Vec(b)) => a.bitxor_assign(b),
+            (Run(a), Run(b)) => a.bitxor_assign(b),
+            (Tree(a), Tree(b)) => a.bitxor_assign(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(l) => Some(l),
+                        EitherOrBoth::Right(r) => Some(r),
+                        EitherOrBoth::Both(_, _) => None,
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> BitXorAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn bitxor_assign(&mut self, rhs: &PartitionRef<'_, L>) {
+        use NonRecursivePartitionRef::*;
+        use PartitionRef::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Partition::Full, b) => {
+                *a = b.into();
+                a.complement()
+            }
+            (a, NonRecursive(Full)) => a.complement(),
+
+            // special case empty
+            (_, NonRecursive(Empty)) => (),
+            (a, b) if a.is_empty() => *a = b.into(),
+
+            // use fast physical ops if both partitions share storage
+            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.bitxor_assign(*bitmap),
+            (Partition::Vec(a), NonRecursive(Vec { values })) => a.bitxor_assign(*values),
+            (Partition::Run(a), NonRecursive(Run { runs })) => a.bitxor_assign(runs),
+            (Partition::Tree(a), Tree(tree)) => a.bitxor_assign(tree),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(l) => Some(l),
+                        EitherOrBoth::Right(r) => Some(r),
+                        EitherOrBoth::Both(_, _) => None,
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> SubAssign<&Partition<L>> for Partition<L> {
+    fn sub_assign(&mut self, rhs: &Partition<L>) {
+        use Partition::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Full, b) => {
+                *a = b.clone();
+                a.complement();
+            }
+            (a, Full) => *a = Partition::EMPTY,
+
+            // special case empty
+            // (a, b) if a.is_empty() || b.is_empty() => (),
+
+            // use fast physical ops if both partitions share storage
+            (Bitmap(a), Bitmap(b)) => a.sub_assign(b),
+            (Vec(a), Vec(b)) => a.sub_assign(b),
+            (Run(a), Run(b)) => a.sub_assign(b),
+            (Tree(a), Tree(b)) => a.sub_assign(b),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(l) => Some(l),
+                        EitherOrBoth::Right(_) => None,
+                        EitherOrBoth::Both(_, _) => None,
+                    })
+                    .collect();
+            }
+        }
+
+        self.optimize_fast();
+    }
+}
+
+impl<L: Level> SubAssign<&PartitionRef<'_, L>> for Partition<L> {
+    fn sub_assign(&mut self, rhs: &PartitionRef<'_, L>) {
+        use NonRecursivePartitionRef::*;
+        use PartitionRef::*;
+
+        match (&mut *self, rhs) {
+            // special case full
+            (a @ Partition::Full, b) => {
+                *a = b.into();
+                a.complement()
+            }
+            (a, NonRecursive(Full)) => *a = Partition::EMPTY,
+
+            // special case empty
+            (a, b) if a.is_empty() || b.is_empty() => (),
+
+            // use fast physical ops if both partitions share storage
+            (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.sub_assign(*bitmap),
+            (Partition::Vec(a), NonRecursive(Vec { values })) => a.sub_assign(*values),
+            (Partition::Run(a), NonRecursive(Run { runs })) => a.sub_assign(runs),
+            (Partition::Tree(a), Tree(tree)) => a.sub_assign(tree),
+
+            // otherwise fall back to logical ops
+            (a, b) => {
+                *a = std::mem::take(a)
+                    .iter()
+                    .merge_join_by(b.iter(), L::Value::cmp)
+                    .flat_map(|x| match x {
+                        EitherOrBoth::Left(l) => Some(l),
+                        EitherOrBoth::Right(_) => None,
+                        EitherOrBoth::Both(_, _) => None,
+                    })
+                    .collect();
             }
         }
 
@@ -174,121 +419,30 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
+impl<L: Level> Complement for Partition<L> {
+    fn complement(&mut self) {
+        use Partition::*;
 
-    use itertools::Itertools;
-    use quickcheck::TestResult;
-    use quickcheck_macros::quickcheck;
-
-    use crate::{
-        Optimizable, Splinter,
-        testutil::mksplinter,
-        traits::{Cut, Merge},
-    };
-
-    #[quickcheck]
-    fn test_partitions_equality_quickcheck(values: Vec<u32>) -> TestResult {
-        let mut a = mksplinter(&values);
-        a.optimize();
-        let b = mksplinter(&values);
-        TestResult::from_bool(a == b)
-    }
-
-    #[quickcheck]
-    fn test_partitions_equality_ref_quickcheck(values: Vec<u32>) -> TestResult {
-        let mut a = mksplinter(&values);
-        a.optimize();
-        let b = mksplinter(&values).encode_to_splinter_ref();
-        TestResult::from_bool(a == b)
-    }
-
-    #[quickcheck]
-    fn test_partitions_equality_quickcheck_2(a: Vec<u32>, b: Vec<u32>) -> TestResult {
-        let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
-
-        let mut a = mksplinter(&a);
-        a.optimize();
-        let b = mksplinter(&b);
-
-        TestResult::from_bool((a == b) == expected)
-    }
-
-    #[quickcheck]
-    fn test_partitions_equality_ref_quickcheck_2(a: Vec<u32>, b: Vec<u32>) -> TestResult {
-        let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
-
-        let mut a = mksplinter(&a);
-        a.optimize();
-        let b = mksplinter(&b).encode_to_splinter_ref();
-
-        TestResult::from_bool((a == b) == expected)
-    }
-
-    #[quickcheck]
-    fn test_merge_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut merged: Splinter = a.iter().copied().collect();
-        let other: Splinter = b.iter().copied().collect();
-
-        if optimize {
-            merged.optimize();
+        match &mut *self {
+            p @ Full => {
+                *p = Partition::EMPTY;
+            }
+            Bitmap(p) => p.complement(),
+            Vec(p) => p.complement(),
+            Run(p) => p.complement(),
+            Tree(p) => p.complement(),
         }
 
-        let expected: Splinter = a.union(&b).copied().collect();
-        merged.merge(&other);
-        TestResult::from_bool(merged == expected)
+        self.optimize_fast();
     }
+}
 
-    #[quickcheck]
-    fn test_cut_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut source: Splinter = a.iter().copied().collect();
-        let other: Splinter = b.iter().copied().collect();
-
-        if optimize {
-            source.optimize();
+impl<L: Level> From<&PartitionRef<'_, L>> for Partition<L> {
+    fn from(value: &PartitionRef<'_, L>) -> Self {
+        use PartitionRef::*;
+        match value {
+            NonRecursive(p) => p.into(),
+            Tree(t) => Partition::Tree(t.into()),
         }
-
-        let expected_intersection: Splinter = a.intersection(&b).copied().collect();
-        let expected_remaining: Splinter = a.difference(&b).copied().collect();
-
-        let actual_intersection = source.cut(&other);
-
-        TestResult::from_bool(
-            actual_intersection == expected_intersection && source == expected_remaining,
-        )
-    }
-
-    #[quickcheck]
-    fn test_merge_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut merged: Splinter = a.iter().copied().collect();
-        let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
-
-        if optimize {
-            merged.optimize();
-        }
-
-        let expected: Splinter = a.union(&b).copied().collect();
-        merged.merge(&other_ref);
-        TestResult::from_bool(merged == expected)
-    }
-
-    #[quickcheck]
-    fn test_cut_ref_quickcheck(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) -> TestResult {
-        let mut source: Splinter = a.iter().copied().collect();
-        let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
-
-        if optimize {
-            source.optimize();
-        }
-
-        let expected_intersection: Splinter = a.intersection(&b).copied().collect();
-        let expected_remaining: Splinter = a.difference(&b).copied().collect();
-
-        let actual_intersection = source.cut(&other_ref);
-
-        TestResult::from_bool(
-            actual_intersection == expected_intersection && source == expected_remaining,
-        )
     }
 }
