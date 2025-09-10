@@ -369,6 +369,8 @@ where
 #[cfg(test)]
 mod tests {
 
+    use std::collections::HashSet;
+
     use proptest::proptest;
 
     use crate::{
@@ -411,14 +413,14 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_run_small_read_proptest(set: Vec<u8>) {
-            let expected = set.iter().copied().sorted().dedup().collect_vec();
+        fn test_run_small_read_proptest(set: HashSet<u8>) {
+            let expected = set.iter().copied().sorted().collect_vec();
             let partition = RunPartition::<Block>::from_iter(set);
             test_partition_read(&partition, &expected);
         }
 
         #[test]
-        fn test_run_small_write_proptest(set: Vec<u8>) {
+        fn test_run_small_write_proptest(set: HashSet<u8>) {
             let mut partition = RunPartition::<Block>::from_iter(set);
             test_partition_write(&mut partition);
         }

@@ -189,7 +189,9 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_encode_decode_proptest(values: Vec<u32>) {
+        fn test_encode_decode_proptest(
+            values in proptest::collection::vec(0u32..16384, 0..1024),
+        ) {
             let expected = values.iter().copied().sorted().dedup().collect_vec();
             let mut splinter = Splinter::from_iter(values);
             splinter.optimize();

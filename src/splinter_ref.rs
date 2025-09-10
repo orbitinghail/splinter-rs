@@ -294,8 +294,7 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRef<B> {
 
 #[cfg(test)]
 mod test {
-
-    use proptest::proptest;
+    use proptest::{collection::vec, prop_assume, proptest};
 
     use crate::{
         Optimizable, PartitionRead, Splinter,
@@ -326,7 +325,7 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_splinter_ref_proptest(set: Vec<u32>) {
+        fn test_splinter_ref_proptest(set in vec(0u32..16384, 0..1024)) {
             let splinter = mksplinter(&set).encode_to_splinter_ref();
             if set.is_empty() {
                 assert!(!splinter.contains(123))
@@ -337,7 +336,7 @@ mod test {
         }
 
         #[test]
-        fn test_splinter_opt_ref_proptest(set: Vec<u32>)  {
+        fn test_splinter_opt_ref_proptest(set in vec(0u32..16384, 0..1024))  {
             let mut splinter = mksplinter(&set);
             splinter.optimize();
             let splinter = splinter.encode_to_splinter_ref();
@@ -350,14 +349,14 @@ mod test {
         }
 
         #[test]
-        fn test_splinter_ref_eq_proptest(set: Vec<u32>)  {
+        fn test_splinter_ref_eq_proptest(set in vec(0u32..16384, 0..1024))  {
             let ref1 = mksplinter(&set).encode_to_splinter_ref();
             let ref2 = mksplinter(&set).encode_to_splinter_ref();
             assert_eq!(ref1, ref2)
         }
 
         #[test]
-        fn test_splinter_opt_ref_eq_proptest(set: Vec<u32>)  {
+        fn test_splinter_opt_ref_eq_proptest(set in vec(0u32..16384, 0..1024))  {
             let mut ref1 = mksplinter(&set);
             ref1.optimize();
             let ref1 = ref1.encode_to_splinter_ref();
@@ -366,27 +365,40 @@ mod test {
         }
 
         #[test]
-        fn test_splinter_ref_ne_proptest(set1: Vec<u32>, set2: Vec<u32>) {
-            if set1 == set2 {
-                todo!("discard test");
-            } else {
-                let ref1 = mksplinter(&set1).encode_to_splinter_ref();
-                let ref2 = mksplinter(&set2).encode_to_splinter_ref();
-                assert_ne!(ref1, ref2)
-            }
+        fn test_splinter_ref_ne_proptest(
+            set1 in vec(0u32..16384, 0..1024),
+            set2 in vec(0u32..16384, 0..1024),
+        ) {
+            prop_assume!(set1 != set2);
+
+            let ref1 = mksplinter(&set1).encode_to_splinter_ref();
+            let ref2 = mksplinter(&set2).encode_to_splinter_ref();
+            assert_ne!(ref1, ref2)
         }
 
         #[test]
-        fn test_splinter_opt_ref_ne_proptest(set1: Vec<u32>, set2: Vec<u32>) {
-            if set1 == set2 {
-                todo!("discard test");
-            } else {
-                let mut ref1 = mksplinter(&set1);
-                ref1.optimize();
-                let ref1 = ref1.encode_to_splinter_ref();
-                let ref2 = mksplinter(&set2).encode_to_splinter_ref();
-                assert_ne!(ref1 ,ref2)
-            }
+        fn test_splinter_opt_ref_ne_proptest(
+            set1 in vec(0u32..16384, 0..1024),
+            set2 in vec(0u32..16384, 0..1024),
+        ) {
+            prop_assume!(set1 != set2);
+
+            let mut ref1 = mksplinter(&set1);
+            ref1.optimize();
+            let ref1 = ref1.encode_to_splinter_ref();
+            let ref2 = mksplinter(&set2).encode_to_splinter_ref();
+            assert_ne!(ref1 ,ref2)
         }
+    }
+
+    #[test]
+    fn test_ref_wat() {
+        #[rustfmt::skip]
+        let set = [ 6400, 11776, 768, 15872, 6912, 0, 11008, 769, 770, 11009, 4608, 771, 0, 768, 6401, 0, 8192, 8192, 4609, 772, 4610, 0, 0, 0, 0, 0, 768, 773, 774, 14336, 0, 0, 0, 15872, 11010, 775, 0, 768, 11777, 776, 0, 0, 0, 6400, 14337, 8193, 0, 0, 0, 0, 0, 0, 0, ];
+        let mut ref1 = mksplinter(&set);
+        ref1.optimize();
+        let ref1 = ref1.encode_to_splinter_ref();
+        let ref2 = mksplinter(&set).encode_to_splinter_ref();
+        assert_eq!(ref1, ref2)
     }
 }

@@ -256,12 +256,12 @@ impl SubAssign<Splinter> for Splinter {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashSet,
-        ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Sub, SubAssign},
+    use std::ops::{
+        BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Sub, SubAssign,
     };
 
     use itertools::Itertools;
+    use proptest::collection::{hash_set, vec};
     use proptest::proptest;
 
     use crate::{Optimizable, Splinter, testutil::mksplinter, traits::Cut};
@@ -270,13 +270,19 @@ mod tests {
         ($test_name:ident, $op_method:ident, $op_assign_method:ident, $hashset_method:ident) => {
             proptest! {
                 #[test]
-                fn $test_name(a: HashSet<u32>, b: HashSet<u32>) {
+                fn $test_name(
+                    optimize: bool,
+                    a in hash_set(0u32..16384, 0..1024),
+                    b in hash_set(0u32..16384, 0..1024),
+                ) {
                     let expected: Splinter = a.$hashset_method(&b).copied().collect();
 
-                    let a = Splinter::from_iter(a);
+                    let mut a = Splinter::from_iter(a);
                     let b = Splinter::from_iter(b);
 
-                    println!("a={a:?}, b={b:?}");
+                    if optimize {
+                        a.optimize();
+                    }
 
                     // test all combinations of refs
                     assert_eq!((&a).$op_method(&b), expected, "&a, &b");
@@ -294,22 +300,21 @@ mod tests {
                     assert_eq!(c, expected, "c assign &b");
 
                     // do it all again but against a splinter ref
-                    println!("splinter ref tests");
                     let b = b.encode_to_splinter_ref();
 
-                    assert_eq!((&a).$op_method(&b), expected, "&a, &b");
-                    assert_eq!((&a).$op_method(b.clone()), expected, "&a, b");
-                    assert_eq!(a.clone().$op_method(&b), expected, "a, &b");
-                    assert_eq!(a.clone().$op_method(b.clone()), expected, "a, b");
+                    assert_eq!((&a).$op_method(&b), expected, "&a, &bref");
+                    assert_eq!((&a).$op_method(b.clone()), expected, "&a, bref");
+                    assert_eq!(a.clone().$op_method(&b), expected, "a, &bref");
+                    assert_eq!(a.clone().$op_method(b.clone()), expected, "a, bref");
 
                     // assignment operator
                     let mut c = a.clone();
                     c.$op_assign_method(b.clone());
-                    assert_eq!(c, expected, "c assign b");
+                    assert_eq!(c, expected, "c assign bref");
 
                     let mut c = a.clone();
                     c.$op_assign_method(&b);
-                    assert_eq!(c, expected, "c assign &b");
+                    assert_eq!(c, expected, "c assign &bref");
                 }
             }
         };
@@ -317,7 +322,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_splinter_equality_proptest(values: Vec<u32>) {
+        fn test_splinter_equality_proptest(values in vec(0u32..16384, 0..1024)) {
             let mut a = mksplinter(&values);
             a.optimize();
             let b = mksplinter(&values);
@@ -325,7 +330,7 @@ mod tests {
         }
 
         #[test]
-        fn test_splinter_equality_ref_proptest(values: Vec<u32>) {
+        fn test_splinter_equality_ref_proptest(values in vec(0u32..16384, 0..1024)) {
             let mut a = mksplinter(&values);
             a.optimize();
             let b = mksplinter(&values).encode_to_splinter_ref();
@@ -333,7 +338,10 @@ mod tests {
         }
 
         #[test]
-        fn test_splinter_equality_proptest_2(a: Vec<u32>, b: Vec<u32>) {
+        fn test_splinter_equality_proptest_2(
+            a in vec(0u32..16384, 0..1024),
+            b in vec(0u32..16384, 0..1024),
+        ) {
             let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
 
             let mut a = mksplinter(&a);
@@ -344,7 +352,10 @@ mod tests {
         }
 
         #[test]
-        fn test_splinter_equality_ref_proptest_2(a: Vec<u32>, b: Vec<u32>) {
+        fn test_splinter_equality_ref_proptest_2(
+            a in vec(0u32..16384, 0..1024),
+            b in vec(0u32..16384, 0..1024),
+        ) {
             let expected = itertools::equal(a.iter().sorted().dedup(), b.iter().sorted().dedup());
 
             let mut a = mksplinter(&a);
@@ -357,8 +368,8 @@ mod tests {
         #[test]
         fn test_bitor_assign_proptest(
             optimize: bool,
-            a: HashSet<u32>,
-            b: HashSet<u32>,
+            a in hash_set(0u32..16384, 0..1024),
+            b in hash_set(0u32..16384, 0..1024),
         ) {
             let mut set: Splinter = a.iter().copied().collect();
             let other: Splinter = b.iter().copied().collect();
@@ -373,7 +384,11 @@ mod tests {
         }
 
         #[test]
-        fn test_cut_proptest(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) {
+        fn test_cut_proptest(
+            optimize: bool,
+            a in hash_set(0u32..16384, 0..1024),
+            b in hash_set(0u32..16384, 0..1024),
+        ) {
             let mut source: Splinter = a.iter().copied().collect();
             let other: Splinter = b.iter().copied().collect();
 
@@ -386,13 +401,16 @@ mod tests {
 
             let actual_intersection = source.cut(&other);
 
-            assert!(
-                actual_intersection == expected_intersection && source == expected_remaining,
-            )
+            assert_eq!(actual_intersection,expected_intersection);
+            assert_eq!(source,expected_remaining);
         }
 
         #[test]
-        fn test_bitor_ref_proptest(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) {
+        fn test_bitor_ref_proptest(
+            optimize: bool,
+            a in hash_set(0u32..16384, 0..1024),
+            b in hash_set(0u32..16384, 0..1024),
+        ) {
             let mut set: Splinter = a.iter().copied().collect();
             let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
 
@@ -406,7 +424,11 @@ mod tests {
         }
 
         #[test]
-        fn test_cut_ref_proptest(optimize: bool, a: HashSet<u32>, b: HashSet<u32>) {
+        fn test_cut_ref_proptest(
+            optimize: bool,
+            a in hash_set(0u32..16384, 0..1024),
+            b in hash_set(0u32..16384, 0..1024),
+        ) {
             let mut source: Splinter = a.iter().copied().collect();
             let other_ref = Splinter::from_iter(b.clone()).encode_to_splinter_ref();
 
@@ -419,9 +441,8 @@ mod tests {
 
             let actual_intersection = source.cut(&other_ref);
 
-            assert!(
-                actual_intersection == expected_intersection && source == expected_remaining,
-            )
+            assert_eq!(actual_intersection,expected_intersection);
+            assert_eq!(source,expected_remaining);
         }
     }
 

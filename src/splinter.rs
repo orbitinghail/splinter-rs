@@ -347,7 +347,10 @@ mod tests {
         traits::Optimizable,
     };
     use itertools::Itertools;
-    use proptest::proptest;
+    use proptest::{
+        collection::{hash_set, vec},
+        proptest,
+    };
     use roaring::RoaringBitmap;
 
     #[test]
@@ -393,19 +396,19 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_splinter_read_proptest(set: Vec<u32>) {
-            let expected = set.iter().copied().sorted().dedup().collect_vec();
+        fn test_splinter_read_proptest(set in hash_set(0u32..16384, 0..1024)) {
+            let expected = set.iter().copied().sorted().collect_vec();
             test_partition_read(&Splinter::from_iter(set), &expected);
         }
 
         #[test]
-        fn test_splinter_write_proptest(set: Vec<u32>) {
+        fn test_splinter_write_proptest(set in hash_set(0u32..16384, 0..1024)) {
             let mut splinter = Splinter::from_iter(set);
             test_partition_write(&mut splinter);
         }
 
         #[test]
-        fn test_splinter_proptest(set: Vec<u32>) {
+        fn test_splinter_proptest(set in vec(0u32..16384, 0..1024)) {
             let splinter = mksplinter(&set);
             if set.is_empty() {
                 assert!(!splinter.contains(123));
@@ -416,7 +419,7 @@ mod tests {
         }
 
         #[test]
-        fn test_splinter_opt_proptest(set: Vec<u32>)  {
+        fn test_splinter_opt_proptest(set in vec(0u32..16384, 0..1024))  {
             let mut splinter = mksplinter(&set);
             splinter.optimize();
             if set.is_empty() {
@@ -425,6 +428,20 @@ mod tests {
                 let lookup = set[set.len() / 3];
                 assert!(splinter.contains(lookup));
             }
+        }
+
+        #[test]
+        fn test_splinter_eq_proptest(set in vec(0u32..16384, 0..1024)) {
+            let a = mksplinter(&set);
+            assert_eq!(a, a.clone());
+        }
+
+        #[test]
+        fn test_splinter_opt_eq_proptest(set in vec(0u32..16384, 0..1024)) {
+            let mut a = mksplinter(&set);
+            let b = mksplinter(&set);
+            a.optimize();
+            assert_eq!(a, b);
         }
     }
 

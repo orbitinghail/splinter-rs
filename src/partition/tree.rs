@@ -288,7 +288,7 @@ impl<L: Level> BitXorAssign<&TreePartition<L>> for TreePartition<L> {
             .flat_map(|x| match x {
                 EitherOrBoth::Both((s, mut l), (_, r)) => {
                     l.bitxor_assign(r);
-                    l.is_empty().then_some((s, l))
+                    (!l.is_empty()).then_some((s, l))
                 }
                 EitherOrBoth::Left(l) => Some(l),
                 EitherOrBoth::Right((&s, r)) => Some((s, r.clone())),
@@ -307,7 +307,7 @@ impl<L: Level> BitXorAssign<&TreeRef<'_, L>> for TreePartition<L> {
             .flat_map(|x| match x {
                 EitherOrBoth::Both((s, mut l), (_, r)) => {
                     l.bitxor_assign(&r);
-                    l.is_empty().then_some((s, l))
+                    (!l.is_empty()).then_some((s, l))
                 }
                 EitherOrBoth::Left(l) => Some(l),
                 EitherOrBoth::Right((s, r)) => Some((s, L::Down::from(&r))),
@@ -353,7 +353,10 @@ impl<L: Level> Cut for TreePartition<L> {
 
         self.children.retain(|&segment, child| {
             if let Some(other) = rhs.children.get(&segment) {
-                intersection.children.insert(segment, child.cut(other));
+                let child_intersection = child.cut(other);
+                if !child_intersection.is_empty() {
+                    intersection.children.insert(segment, child_intersection);
+                }
                 !child.is_empty()
             } else {
                 true
@@ -376,7 +379,10 @@ impl<L: Level> Cut<TreeRef<'_, L>> for TreePartition<L> {
 
         for (segment, other) in zipped {
             if let Some(child) = self.children.get_mut(&segment) {
-                intersection.children.insert(segment, child.cut(&other));
+                let child_intersection = child.cut(&other);
+                if !child_intersection.is_empty() {
+                    intersection.children.insert(segment, child_intersection);
+                }
             }
         }
 
@@ -428,6 +434,8 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use itertools::Itertools;
     use proptest::proptest;
 
@@ -439,14 +447,14 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_tree_small_read_proptest(set: Vec<u16>)  {
-            let expected = set.iter().copied().sorted().dedup().collect_vec();
+        fn test_tree_small_read_proptest(set: HashSet<u16>)  {
+            let expected = set.iter().copied().sorted().collect_vec();
             let partition = TreePartition::<Low>::from_iter(set);
             test_partition_read(&partition, &expected);
         }
 
         #[test]
-        fn test_tree_small_write_proptest(set: Vec<u16>)  {
+        fn test_tree_small_write_proptest(set: HashSet<u16>)  {
             let mut partition = TreePartition::<Low>::from_iter(set);
             test_partition_write(&mut partition);
         }

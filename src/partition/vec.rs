@@ -262,6 +262,8 @@ impl<L: Level> Complement for VecPartition<L> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use itertools::Itertools;
     use proptest::proptest;
 
@@ -273,14 +275,14 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_vec_small_read_proptest(set: Vec<u8>)  {
-            let expected = set.iter().copied().sorted().dedup().collect_vec();
+        fn test_vec_small_read_proptest(set: HashSet<u8>)  {
+            let expected = set.iter().copied().sorted().collect_vec();
             let partition = VecPartition::<Block>::from_iter(set);
             test_partition_read(&partition, &expected);
         }
 
         #[test]
-        fn test_vec_small_write_proptest(set: Vec<u8>)  {
+        fn test_vec_small_write_proptest(set: HashSet<u8>)  {
             let mut partition = VecPartition::<Block>::from_iter(set);
             test_partition_write(&mut partition);
         }
