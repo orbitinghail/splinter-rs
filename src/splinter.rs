@@ -18,7 +18,7 @@ use crate::{
 /// different storage classes: tree, vec, bitmap, and run.
 ///
 /// For zero-copy querying of serialized data, see [`SplinterRef`].
-/// For a clone-on-write wrapper, see [`CowSplinter`].
+/// For a clone-on-write wrapper, see [`crate::CowSplinter`].
 ///
 /// # Examples
 ///
