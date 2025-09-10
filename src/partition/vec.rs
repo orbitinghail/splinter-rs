@@ -219,7 +219,7 @@ impl<L: Level> SubAssign<&VecPartition<L>> for VecPartition<L> {
     fn sub_assign(&mut self, rhs: &VecPartition<L>) {
         let mut rhs = rhs.iter().peekable();
         self.values
-            .retain(|x| !find_next_sorted(&mut rhs, x).is_some());
+            .retain(|x| find_next_sorted(&mut rhs, x).is_none());
     }
 }
 
@@ -227,7 +227,7 @@ impl<L: Level> SubAssign<&[L::ValueUnaligned]> for VecPartition<L> {
     fn sub_assign(&mut self, rhs: &[L::ValueUnaligned]) {
         let mut rhs = rhs.iter().map(|&v| v.into()).peekable();
         self.values
-            .retain(|x| !find_next_sorted(&mut rhs, x).is_some());
+            .retain(|x| find_next_sorted(&mut rhs, x).is_none());
     }
 }
 

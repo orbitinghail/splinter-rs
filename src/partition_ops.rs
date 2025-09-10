@@ -281,7 +281,7 @@ impl<L: Level> SubAssign<&Partition<L>> for Partition<L> {
             (a, Full) => *a = Partition::EMPTY,
 
             // special case empty
-            (a, b) if a.is_empty() || b.is_empty() => (),
+            // (a, b) if a.is_empty() || b.is_empty() => (),
 
             // use fast physical ops if both partitions share storage
             (Bitmap(a), Bitmap(b)) => a.sub_assign(b),
