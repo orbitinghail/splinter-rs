@@ -8,7 +8,7 @@ use crate::{
     PartitionRead,
     codec::{DecodeErr, partition_ref::decode_len_from_suffix},
     level::Level,
-    partition::run::{Run, run_rank, run_select},
+    partition::run::{Run, run_position, run_rank, run_select},
 };
 
 #[derive(Debug, Clone, Eq)]
@@ -52,6 +52,10 @@ impl<L: Level> PartitionRead<L> for RunsRef<'_, L> {
     #[inline]
     fn contains(&self, value: <L as Level>::Value) -> bool {
         self.ranges().any(|run| run.contains(&value))
+    }
+
+    fn position(&self, value: L::Value) -> Option<usize> {
+        run_position(self.ranges(), value)
     }
 
     #[inline]

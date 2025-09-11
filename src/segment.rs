@@ -56,8 +56,8 @@ impl SplitSegment for u8 {
     }
 }
 
-/// An iterator values that can be segmented into `(Segment, Rest)` pairs via the
-/// `SplitSegment` trait.
+/// An iterator of values that can be segmented into `(Segment, Rest)` pairs via
+/// the `SplitSegment` trait.
 #[must_use]
 pub struct IterSegmented<I> {
     inner: I,

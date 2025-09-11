@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     mem::size_of,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign},
 };
 
 use bytes::BufMut;
@@ -15,7 +15,7 @@ use crate::{
     partition::{Partition, run::MergeRuns},
     segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
-    util::find_next_sorted,
+    util::{RangeExt, find_next_sorted},
 };
 
 #[derive(Clone, Eq)]
@@ -96,6 +96,10 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
         self.values.binary_search(&value).is_ok()
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        self.values.binary_search(&value).ok()
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         match self.values.binary_search(&value) {
             Ok(index) => index + 1,
@@ -138,6 +142,20 @@ impl<L: Level> PartitionWrite<L> for VecPartition<L> {
             }
             // value doesn't exist
             Err(_) => false,
+        }
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        if let Some(range) = values.try_into_inclusive() {
+            let start = match self.values.binary_search(range.start()) {
+                Ok(i) => i,
+                Err(i) => i,
+            };
+            let end = match self.values.binary_search(range.end()) {
+                Ok(i) => i,
+                Err(i) => i - 1,
+            };
+            self.values.drain(start..=end);
         }
     }
 }

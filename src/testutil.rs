@@ -164,13 +164,16 @@ where
 
     if splinter.is_empty() {
         assert_eq!(splinter.rank(L::Value::ONE), 0);
+        assert_eq!(splinter.position(L::Value::ONE), None);
         assert_eq!(splinter.select(0), None);
     } else {
         for idx in 0..10.min(splinter.cardinality()) {
             let selected = splinter.select(idx).unwrap();
             let rank = splinter.rank(selected);
             assert_eq!(rank - 1, idx);
+            assert_eq!(splinter.position(selected), Some(idx));
         }
+        assert_eq!(splinter.select(splinter.cardinality() - 1), splinter.last());
         assert_eq!(splinter.select(splinter.cardinality() + 1), None);
         assert_eq!(
             splinter.rank(splinter.last().unwrap()),

@@ -14,6 +14,10 @@ pub trait PartitionRead<L: Level> {
     /// returns true if this partition contains the given value
     fn contains(&self, value: L::Value) -> bool;
 
+    /// returns the 0-based position of the value in the partition if it exists,
+    /// otherwise returns None.
+    fn position(&self, value: L::Value) -> Option<usize>;
+
     /// returns the number of values contained in this partition up to and
     /// including the value.
     fn rank(&self, value: L::Value) -> usize;
@@ -47,6 +51,9 @@ pub trait PartitionWrite<L: Level> {
     /// Removes the value from the partition if it exists.
     /// Returns `true` if the removal occurred, `false` otherwise.
     fn remove(&mut self, value: L::Value) -> bool;
+
+    /// Removes a range of values from the partition.
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R);
 }
 
 #[doc(hidden)]

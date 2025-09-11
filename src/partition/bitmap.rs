@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     marker::PhantomData,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign},
 };
 
 use bitvec::{
@@ -22,6 +22,7 @@ use crate::{
     partition::Partition,
     segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite, TruncateFrom},
+    util::RangeExt,
 };
 
 #[derive(Clone, Eq)]
@@ -108,6 +109,13 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
         *unsafe { self.bitmap.get_unchecked(value.as_()) }
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        self.contains(value).then(|| {
+            let prefix = self.bitmap.get(0..value.as_());
+            prefix.unwrap().count_ones()
+        })
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         let prefix = self.bitmap.get(0..=value.as_());
         prefix.unwrap().count_ones()
@@ -144,6 +152,14 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
             .get_mut(value.as_())
             .expect("value out of range");
         bit.replace(false)
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        if let Some(range) = values.try_into_inclusive() {
+            let range = (*range.start()).as_()..=(*range.end()).as_();
+            let slice = self.bitmap.get_mut(range).unwrap();
+            slice.fill(false)
+        }
     }
 }
 

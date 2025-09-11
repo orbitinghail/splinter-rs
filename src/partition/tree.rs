@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, btree_map::Entry},
     fmt::{self, Debug},
     marker::PhantomData,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign},
 };
 
 use bytes::BufMut;
@@ -133,15 +133,40 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
             .is_some_and(|child| child.contains(value))
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        let (segment, value) = value.split();
+        let mut found = false;
+        let pos = self
+            .children
+            .iter()
+            .fold_while(0, |acc, (&child_segment, child)| {
+                if child_segment < segment {
+                    FoldWhile::Continue(acc + child.cardinality())
+                } else if child_segment == segment {
+                    if let Some(pos) = child.position(value) {
+                        found = true;
+                        FoldWhile::Done(acc + pos)
+                    } else {
+                        FoldWhile::Done(acc)
+                    }
+                } else {
+                    FoldWhile::Done(acc)
+                }
+            })
+            .into_inner();
+
+        found.then_some(pos)
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         let (segment, value) = value.split();
         self.children
             .iter()
-            .fold_while(0, move |acc, (&child_segment, child)| {
+            .fold_while(0, |acc, (&child_segment, child)| {
                 if child_segment < segment {
                     FoldWhile::Continue(acc + child.cardinality())
                 } else if child_segment == segment {
-                    FoldWhile::Continue(acc + child.rank(value))
+                    FoldWhile::Done(acc + child.rank(value))
                 } else {
                     FoldWhile::Done(acc)
                 }
@@ -203,6 +228,10 @@ impl<L: Level> PartitionWrite<L> for TreePartition<L> {
             }
         }
         false
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        todo!()
     }
 }
 

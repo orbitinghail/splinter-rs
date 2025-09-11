@@ -142,6 +142,22 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
         }
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        match self {
+            Self::Empty => None,
+            Self::Full => Some(value.as_()),
+            Self::Bitmap { bitmap } => {
+                let contains = *bitmap.get(value.as_()).unwrap();
+                contains.then(|| {
+                    let prefix = bitmap.get(0..value.as_());
+                    prefix.unwrap().count_ones()
+                })
+            }
+            Self::Vec { values } => values.binary_search(&value.into()).ok(),
+            Self::Run { runs } => runs.position(value),
+        }
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         match self {
             Self::Empty => 0,
@@ -273,6 +289,13 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
         match self {
             Self::NonRecursive(p) => p.contains(value),
             Self::Tree(p) => p.contains(value),
+        }
+    }
+
+    fn position(&self, value: L::Value) -> Option<usize> {
+        match self {
+            Self::NonRecursive(p) => p.position(value),
+            Self::Tree(p) => p.position(value),
         }
     }
 

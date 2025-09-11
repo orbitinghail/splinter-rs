@@ -2,7 +2,7 @@ use std::{
     fmt::Debug,
     iter::FusedIterator,
     mem::size_of,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeInclusive, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, RangeInclusive, SubAssign},
 };
 
 use bytes::BufMut;
@@ -18,10 +18,12 @@ use crate::{
     partition::Partition,
     segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, TruncateFrom},
+    util::RangeExt,
 };
 
 pub(crate) trait Run<T> {
     fn len(&self) -> usize;
+    fn position(&self, v: T) -> usize;
     fn rank(&self, v: T) -> usize;
     fn select(&self, idx: usize) -> Option<T>;
     fn first(&self) -> T;
@@ -35,6 +37,11 @@ where
     #[inline]
     fn len(&self) -> usize {
         self.end().as_() - self.start().as_() + 1
+    }
+
+    #[inline]
+    fn position(&self, v: T) -> usize {
+        v.min(*self.end()).as_() - self.start().as_()
     }
 
     #[inline]
@@ -59,6 +66,30 @@ where
     }
 }
 
+pub(crate) fn run_position<T, I>(iter: I, value: T) -> Option<usize>
+where
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    I: IntoIterator<Item = RangeInclusive<T>>,
+{
+    let mut found = false;
+
+    let pos = iter
+        .into_iter()
+        .fold_while(0, |acc, run| {
+            if value < run.first() {
+                FoldWhile::Done(acc)
+            } else if value <= run.last() {
+                found = true;
+                FoldWhile::Done(acc + run.position(value))
+            } else {
+                FoldWhile::Continue(acc + run.len())
+            }
+        })
+        .into_inner();
+
+    found.then_some(pos)
+}
+
 pub(crate) fn run_rank<T, I>(iter: I, value: T) -> usize
 where
     T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
@@ -71,7 +102,7 @@ where
             } else if value <= run.last() {
                 FoldWhile::Done(acc + run.rank(value))
             } else {
-                FoldWhile::Continue(acc + run.rank(value))
+                FoldWhile::Continue(acc + run.len())
             }
         })
         .into_inner()
@@ -181,6 +212,10 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
         self.runs.contains(value)
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        run_position(self.runs.ranges(), value)
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         run_rank(self.runs.ranges(), value)
     }
@@ -205,6 +240,13 @@ impl<L: Level> PartitionWrite<L> for RunPartition<L> {
 
     fn remove(&mut self, value: L::Value) -> bool {
         self.runs.remove(value)
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        if let Some(values) = values.try_into_inclusive() {
+            let set = RangeSetBlaze::from_iter(std::iter::once(values));
+            self.runs = &self.runs - set;
+        }
     }
 }
 

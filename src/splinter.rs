@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::RangeBounds};
 
 use bytes::Bytes;
 
@@ -169,6 +169,11 @@ impl PartitionRead<High> for Splinter {
         self.0.contains(value)
     }
 
+    #[inline]
+    fn position(&self, value: u32) -> Option<usize> {
+        self.0.position(value)
+    }
+
     /// Returns the number of elements in this splinter that are less than or equal to the given value.
     ///
     /// This is also known as the "rank" of the value in the sorted sequence of all elements.
@@ -316,6 +321,11 @@ impl PartitionWrite<High> for Splinter {
     #[inline]
     fn remove(&mut self, value: u32) -> bool {
         self.0.remove(value)
+    }
+
+    #[inline]
+    fn remove_range<R: RangeBounds<u32>>(&mut self, values: R) {
+        self.0.remove_range(values);
     }
 }
 
