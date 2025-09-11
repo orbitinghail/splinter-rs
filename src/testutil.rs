@@ -1,4 +1,8 @@
-use std::{fmt::Debug, marker::PhantomData, ops::Bound};
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+    ops::{Bound, RangeBounds},
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use itertools::{Itertools, assert_equal};
@@ -223,7 +227,7 @@ where
 pub fn test_partition_write<L, S>(splinter: &mut S)
 where
     L: Level,
-    S: PartitionRead<L> + PartitionWrite<L> + Debug,
+    S: PartitionRead<L> + PartitionWrite<L> + Debug + Extend<L::Value>,
 {
     // start by clearing the splinter while exercising insert/remove
     let initial_set = splinter.iter().collect_vec();
@@ -243,6 +247,38 @@ where
     }
 
     itertools::assert_equal(splinter.iter(), samples.into_iter());
+
+    // test remove_range can clear the entire splinter
+    splinter.remove_range(..);
+    assert!(splinter.is_empty());
+
+    // remove chunks from a large splinter until the splinter is empty
+    let mut cursor = L::Value::truncate_from(117);
+    let mut set = std::iter::from_fn(|| {
+        cursor = cursor + L::Value::ONE;
+        (cursor < L::Value::truncate_from(121665)).then_some(cursor)
+    })
+    .collect_vec();
+
+    splinter.extend(set.iter().copied());
+
+    macro_rules! remove_range {
+        ($range:expr) => {
+            splinter.remove_range($range);
+            set.retain(|x| !$range.contains(x));
+            itertools::equal(splinter.iter(), set.iter().copied());
+        };
+    }
+
+    remove_range!(L::Value::truncate_from(0)..L::Value::truncate_from(0));
+    remove_range!(..L::Value::truncate_from(128));
+    remove_range!(L::Value::truncate_from(5615)..=L::Value::truncate_from(61215));
+    remove_range!(L::Value::truncate_from(1075)..L::Value::truncate_from(2056));
+    remove_range!(L::Value::truncate_from(120000)..);
+    remove_range!((
+        Bound::Excluded(L::Value::truncate_from(61216)),
+        Bound::Included(L::Value::truncate_from(61316))
+    ));
 }
 
 pub fn mkchecksum(data: &[u8]) -> u64 {

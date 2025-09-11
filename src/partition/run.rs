@@ -244,7 +244,7 @@ impl<L: Level> PartitionWrite<L> for RunPartition<L> {
 
     fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
         if let Some(values) = values.try_into_inclusive() {
-            let set = RangeSetBlaze::from_iter(std::iter::once(values));
+            let set = RangeSetBlaze::from_iter([values]);
             self.runs = &self.runs - set;
         }
     }
@@ -344,6 +344,13 @@ impl<L: Level> From<&RunsRef<'_, L>> for RunPartition<L> {
         Self {
             runs: value.ranges().into_range_set_blaze(),
         }
+    }
+}
+
+impl<L: Level> Extend<L::Value> for RunPartition<L> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        todo!()
     }
 }
 

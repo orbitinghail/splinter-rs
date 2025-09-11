@@ -484,6 +484,13 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
     }
 }
 
+impl<L: Level> Extend<L::Value> for TreePartition<L> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -496,6 +503,12 @@ mod test {
         partition::tree::TreePartition,
         testutil::{test_partition_read, test_partition_write},
     };
+
+    #[test]
+    fn test_tree_remove_range() {
+        let mut partition = TreePartition::<Low>::from_iter([]);
+        test_partition_write(&mut partition);
+    }
 
     proptest! {
         #[test]

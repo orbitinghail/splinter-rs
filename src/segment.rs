@@ -64,7 +64,8 @@ macro_rules! impl_split {
 
                 #[inline(always)]
                 fn segment_end(self) -> Self {
-                    self & Self::MAX
+                    let rest_max: $ty = <$rest>::MAX.as_();
+                    self | rest_max
                 }
             }
         )*

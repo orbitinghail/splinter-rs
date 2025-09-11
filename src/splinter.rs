@@ -347,6 +347,13 @@ impl Optimizable for Splinter {
     }
 }
 
+impl Extend<u32> for Splinter {
+    #[inline]
+    fn extend<T: IntoIterator<Item = u32>>(&mut self, iter: T) {
+        self.0.extend(iter);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

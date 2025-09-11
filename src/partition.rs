@@ -391,6 +391,7 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
             Partition::Run(partition) => partition.remove_range(values),
             Partition::Tree(partition) => partition.remove_range(values),
         }
+        self.optimize_fast();
     }
 }
 
@@ -404,8 +405,12 @@ impl<L: Level> FromIterator<L::Value> for Partition<L> {
 
 impl<L: Level> Extend<L::Value> for Partition<L> {
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        for el in iter {
-            self.raw_insert(el);
+        match self {
+            Partition::Full => (),
+            Partition::Bitmap(partition) => partition.extend(iter),
+            Partition::Vec(partition) => partition.extend(iter),
+            Partition::Run(partition) => partition.extend(iter),
+            Partition::Tree(partition) => partition.extend(iter),
         }
         self.optimize_fast();
     }

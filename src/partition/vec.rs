@@ -278,6 +278,13 @@ impl<L: Level> Complement for VecPartition<L> {
     }
 }
 
+impl<L: Level> Extend<L::Value> for VecPartition<L> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        self.values.extend(iter)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;

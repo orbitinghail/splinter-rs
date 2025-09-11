@@ -308,6 +308,13 @@ where
     }
 }
 
+impl<L: Level> Extend<L::Value> for BitmapPartition<L> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
