@@ -411,6 +411,12 @@ mod tests {
         itertools::assert_equal(splinter.iter(), set.into_iter());
     }
 
+    #[test]
+    fn test_splinter_write() {
+        let mut splinter = Splinter::from_iter(0u32..16384);
+        test_partition_write(&mut splinter);
+    }
+
     proptest! {
         #[test]
         fn test_splinter_read_proptest(set in hash_set(0u32..16384, 0..1024)) {
@@ -418,11 +424,6 @@ mod tests {
             test_partition_read(&Splinter::from_iter(set), &expected);
         }
 
-        #[test]
-        fn test_splinter_write_proptest(set in hash_set(0u32..16384, 0..1024)) {
-            let mut splinter = Splinter::from_iter(set);
-            test_partition_write(&mut splinter);
-        }
 
         #[test]
         fn test_splinter_proptest(set in vec(0u32..16384, 0..1024)) {
@@ -497,7 +498,6 @@ mod tests {
             itertools::assert_equal(splinter.iter(), set.iter().copied());
 
             test_partition_read(&splinter, &set);
-            test_partition_write(&mut splinter.clone());
 
             let expected_size = splinter.encoded_size();
             let splinter = splinter.encode_to_bytes();

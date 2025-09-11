@@ -15,7 +15,7 @@ use crate::{
     partition::{Partition, run::MergeRuns},
     segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
-    util::{RangeExt, find_next_sorted},
+    util::find_next_sorted,
 };
 
 #[derive(Clone, Eq)]
@@ -146,16 +146,8 @@ impl<L: Level> PartitionWrite<L> for VecPartition<L> {
     }
 
     fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
-        if let Some(range) = values.try_into_inclusive() {
-            let start = match self.values.binary_search(range.start()) {
-                Ok(i) => i,
-                Err(i) => i,
-            };
-            let end = match self.values.binary_search(range.end()) {
-                Ok(i) => i,
-                Err(i) => i - 1,
-            };
-            self.values.drain(start..=end);
+        if !self.is_empty() {
+            self.values.retain(|x| !values.contains(x))
         }
     }
 }
@@ -281,7 +273,16 @@ impl<L: Level> Complement for VecPartition<L> {
 impl<L: Level> Extend<L::Value> for VecPartition<L> {
     #[inline]
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        self.values.extend(iter)
+        let iter = iter.into_iter();
+        let estimated_size = self.values.len() + iter.size_hint().0;
+
+        let left =
+            std::mem::replace(&mut self.values, Vec::with_capacity(estimated_size)).into_iter();
+        let right = iter.into_iter().sorted();
+
+        for x in left.merge(right).dedup() {
+            self.values.push(x)
+        }
     }
 }
 
@@ -298,6 +299,12 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
+    #[test]
+    fn test_vec_write() {
+        let mut partition = VecPartition::<Block>::from_iter(0..=255);
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_vec_small_read_proptest(set: HashSet<u8>)  {
@@ -306,10 +313,5 @@ mod test {
             test_partition_read(&partition, &expected);
         }
 
-        #[test]
-        fn test_vec_small_write_proptest(set: HashSet<u8>)  {
-            let mut partition = VecPartition::<Block>::from_iter(set);
-            test_partition_write(&mut partition);
-        }
     }
 }

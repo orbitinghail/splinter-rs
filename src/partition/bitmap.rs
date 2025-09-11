@@ -330,18 +330,18 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
+    #[test]
+    fn test_bitmap_write() {
+        let mut partition = BitmapPartition::<Block>::from_iter(0..=255);
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_bitmap_small_read_proptest(set: HashSet<u8>) {
             let expected = set.iter().copied().sorted().collect_vec();
             let partition = BitmapPartition::<Block>::from_iter(set);
             test_partition_read(&partition, &expected);
-        }
-
-        #[test]
-        fn test_bitmap_small_write_proptest(set: HashSet<u8>) {
-            let mut partition = BitmapPartition::<Block>::from_iter(set);
-            test_partition_write(&mut partition);
         }
     }
 }

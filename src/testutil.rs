@@ -10,7 +10,11 @@ use num::{
     CheckedAdd, Saturating,
     traits::{Bounded, ConstOne, ConstZero},
 };
-use rand::{Rng, SeedableRng, rngs::StdRng, seq::index};
+use rand::{
+    Rng, SeedableRng,
+    rngs::StdRng,
+    seq::{SliceRandom, index},
+};
 use zerocopy::IntoBytes;
 
 use crate::{
@@ -230,7 +234,8 @@ where
     S: PartitionRead<L> + PartitionWrite<L> + Debug + Extend<L::Value>,
 {
     // start by clearing the splinter while exercising insert/remove
-    let initial_set = splinter.iter().collect_vec();
+    let mut initial_set = splinter.iter().collect_vec();
+    initial_set.shuffle(&mut rand::rng());
     for v in initial_set {
         assert!(!splinter.insert(v));
         assert!(splinter.remove(v));
@@ -271,6 +276,8 @@ where
     }
 
     remove_range!(L::Value::truncate_from(0)..L::Value::truncate_from(0));
+    remove_range!(L::Value::truncate_from(0)..=L::Value::truncate_from(5));
+    remove_range!(L::Value::truncate_from(117)..=L::Value::truncate_from(117));
     remove_range!(..L::Value::truncate_from(128));
     remove_range!(L::Value::truncate_from(5615)..=L::Value::truncate_from(61215));
     remove_range!(L::Value::truncate_from(1075)..L::Value::truncate_from(2056));

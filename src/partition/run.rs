@@ -458,6 +458,12 @@ mod tests {
         itertools::assert_equal(merged, [1..=3, 5..=5, 7..=8, 10..=10]);
     }
 
+    #[test]
+    fn test_run_write() {
+        let mut partition = RunPartition::<Block>::from_iter(0..=255);
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_run_small_read_proptest(set: HashSet<u8>) {
@@ -466,10 +472,5 @@ mod tests {
             test_partition_read(&partition, &expected);
         }
 
-        #[test]
-        fn test_run_small_write_proptest(set: HashSet<u8>) {
-            let mut partition = RunPartition::<Block>::from_iter(set);
-            test_partition_write(&mut partition);
-        }
     }
 }

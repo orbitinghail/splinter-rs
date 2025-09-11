@@ -183,3 +183,9 @@ impl Complement for Never {
         unreachable!("Never::complement")
     }
 }
+
+impl<L> Extend<L> for Never {
+    fn extend<T: IntoIterator<Item = L>>(&mut self, _iter: T) {
+        unreachable!()
+    }
+}

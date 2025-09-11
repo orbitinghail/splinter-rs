@@ -87,33 +87,8 @@ impl<L: Level> Default for TreePartition<L> {
 
 impl<L: Level> FromIterator<L::Value> for TreePartition<L> {
     fn from_iter<T: IntoIterator<Item = L::Value>>(iter: T) -> Self {
-        let mut segmented = IterSegmented::new(iter.into_iter());
         let mut tree = TreePartition::default();
-
-        let Some((mut child_segment, first_value)) = segmented.next() else {
-            return tree;
-        };
-
-        // we amortize the cost of looking up child partitions to optimize the
-        // common case of initializing a tree partition from an iterator of
-        // sorted values
-
-        let mut child = tree.children.entry(child_segment).or_default();
-
-        child.insert(first_value);
-        tree.cardinality += 1;
-
-        for (segment, value) in segmented {
-            if segment != child_segment {
-                child_segment = segment;
-                child = tree.children.entry(child_segment).or_default();
-            }
-
-            if child.insert(value) {
-                tree.cardinality += 1;
-            }
-        }
-
+        tree.extend(iter);
         tree
     }
 }
@@ -485,29 +460,18 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
 }
 
 impl<L: Level> Extend<L::Value> for TreePartition<L> {
-    #[inline]
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        let mut segmented = IterSegmented::new(iter.into_iter());
+        let segmented = IterSegmented::new(iter.into_iter());
+        let grouped = segmented.chunk_by(|(segment, _)| *segment);
 
-        let Some((mut child_segment, first_value)) = segmented.next() else {
-            return;
-        };
-
-        let mut child = self.children.entry(child_segment).or_default();
-        if child.insert(first_value) {
-            self.cardinality += 1;
+        for (segment, group) in grouped.into_iter() {
+            self.children
+                .entry(segment)
+                .or_default()
+                .extend(group.map(|(_, v)| v))
         }
 
-        for (segment, value) in segmented {
-            if segment != child_segment {
-                child_segment = segment;
-                child = self.children.entry(child_segment).or_default();
-            }
-
-            if child.insert(value) {
-                self.cardinality += 1;
-            }
-        }
+        self.refresh_cardinality();
     }
 }
 
@@ -525,8 +489,8 @@ mod test {
     };
 
     #[test]
-    fn test_tree_remove_range() {
-        let mut partition = TreePartition::<Low>::from_iter([]);
+    fn test_tree_write() {
+        let mut partition = TreePartition::<Low>::from_iter(0..=16384);
         test_partition_write(&mut partition);
     }
 
@@ -538,10 +502,5 @@ mod test {
             test_partition_read(&partition, &expected);
         }
 
-        #[test]
-        fn test_tree_small_write_proptest(set: HashSet<u16>)  {
-            let mut partition = TreePartition::<Low>::from_iter(set);
-            test_partition_write(&mut partition);
-        }
     }
 }
