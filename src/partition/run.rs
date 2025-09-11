@@ -271,9 +271,7 @@ impl<L: Level> BitOrAssign<&RunPartition<L>> for RunPartition<L> {
 
 impl<L: Level> BitOrAssign<&RunsRef<'_, L>> for RunPartition<L> {
     fn bitor_assign(&mut self, rhs: &RunsRef<'_, L>) {
-        for range in rhs.ranges() {
-            self.runs.ranges_insert(range);
-        }
+        self.runs.extend(rhs.ranges())
     }
 }
 
@@ -350,7 +348,7 @@ impl<L: Level> From<&RunsRef<'_, L>> for RunPartition<L> {
 impl<L: Level> Extend<L::Value> for RunPartition<L> {
     #[inline]
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        todo!()
+        self.runs |= RangeSetBlaze::from_iter(iter);
     }
 }
 

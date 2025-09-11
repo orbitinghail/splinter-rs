@@ -487,7 +487,27 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
 impl<L: Level> Extend<L::Value> for TreePartition<L> {
     #[inline]
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        todo!()
+        let mut segmented = IterSegmented::new(iter.into_iter());
+
+        let Some((mut child_segment, first_value)) = segmented.next() else {
+            return;
+        };
+
+        let mut child = self.children.entry(child_segment).or_default();
+        if child.insert(first_value) {
+            self.cardinality += 1;
+        }
+
+        for (segment, value) in segmented {
+            if segment != child_segment {
+                child_segment = segment;
+                child = self.children.entry(child_segment).or_default();
+            }
+
+            if child.insert(value) {
+                self.cardinality += 1;
+            }
+        }
     }
 }
 
