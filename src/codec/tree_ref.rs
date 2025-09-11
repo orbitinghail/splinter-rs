@@ -67,12 +67,7 @@ impl<'a, L: Level> TreeRef<'a, L> {
         &self,
         segment: Segment,
     ) -> Option<PartitionRef<'a, L::LevelDown>> {
-        if self.segments.contains(segment) {
-            let rank = self.segments.rank(segment) - 1;
-            Some(self.load_child(rank))
-        } else {
-            None
-        }
+        self.segments.position(segment).map(|p| self.load_child(p))
     }
 
     pub(crate) fn segments(&self) -> impl Iterator<Item = Segment> {
@@ -102,6 +97,34 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
         }
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        let (segment, value) = value.split();
+        let mut found = false;
+        let pos = self
+            .segments
+            .iter()
+            .enumerate()
+            .fold_while(0, |acc, (idx, child_segment)| {
+                if child_segment < segment {
+                    let child = self.load_child(idx);
+                    FoldWhile::Continue(acc + child.cardinality())
+                } else if child_segment == segment {
+                    let child = self.load_child(idx);
+                    if let Some(pos) = child.position(value) {
+                        found = true;
+                        FoldWhile::Done(acc + pos)
+                    } else {
+                        FoldWhile::Done(acc)
+                    }
+                } else {
+                    FoldWhile::Done(acc)
+                }
+            })
+            .into_inner();
+
+        found.then_some(pos)
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         let (segment, value) = value.split();
         self.segments
@@ -113,7 +136,7 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
                     FoldWhile::Continue(acc + child.cardinality())
                 } else if child_segment == segment {
                     let child = self.load_child(idx);
-                    FoldWhile::Continue(acc + child.rank(value))
+                    FoldWhile::Done(acc + child.rank(value))
                 } else {
                     FoldWhile::Done(acc)
                 }

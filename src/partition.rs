@@ -1,4 +1,7 @@
-use std::fmt::{self, Debug};
+use std::{
+    fmt::{self, Debug},
+    ops::RangeBounds,
+};
 
 use bytes::BufMut;
 use itertools::Itertools;
@@ -305,6 +308,16 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
         }
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        match self {
+            Partition::Full => Some(value.as_()),
+            Partition::Bitmap(partition) => partition.position(value),
+            Partition::Vec(partition) => partition.position(value),
+            Partition::Run(partition) => partition.position(value),
+            Partition::Tree(partition) => partition.position(value),
+        }
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         match self {
             Partition::Full => value.as_() + 1,
@@ -362,6 +375,24 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
         }
         removed
     }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        match self {
+            Partition::Full => {
+                self.switch_kind(if L::ALLOW_TREE {
+                    PartitionKind::Tree
+                } else {
+                    PartitionKind::Run
+                });
+                self.remove_range(values)
+            }
+            Partition::Bitmap(partition) => partition.remove_range(values),
+            Partition::Vec(partition) => partition.remove_range(values),
+            Partition::Run(partition) => partition.remove_range(values),
+            Partition::Tree(partition) => partition.remove_range(values),
+        }
+        self.optimize_fast();
+    }
 }
 
 impl<L: Level> FromIterator<L::Value> for Partition<L> {
@@ -374,8 +405,12 @@ impl<L: Level> FromIterator<L::Value> for Partition<L> {
 
 impl<L: Level> Extend<L::Value> for Partition<L> {
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        for el in iter {
-            self.raw_insert(el);
+        match self {
+            Partition::Full => (),
+            Partition::Bitmap(partition) => partition.extend(iter),
+            Partition::Vec(partition) => partition.extend(iter),
+            Partition::Run(partition) => partition.extend(iter),
+            Partition::Tree(partition) => partition.extend(iter),
         }
         self.optimize_fast();
     }

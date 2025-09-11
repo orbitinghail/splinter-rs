@@ -1,4 +1,7 @@
-use std::{fmt::Debug, ops::Deref};
+use std::{
+    fmt::Debug,
+    ops::{Deref, RangeBounds},
+};
 
 use bytes::{BufMut, Bytes};
 use culprit::Culprit;
@@ -313,6 +316,13 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for CowSplinter<B> {
         }
     }
 
+    fn position(&self, value: u32) -> Option<usize> {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref.position(value),
+            CowSplinter::Owned(splinter) => splinter.position(value),
+        }
+    }
+
     fn rank(&self, value: u32) -> usize {
         match self {
             CowSplinter::Ref(splinter_ref) => splinter_ref.rank(value),
@@ -343,12 +353,19 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for CowSplinter<B> {
 }
 
 impl<B: Deref<Target = [u8]>> PartitionWrite<High> for CowSplinter<B> {
+    #[inline]
     fn insert(&mut self, value: u32) -> bool {
         self.to_mut().insert(value)
     }
 
+    #[inline]
     fn remove(&mut self, value: u32) -> bool {
         self.to_mut().remove(value)
+    }
+
+    #[inline]
+    fn remove_range<R: RangeBounds<u32>>(&mut self, values: R) {
+        self.to_mut().remove_range(values)
     }
 }
 

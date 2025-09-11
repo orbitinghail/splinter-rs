@@ -1,4 +1,4 @@
-use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign};
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign};
 
 use bytes::BufMut;
 
@@ -45,6 +45,10 @@ impl<L: Level> PartitionWrite<L> for Never {
     fn remove(&mut self, _value: L::Value) -> bool {
         unreachable!("Never::remove")
     }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, _values: R) {
+        unreachable!("Never::remove")
+    }
 }
 
 impl<L: Level> PartitionRead<L> for Never {
@@ -58,6 +62,10 @@ impl<L: Level> PartitionRead<L> for Never {
 
     fn contains(&self, _value: L::Value) -> bool {
         unreachable!("Never::contains")
+    }
+
+    fn position(&self, _value: L::Value) -> Option<usize> {
+        unreachable!("Never::position")
     }
 
     fn rank(&self, _value: L::Value) -> usize {
@@ -173,5 +181,11 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Never {
 impl Complement for Never {
     fn complement(&mut self) {
         unreachable!("Never::complement")
+    }
+}
+
+impl<L> Extend<L> for Never {
+    fn extend<T: IntoIterator<Item = L>>(&mut self, _iter: T) {
+        unreachable!()
     }
 }

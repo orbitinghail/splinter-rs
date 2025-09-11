@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, btree_map::Entry},
     fmt::{self, Debug},
     marker::PhantomData,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign},
 };
 
 use bytes::BufMut;
@@ -19,6 +19,7 @@ use crate::{
     partition::Partition,
     segment::{IterSegmented, Segment, SplitSegment},
     traits::{Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite},
+    util::RangeExt,
 };
 
 #[derive(Clone, Eq)]
@@ -86,33 +87,8 @@ impl<L: Level> Default for TreePartition<L> {
 
 impl<L: Level> FromIterator<L::Value> for TreePartition<L> {
     fn from_iter<T: IntoIterator<Item = L::Value>>(iter: T) -> Self {
-        let mut segmented = IterSegmented::new(iter.into_iter());
         let mut tree = TreePartition::default();
-
-        let Some((mut child_segment, first_value)) = segmented.next() else {
-            return tree;
-        };
-
-        // we amortize the cost of looking up child partitions to optimize the
-        // common case of initializing a tree partition from an iterator of
-        // sorted values
-
-        let mut child = tree.children.entry(child_segment).or_default();
-
-        child.insert(first_value);
-        tree.cardinality += 1;
-
-        for (segment, value) in segmented {
-            if segment != child_segment {
-                child_segment = segment;
-                child = tree.children.entry(child_segment).or_default();
-            }
-
-            if child.insert(value) {
-                tree.cardinality += 1;
-            }
-        }
-
+        tree.extend(iter);
         tree
     }
 }
@@ -133,15 +109,40 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
             .is_some_and(|child| child.contains(value))
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        let (segment, value) = value.split();
+        let mut found = false;
+        let pos = self
+            .children
+            .iter()
+            .fold_while(0, |acc, (&child_segment, child)| {
+                if child_segment < segment {
+                    FoldWhile::Continue(acc + child.cardinality())
+                } else if child_segment == segment {
+                    if let Some(pos) = child.position(value) {
+                        found = true;
+                        FoldWhile::Done(acc + pos)
+                    } else {
+                        FoldWhile::Done(acc)
+                    }
+                } else {
+                    FoldWhile::Done(acc)
+                }
+            })
+            .into_inner();
+
+        found.then_some(pos)
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         let (segment, value) = value.split();
         self.children
             .iter()
-            .fold_while(0, move |acc, (&child_segment, child)| {
+            .fold_while(0, |acc, (&child_segment, child)| {
                 if child_segment < segment {
                     FoldWhile::Continue(acc + child.cardinality())
                 } else if child_segment == segment {
-                    FoldWhile::Continue(acc + child.rank(value))
+                    FoldWhile::Done(acc + child.rank(value))
                 } else {
                     FoldWhile::Done(acc)
                 }
@@ -203,6 +204,32 @@ impl<L: Level> PartitionWrite<L> for TreePartition<L> {
             }
         }
         false
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        if let Some(values) = values.try_into_inclusive() {
+            let p1 = (*values.start()).segment_end().min(*values.end());
+            let p2 = (*values.end()).segment_start().max(*values.start());
+            let segments = values.start().segment()..=values.end().segment();
+
+            self.children.retain(|segment, child| {
+                // special case first and last segment
+                if segment == segments.start() {
+                    let range = values.start().rest()..=p1.rest();
+                    child.remove_range(range);
+                    !child.is_empty()
+                } else if segment == segments.end() {
+                    let range = p2.rest()..=values.end().rest();
+                    child.remove_range(range);
+                    !child.is_empty()
+                } else {
+                    // this segment is fully contained in the range, drop it entirely
+                    false
+                }
+            });
+
+            self.refresh_cardinality();
+        }
     }
 }
 
@@ -432,6 +459,22 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
     }
 }
 
+impl<L: Level> Extend<L::Value> for TreePartition<L> {
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        let segmented = IterSegmented::new(iter.into_iter());
+        let grouped = segmented.chunk_by(|(segment, _)| *segment);
+
+        for (segment, group) in grouped.into_iter() {
+            self.children
+                .entry(segment)
+                .or_default()
+                .extend(group.map(|(_, v)| v))
+        }
+
+        self.refresh_cardinality();
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -445,6 +488,12 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
+    #[test]
+    fn test_tree_write() {
+        let mut partition = TreePartition::<Low>::from_iter(0..=16384);
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_tree_small_read_proptest(set: HashSet<u16>)  {
@@ -453,10 +502,5 @@ mod test {
             test_partition_read(&partition, &expected);
         }
 
-        #[test]
-        fn test_tree_small_write_proptest(set: HashSet<u16>)  {
-            let mut partition = TreePartition::<Low>::from_iter(set);
-            test_partition_write(&mut partition);
-        }
     }
 }

@@ -275,6 +275,10 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRef<B> {
         self.load_unchecked().contains(value)
     }
 
+    fn position(&self, value: u32) -> Option<usize> {
+        self.load_unchecked().position(value)
+    }
+
     fn rank(&self, value: u32) -> usize {
         self.load_unchecked().rank(value)
     }

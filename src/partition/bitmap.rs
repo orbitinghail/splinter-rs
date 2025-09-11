@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     marker::PhantomData,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign},
 };
 
 use bitvec::{
@@ -22,6 +22,7 @@ use crate::{
     partition::Partition,
     segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite, TruncateFrom},
+    util::RangeExt,
 };
 
 #[derive(Clone, Eq)]
@@ -108,6 +109,13 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
         *unsafe { self.bitmap.get_unchecked(value.as_()) }
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        self.contains(value).then(|| {
+            let prefix = self.bitmap.get(0..value.as_());
+            prefix.unwrap().count_ones()
+        })
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         let prefix = self.bitmap.get(0..=value.as_());
         prefix.unwrap().count_ones()
@@ -144,6 +152,14 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
             .get_mut(value.as_())
             .expect("value out of range");
         bit.replace(false)
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        if let Some(range) = values.try_into_inclusive() {
+            let range = (*range.start()).as_()..=(*range.end()).as_();
+            let slice = self.bitmap.get_mut(range).unwrap();
+            slice.fill(false)
+        }
     }
 }
 
@@ -292,6 +308,15 @@ where
     }
 }
 
+impl<L: Level> Extend<L::Value> for BitmapPartition<L> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        for value in iter {
+            self.bitmap.set(value.as_(), true);
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -305,18 +330,18 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
+    #[test]
+    fn test_bitmap_write() {
+        let mut partition = BitmapPartition::<Block>::from_iter(0..=255);
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_bitmap_small_read_proptest(set: HashSet<u8>) {
             let expected = set.iter().copied().sorted().collect_vec();
             let partition = BitmapPartition::<Block>::from_iter(set);
             test_partition_read(&partition, &expected);
-        }
-
-        #[test]
-        fn test_bitmap_small_write_proptest(set: HashSet<u8>) {
-            let mut partition = BitmapPartition::<Block>::from_iter(set);
-            test_partition_write(&mut partition);
         }
     }
 }

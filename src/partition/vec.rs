@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     mem::size_of,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign, SubAssign},
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, SubAssign},
 };
 
 use bytes::BufMut;
@@ -96,6 +96,10 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
         self.values.binary_search(&value).is_ok()
     }
 
+    fn position(&self, value: L::Value) -> Option<usize> {
+        self.values.binary_search(&value).ok()
+    }
+
     fn rank(&self, value: L::Value) -> usize {
         match self.values.binary_search(&value) {
             Ok(index) => index + 1,
@@ -138,6 +142,12 @@ impl<L: Level> PartitionWrite<L> for VecPartition<L> {
             }
             // value doesn't exist
             Err(_) => false,
+        }
+    }
+
+    fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
+        if !self.is_empty() {
+            self.values.retain(|x| !values.contains(x))
         }
     }
 }
@@ -260,6 +270,22 @@ impl<L: Level> Complement for VecPartition<L> {
     }
 }
 
+impl<L: Level> Extend<L::Value> for VecPartition<L> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        let iter = iter.into_iter();
+        let estimated_size = self.values.len() + iter.size_hint().0;
+
+        let left =
+            std::mem::replace(&mut self.values, Vec::with_capacity(estimated_size)).into_iter();
+        let right = iter.into_iter().sorted();
+
+        for x in left.merge(right).dedup() {
+            self.values.push(x)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -273,6 +299,12 @@ mod test {
         testutil::{test_partition_read, test_partition_write},
     };
 
+    #[test]
+    fn test_vec_write() {
+        let mut partition = VecPartition::<Block>::from_iter(0..=255);
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_vec_small_read_proptest(set: HashSet<u8>)  {
@@ -281,10 +313,5 @@ mod test {
             test_partition_read(&partition, &expected);
         }
 
-        #[test]
-        fn test_vec_small_write_proptest(set: HashSet<u8>)  {
-            let mut partition = VecPartition::<Block>::from_iter(set);
-            test_partition_write(&mut partition);
-        }
     }
 }
