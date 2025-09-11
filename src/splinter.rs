@@ -27,12 +27,7 @@ use crate::{
 /// ```
 /// use splinter_rs::{Splinter, PartitionWrite, PartitionRead, Optimizable};
 ///
-/// let mut splinter = Splinter::EMPTY;
-///
-/// // Insert some values
-/// splinter.insert(1024);
-/// splinter.insert(2048);
-/// splinter.insert(123);
+/// let mut splinter = Splinter::from_iter([1024, 2048, 123]);
 ///
 /// // Check membership
 /// assert!(splinter.contains(1024));
@@ -76,9 +71,7 @@ impl Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionWrite, PartitionRead};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(42);
-    /// splinter.insert(1337);
+    /// let mut splinter = Splinter::from_iter([42, 1337]);
     ///
     /// let splinter_ref = splinter.encode_to_splinter_ref();
     /// assert_eq!(splinter_ref.cardinality(), 2);
@@ -121,9 +114,7 @@ impl PartitionRead<High> for Splinter {
     /// let mut splinter = Splinter::EMPTY;
     /// assert_eq!(splinter.cardinality(), 0);
     ///
-    /// splinter.insert(100);
-    /// splinter.insert(200);
-    /// splinter.insert(300);
+    /// let splinter = Splinter::from_iter([100, 200, 300]);
     /// assert_eq!(splinter.cardinality(), 3);
     /// ```
     #[inline]
@@ -141,7 +132,7 @@ impl PartitionRead<High> for Splinter {
     /// let mut splinter = Splinter::EMPTY;
     /// assert!(splinter.is_empty());
     ///
-    /// splinter.insert(42);
+    /// let splinter = Splinter::from_iter([42]);
     /// assert!(!splinter.is_empty());
     /// ```
     #[inline]
@@ -156,9 +147,7 @@ impl PartitionRead<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(42);
-    /// splinter.insert(1337);
+    /// let splinter = Splinter::from_iter([42, 1337]);
     ///
     /// assert!(splinter.contains(42));
     /// assert!(splinter.contains(1337));
@@ -179,10 +168,7 @@ impl PartitionRead<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(10);
-    /// splinter.insert(20);
-    /// splinter.insert(30);
+    /// let splinter = Splinter::from_iter([10, 20, 30]);
     ///
     /// assert_eq!(splinter.position(10), Some(0));
     /// assert_eq!(splinter.position(20), Some(1));
@@ -203,10 +189,7 @@ impl PartitionRead<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(10);
-    /// splinter.insert(20);
-    /// splinter.insert(30);
+    /// let splinter = Splinter::from_iter([10, 20, 30]);
     ///
     /// assert_eq!(splinter.rank(5), 0);   // No elements <= 5
     /// assert_eq!(splinter.rank(10), 1);  // One element <= 10
@@ -228,10 +211,7 @@ impl PartitionRead<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(100);
-    /// splinter.insert(50);
-    /// splinter.insert(200);
+    /// let splinter = Splinter::from_iter([100, 50, 200]);
     ///
     /// assert_eq!(splinter.select(0), Some(50));   // Smallest element
     /// assert_eq!(splinter.select(1), Some(100));  // Second smallest
@@ -253,9 +233,7 @@ impl PartitionRead<High> for Splinter {
     /// let mut splinter = Splinter::EMPTY;
     /// assert_eq!(splinter.last(), None);
     ///
-    /// splinter.insert(100);
-    /// splinter.insert(50);
-    /// splinter.insert(200);
+    /// let splinter = Splinter::from_iter([100, 50, 200]);
     ///
     /// assert_eq!(splinter.last(), Some(200));
     /// ```
@@ -271,10 +249,7 @@ impl PartitionRead<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(300);
-    /// splinter.insert(100);
-    /// splinter.insert(200);
+    /// let splinter = Splinter::from_iter([300, 100, 200]);
     ///
     /// let values: Vec<u32> = splinter.iter().collect();
     /// assert_eq!(values, vec![100, 200, 300]);
@@ -323,9 +298,7 @@ impl PartitionWrite<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionWrite, PartitionRead};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// splinter.insert(42);
-    /// splinter.insert(100);
+    /// let mut splinter = Splinter::from_iter([42, 100]);
     /// assert_eq!(splinter.cardinality(), 2);
     ///
     /// // Remove existing value
@@ -353,10 +326,7 @@ impl PartitionWrite<High> for Splinter {
     /// ```
     /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
     ///
-    /// let mut splinter = Splinter::EMPTY;
-    /// for i in 1..=10 {
-    ///     splinter.insert(i);
-    /// }
+    /// let mut splinter = Splinter::from_iter(1..=10);
     ///
     /// // Remove values 3 through 7 (inclusive)
     /// splinter.remove_range(3..=7);
