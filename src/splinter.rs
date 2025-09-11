@@ -169,6 +169,26 @@ impl PartitionRead<High> for Splinter {
         self.0.contains(value)
     }
 
+    /// Returns the 0-based position of the value in this splinter if it exists.
+    ///
+    /// This method searches for the given value in the splinter and returns its position
+    /// in the sorted sequence of all elements. If the value doesn't exist, returns `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// splinter.insert(10);
+    /// splinter.insert(20);
+    /// splinter.insert(30);
+    ///
+    /// assert_eq!(splinter.position(10), Some(0));
+    /// assert_eq!(splinter.position(20), Some(1));
+    /// assert_eq!(splinter.position(30), Some(2));
+    /// assert_eq!(splinter.position(25), None); // doesn't exist
+    /// ```
     #[inline]
     fn position(&self, value: u32) -> Option<usize> {
         self.0.position(value)
@@ -323,6 +343,33 @@ impl PartitionWrite<High> for Splinter {
         self.0.remove(value)
     }
 
+    /// Removes a range of values from this splinter.
+    ///
+    /// This method removes all values that fall within the specified range bounds.
+    /// The range can be inclusive, exclusive, or half-bounded using standard Rust range syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead, PartitionWrite};
+    ///
+    /// let mut splinter = Splinter::EMPTY;
+    /// for i in 1..=10 {
+    ///     splinter.insert(i);
+    /// }
+    ///
+    /// // Remove values 3 through 7 (inclusive)
+    /// splinter.remove_range(3..=7);
+    /// assert!(!splinter.contains(5));
+    /// assert!(splinter.contains(2));
+    /// assert!(splinter.contains(8));
+    ///
+    /// // Remove from 9 onwards
+    /// splinter.remove_range(9..);
+    /// assert!(!splinter.contains(9));
+    /// assert!(!splinter.contains(10));
+    /// assert!(splinter.contains(8));
+    /// ```
     #[inline]
     fn remove_range<R: RangeBounds<u32>>(&mut self, values: R) {
         self.0.remove_range(values);
