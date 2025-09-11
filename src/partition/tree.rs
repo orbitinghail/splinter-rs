@@ -19,6 +19,7 @@ use crate::{
     partition::Partition,
     segment::{IterSegmented, Segment, SplitSegment},
     traits::{Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite},
+    util::RangeExt,
 };
 
 #[derive(Clone, Eq)]
@@ -231,7 +232,29 @@ impl<L: Level> PartitionWrite<L> for TreePartition<L> {
     }
 
     fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
-        todo!()
+        if let Some(values) = values.try_into_inclusive() {
+            let p1 = (*values.start()).segment_end().min(*values.end());
+            let p2 = (*values.end()).segment_start().max(*values.start());
+            let segments = values.start().segment()..=values.end().segment();
+
+            self.children.retain(|segment, child| {
+                // special case first and last segment
+                if segment == segments.start() {
+                    let range = values.start().rest()..=p1.rest();
+                    child.remove_range(range);
+                    !child.is_empty()
+                } else if segment == segments.end() {
+                    let range = p2.rest()..=values.end().rest();
+                    child.remove_range(range);
+                    !child.is_empty()
+                } else {
+                    // this segment is fully contained in the range, drop it entirely
+                    false
+                }
+            });
+
+            self.refresh_cardinality();
+        }
     }
 }
 

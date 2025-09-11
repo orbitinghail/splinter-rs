@@ -8,13 +8,29 @@ pub type Segment = u8;
 pub trait SplitSegment {
     type Rest;
 
+    /// returns the first byte (segment) of `Self`
     fn segment(self) -> Segment;
+
+    /// returns the remaining bytes
+    fn rest(self) -> Self::Rest;
+
+    /// splits the first byte (segment) off of `Self`
     fn split(self) -> (Segment, Self::Rest);
+
+    /// performs the inverse of `Self::split`
     fn unsplit(segment: Segment, rest: Self::Rest) -> Self;
+
+    /// returns the first value in the current segment
+    /// equivalent to masking all of the trailing bytes to 0
+    fn segment_start(self) -> Self;
+
+    /// returns the last value in the current segment
+    /// equivalent to masking all of the trailing bytes to 1
+    fn segment_end(self) -> Self;
 }
 
 macro_rules! impl_split {
-    ($(($ty:ty, $rest:ty)),*) => {
+    ($(($ty:ty, $rest:ty, $segment_mask:expr)),*) => {
         $(
             impl SplitSegment for $ty {
                 type Rest = $rest;
@@ -25,8 +41,13 @@ macro_rules! impl_split {
                 }
 
                 #[inline(always)]
+                fn rest(self) -> Self::Rest {
+                    self.as_()
+                }
+
+                #[inline(always)]
                 fn split(self) -> (Segment, Self::Rest) {
-                    (self.segment(), self.as_())
+                    (self.segment(), self.rest())
                 }
 
                 #[inline(always)]
@@ -35,12 +56,26 @@ macro_rules! impl_split {
                     let rest: $ty = rest.as_();
                     segment << (<$rest>::BITS as usize) | rest
                 }
+
+                #[inline(always)]
+                fn segment_start(self) -> Self {
+                    self & $segment_mask
+                }
+
+                #[inline(always)]
+                fn segment_end(self) -> Self {
+                    self & Self::MAX
+                }
             }
         )*
     };
 }
 
-impl_split!((u32, u24), (u24, u16), (u16, u8));
+impl_split!(
+    (u32, u24, 0xFF000000),
+    (u24, u16, u24!(0xFF0000)),
+    (u16, u8, 0xFF00)
+);
 
 impl SplitSegment for u8 {
     type Rest = u8;
@@ -48,10 +83,19 @@ impl SplitSegment for u8 {
     fn segment(self) -> Segment {
         unreachable!()
     }
+    fn rest(self) -> Self::Rest {
+        unreachable!()
+    }
     fn split(self) -> (Segment, Self::Rest) {
         unreachable!()
     }
     fn unsplit(_segment: Segment, _rest: Self::Rest) -> Self {
+        unreachable!()
+    }
+    fn segment_start(self) -> Self {
+        unreachable!()
+    }
+    fn segment_end(self) -> Self {
         unreachable!()
     }
 }
