@@ -52,6 +52,7 @@ macro_rules! binary_bitop {
     ($BitOp:tt, $bitop:ident, $bitassign:path) => {
         impl $BitOp<Splinter> for Splinter {
             type Output = Splinter;
+            #[inline]
             fn $bitop(mut self, rhs: Splinter) -> Self::Output {
                 $bitassign(&mut self, rhs);
                 self
@@ -59,6 +60,7 @@ macro_rules! binary_bitop {
         }
         impl $BitOp<&Splinter> for Splinter {
             type Output = Splinter;
+            #[inline]
             fn $bitop(mut self, rhs: &Splinter) -> Self::Output {
                 $bitassign(&mut self, rhs);
                 self
@@ -66,6 +68,7 @@ macro_rules! binary_bitop {
         }
         impl<B: Deref<Target = [u8]>> $BitOp<SplinterRef<B>> for Splinter {
             type Output = Splinter;
+            #[inline]
             fn $bitop(mut self, rhs: SplinterRef<B>) -> Self::Output {
                 $bitassign(&mut self, rhs);
                 self
@@ -73,6 +76,7 @@ macro_rules! binary_bitop {
         }
         impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for Splinter {
             type Output = Splinter;
+            #[inline]
             fn $bitop(mut self, rhs: &SplinterRef<B>) -> Self::Output {
                 $bitassign(&mut self, rhs);
                 self
@@ -80,14 +84,46 @@ macro_rules! binary_bitop {
         }
         impl<B: Deref<Target = [u8]>> $BitOp<SplinterRef<B>> for &Splinter {
             type Output = Splinter;
+            #[inline]
             fn $bitop(self, rhs: SplinterRef<B>) -> Self::Output {
                 $BitOp::$bitop(self.clone(), rhs)
             }
         }
         impl<B: Deref<Target = [u8]>> $BitOp<&SplinterRef<B>> for &Splinter {
             type Output = Splinter;
+            #[inline]
             fn $bitop(self, rhs: &SplinterRef<B>) -> Self::Output {
                 $BitOp::$bitop(self.clone(), rhs)
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<CowSplinter<B>> for Splinter {
+            type Output = Splinter;
+            #[inline]
+            fn $bitop(self, rhs: CowSplinter<B>) -> Self::Output {
+                $BitOp::$bitop(&self, &rhs)
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<CowSplinter<B>> for &Splinter {
+            type Output = Splinter;
+            #[inline]
+            fn $bitop(self, rhs: CowSplinter<B>) -> Self::Output {
+                $BitOp::$bitop(self, &rhs)
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<&CowSplinter<B>> for Splinter {
+            type Output = Splinter;
+            #[inline]
+            fn $bitop(self, rhs: &CowSplinter<B>) -> Self::Output {
+                $BitOp::$bitop(&self, rhs)
+            }
+        }
+        impl<B: Deref<Target = [u8]>> $BitOp<&CowSplinter<B>> for &Splinter {
+            type Output = Splinter;
+            fn $bitop(self, rhs: &CowSplinter<B>) -> Self::Output {
+                match rhs {
+                    CowSplinter::Ref(inner) => $BitOp::$bitop(self, inner),
+                    CowSplinter::Owned(inner) => $BitOp::$bitop(self, inner),
+                }
             }
         }
     };
@@ -96,16 +132,19 @@ macro_rules! binary_bitop {
 macro_rules! unary_bitassign {
     ($BitOpAssign:tt, $bitassign:ident) => {
         impl $BitOpAssign<&Splinter> for Splinter {
+            #[inline]
             fn $bitassign(&mut self, rhs: &Splinter) {
                 $BitOpAssign::$bitassign(self.inner_mut(), rhs.inner())
             }
         }
         impl<B: Deref<Target = [u8]>> $BitOpAssign<SplinterRef<B>> for Splinter {
+            #[inline]
             fn $bitassign(&mut self, rhs: SplinterRef<B>) {
                 $BitOpAssign::$bitassign(self.inner_mut(), &rhs.load_unchecked())
             }
         }
         impl<B: Deref<Target = [u8]>> $BitOpAssign<&SplinterRef<B>> for Splinter {
+            #[inline]
             fn $bitassign(&mut self, rhs: &SplinterRef<B>) {
                 $BitOpAssign::$bitassign(self.inner_mut(), &rhs.load_unchecked())
             }
@@ -159,9 +198,8 @@ impl BitOr<&Splinter> for &Splinter {
 
 impl BitOr<Splinter> for &Splinter {
     type Output = Splinter;
-    fn bitor(self, mut rhs: Splinter) -> Self::Output {
-        rhs |= self;
-        rhs
+    fn bitor(self, rhs: Splinter) -> Self::Output {
+        rhs | self
     }
 }
 
@@ -193,9 +231,8 @@ impl BitAnd<&Splinter> for &Splinter {
 
 impl BitAnd<Splinter> for &Splinter {
     type Output = Splinter;
-    fn bitand(self, mut rhs: Splinter) -> Self::Output {
-        rhs &= self;
-        rhs
+    fn bitand(self, rhs: Splinter) -> Self::Output {
+        rhs & self
     }
 }
 
@@ -220,9 +257,8 @@ impl BitXor<&Splinter> for &Splinter {
 
 impl BitXor<Splinter> for &Splinter {
     type Output = Splinter;
-    fn bitxor(self, mut rhs: Splinter) -> Self::Output {
-        rhs ^= self;
-        rhs
+    fn bitxor(self, rhs: Splinter) -> Self::Output {
+        rhs ^ self
     }
 }
 
@@ -264,61 +300,89 @@ mod tests {
     use proptest::collection::{hash_set, vec};
     use proptest::proptest;
 
+    use crate::testutil::{mksplinter_cow, mksplinter_ref};
     use crate::{Optimizable, Splinter, testutil::mksplinter, traits::Cut};
 
-    macro_rules! test_bitop {
-        ($test_name:ident, $op_method:ident, $op_assign_method:ident, $hashset_method:ident) => {
+    macro_rules! exercise_bitop {
+        ($a:expr, $b:expr, $seta:expr, $setb:expr, $op_method:ident, $hashset_method:ident) => {
+            let expected: Splinter = $seta.$hashset_method(&$setb).copied().collect();
+
+            assert_eq!((&$a).$op_method(&$b), expected, "&a, &b");
+            assert_eq!((&$a).$op_method($b.clone()), expected, "&a, b");
+            assert_eq!($a.clone().$op_method(&$b), expected, "a, &b");
+            assert_eq!($a.clone().$op_method($b.clone()), expected, "a, b");
+        };
+    }
+
+    macro_rules! exercise_bitop_assign {
+        ($a:expr, $b:expr, $seta:expr, $setb:expr, $op_assign_method:ident, $hashset_method:ident) => {
+            let expected: Splinter = $seta.$hashset_method(&$setb).copied().collect();
+
+            let mut c = $a.clone();
+            c.$op_assign_method($b.clone());
+            assert_eq!(c, expected, "c assign b");
+
+            let mut c = $a.clone();
+            c.$op_assign_method(&$b);
+            assert_eq!(c, expected, "c assign &b");
+        };
+    }
+
+    macro_rules! gen_bitop_test {
+        ($test_name:ident, $make_a:path, $make_b:path) => {
             proptest! {
                 #[test]
                 fn $test_name(
-                    optimize: bool,
-                    a in hash_set(0u32..16384, 0..1024),
-                    b in hash_set(0u32..16384, 0..1024),
+                    seta in hash_set(0u32..16384, 0..1024),
+                    setb in hash_set(0u32..16384, 0..1024),
                 ) {
-                    let expected: Splinter = a.$hashset_method(&b).copied().collect();
-
-                    let mut a = Splinter::from_iter(a);
-                    let b = Splinter::from_iter(b);
-
-                    if optimize {
-                        a.optimize();
-                    }
-
-                    // test all combinations of refs
-                    assert_eq!((&a).$op_method(&b), expected, "&a, &b");
-                    assert_eq!((&a).$op_method(b.clone()), expected, "&a, b");
-                    assert_eq!(a.clone().$op_method(&b), expected, "a, &b");
-                    assert_eq!(a.clone().$op_method(b.clone()), expected, "a, b");
-
-                    // assignment operator
-                    let mut c = a.clone();
-                    c.$op_assign_method(b.clone());
-                    assert_eq!(c, expected, "c assign b");
-
-                    let mut c = a.clone();
-                    c.$op_assign_method(&b);
-                    assert_eq!(c, expected, "c assign &b");
-
-                    // do it all again but against a splinter ref
-                    let b = b.encode_to_splinter_ref();
-
-                    assert_eq!((&a).$op_method(&b), expected, "&a, &bref");
-                    assert_eq!((&a).$op_method(b.clone()), expected, "&a, bref");
-                    assert_eq!(a.clone().$op_method(&b), expected, "a, &bref");
-                    assert_eq!(a.clone().$op_method(b.clone()), expected, "a, bref");
-
-                    // assignment operator
-                    let mut c = a.clone();
-                    c.$op_assign_method(b.clone());
-                    assert_eq!(c, expected, "c assign bref");
-
-                    let mut c = a.clone();
-                    c.$op_assign_method(&b);
-                    assert_eq!(c, expected, "c assign &bref");
+                    let a = $make_a(seta.clone());
+                    let b = $make_b(setb.clone());
+                    exercise_bitop!(a, b, seta, setb, bitor, union);
+                    exercise_bitop!(a, b, seta, setb, bitand, intersection);
+                    exercise_bitop!(a, b, seta, setb, bitxor, symmetric_difference);
+                    exercise_bitop!(a, b, seta, setb, sub, difference);
                 }
             }
         };
     }
+
+    macro_rules! gen_bitop_assign_test {
+        ($test_name:ident, $make_b:path) => {
+            proptest! {
+                #[test]
+                fn $test_name(
+                    optimize: bool,
+                    seta in hash_set(0u32..16384, 0..1024),
+                    setb in hash_set(0u32..16384, 0..1024),
+                ) {
+                    let mut a = Splinter::from_iter(seta.clone());
+                    let b = $make_b(setb.clone());
+                    if optimize {
+                        a.optimize();
+                    }
+                    exercise_bitop_assign!(a, b, seta, setb, bitor_assign, union);
+                    exercise_bitop_assign!(a, b, seta, setb, bitand_assign, intersection);
+                    exercise_bitop_assign!(a, b, seta, setb, bitxor_assign, symmetric_difference);
+                    exercise_bitop_assign!(a, b, seta, setb, sub_assign, difference);
+                }
+            }
+        };
+    }
+
+    gen_bitop_test!(test_ops_s_s, Splinter::from_iter, Splinter::from_iter);
+    gen_bitop_test!(test_ops_s_sr, Splinter::from_iter, mksplinter_ref);
+    gen_bitop_test!(test_ops_s_sc, Splinter::from_iter, mksplinter_cow);
+
+    gen_bitop_test!(test_ops_sr_sr, mksplinter_ref, mksplinter_ref);
+    gen_bitop_test!(test_ops_sr_sc, mksplinter_ref, mksplinter_cow);
+
+    gen_bitop_test!(test_ops_sc_s, mksplinter_cow, Splinter::from_iter);
+    gen_bitop_test!(test_ops_sc_sr, mksplinter_cow, mksplinter_ref);
+
+    gen_bitop_assign_test!(test_ops_splinter_splinter_assign, Splinter::from_iter);
+    gen_bitop_assign_test!(test_ops_splinter_splinterref_assign, mksplinter_ref);
+    gen_bitop_assign_test!(test_ops_splinter_splintercow_assign, mksplinter_cow);
 
     proptest! {
         #[test]
@@ -445,9 +509,4 @@ mod tests {
             assert_eq!(source,expected_remaining);
         }
     }
-
-    test_bitop!(test_bitor, bitor, bitor_assign, union);
-    test_bitop!(test_bitand, bitand, bitand_assign, intersection);
-    test_bitop!(test_bitxor, bitxor, bitxor_assign, symmetric_difference);
-    test_bitop!(test_sub, sub, sub_assign, difference);
 }
