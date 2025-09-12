@@ -1,6 +1,7 @@
-use std::{
-    fmt::Debug,
-    ops::{Deref, RangeBounds},
+use std::fmt::Debug;
+use std::ops::{
+    BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref, RangeBounds, Sub,
+    SubAssign,
 };
 
 use bytes::{BufMut, Bytes};
@@ -384,3 +385,73 @@ impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<CowSplinter<B2
 }
 
 impl<B: Deref<Target = [u8]>> Eq for CowSplinter<B> {}
+
+impl<B: Deref<Target = [u8]>> PartialEq<Splinter> for CowSplinter<B> {
+    fn eq(&self, other: &Splinter) -> bool {
+        other == self
+    }
+}
+
+impl<B: Deref<Target = [u8]>, B2: Deref<Target = [u8]>> PartialEq<SplinterRef<B2>>
+    for CowSplinter<B>
+{
+    fn eq(&self, other: &SplinterRef<B2>) -> bool {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref == other,
+            CowSplinter::Owned(splinter) => splinter == other,
+        }
+    }
+}
+
+macro_rules! owned_bitop {
+    ($b:ty $([$($for:tt)*])?) => {
+        owned_bitop!($b $([$($for)*])?, BitAnd, bitand, BitAndAssign::bitand_assign);
+        owned_bitop!($b $([$($for)*])?, BitOr, bitor, BitOrAssign::bitor_assign);
+        owned_bitop!($b $([$($for)*])?, BitXor, bitxor, BitXorAssign::bitxor_assign);
+        owned_bitop!($b $([$($for)*])?, Sub, sub, SubAssign::sub_assign);
+    };
+    ($b:ty $([$($for:tt)*])?, $BitOp:ident, $bitop:ident, $bitassign:path) => {
+        impl<B1: Deref<Target = [u8]> $(, $($for)*)?> $BitOp<$b> for CowSplinter<B1> {
+            type Output = Self;
+            fn $bitop(mut self, rhs: $b) -> Self::Output {
+                $bitassign(self.to_mut(), rhs);
+                self
+            }
+        }
+    };
+}
+
+owned_bitop!(Splinter);
+owned_bitop!(&Splinter);
+owned_bitop!(SplinterRef<B2> [B2: Deref<Target=[u8]>]);
+owned_bitop!(&SplinterRef<B2> [B2: Deref<Target=[u8]>]);
+owned_bitop!(CowSplinter<B2> [B2: Deref<Target=[u8]>]);
+owned_bitop!(&CowSplinter<B2> [B2: Deref<Target=[u8]>]);
+
+macro_rules! ref_bitop {
+    ($b:ty $([$($for:tt)*])?) => {
+        ref_bitop!($b $([$($for)*])?, BitAnd, bitand, BitAndAssign::bitand_assign);
+        ref_bitop!($b $([$($for)*])?, BitOr, bitor, BitOrAssign::bitor_assign);
+        ref_bitop!($b $([$($for)*])?, BitXor, bitxor, BitXorAssign::bitxor_assign);
+        ref_bitop!($b $([$($for)*])?, Sub, sub, SubAssign::sub_assign);
+    };
+    ($b:ty $([$($for:tt)*])?, $BitOp:ident, $bitop:ident, $bitassign:path) => {
+        impl<B1: Deref<Target = [u8]> + Clone $(, $($for)*)?> $BitOp<$b>
+            for &CowSplinter<B1>
+        {
+            type Output = CowSplinter<B1>;
+            fn $bitop(self, rhs: $b) -> Self::Output {
+                let mut out = self.clone();
+                $bitassign(out.to_mut(), rhs);
+                out
+            }
+        }
+    };
+}
+
+ref_bitop!(Splinter);
+ref_bitop!(&Splinter);
+ref_bitop!(SplinterRef<B2> [B2: Deref<Target=[u8]>]);
+ref_bitop!(&SplinterRef<B2> [B2: Deref<Target=[u8]>]);
+ref_bitop!(CowSplinter<B2> [B2: Deref<Target=[u8]>]);
+ref_bitop!(&CowSplinter<B2> [B2: Deref<Target=[u8]>]);

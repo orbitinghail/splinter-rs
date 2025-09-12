@@ -18,7 +18,7 @@ use rand::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    PartitionRead, PartitionWrite,
+    CowSplinter, PartitionRead, PartitionWrite, SplinterRef,
     codec::{Encodable, footer::Footer},
     level::{High, Level},
     partition::Partition,
@@ -330,4 +330,12 @@ macro_rules! assert_error {
     ($expr:expr, $err:path$(, $($rest:tt),+)?) => {
         assert_matches::assert_matches!(($expr).expect_err("expected an error").ctx(), $err $(, $($rest),+)?)
     };
+}
+
+pub fn mksplinter_ref<I: IntoIterator<Item = u32>>(iter: I) -> SplinterRef<Bytes> {
+    Splinter::from_iter(iter).encode_to_splinter_ref()
+}
+
+pub fn mksplinter_cow<I: IntoIterator<Item = u32>>(iter: I) -> CowSplinter<Bytes> {
+    Splinter::from_iter(iter).into()
 }
