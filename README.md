@@ -243,6 +243,9 @@ random/128/1024                Splinter        168        168       1.00        
 average compression ratio (splinter_lz4 / splinter): 0.97
 ```
 
+## Adaptations
+Splinter is available in Python using the [splynters](https://pypi.org/project/splynters/) package on PyPI, and as an open [repository](https://github.com/nrposner/splynters) of the same name.
+
 ## License
 
 Licensed under either of
