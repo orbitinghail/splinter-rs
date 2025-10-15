@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Debug},
-    ops::RangeBounds,
+    ops::{RangeBounds, RangeInclusive},
 };
 
 use bytes::BufMut;
@@ -10,11 +10,13 @@ use num::traits::{AsPrimitive, Bounded};
 use crate::{
     MultiIter,
     codec::{Encodable, encoder::Encoder},
+    count::count_unique_sorted,
     level::Level,
     partition::{
         bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
     },
     partition_kind::PartitionKind,
+    segment::SplitSegment,
     traits::{DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
 };
 
@@ -22,9 +24,6 @@ pub mod bitmap;
 pub mod run;
 pub mod tree;
 pub mod vec;
-
-/// Tree sparsity ratio limit
-const TREE_SPARSE_THRESHOLD: f64 = 0.5;
 
 #[derive(Clone, Eq)]
 pub enum Partition<L: Level> {
@@ -74,17 +73,27 @@ impl<L: Level> Partition<L> {
             PartitionKind::Run => {
                 Partition::Run(RunPartition::from_sorted_unique_unchecked(self.iter()))
             }
-            PartitionKind::Tree => Partition::Tree(self.iter().collect()),
+            PartitionKind::Tree => Partition::Tree(match &self {
+                Partition::Full | Partition::Tree(..) => {
+                    // Full should never be optimized to Tree due to sparsity
+                    // Tree should never be optimized into Tree due to early exit
+                    unreachable!("BUG: invalid tree conversion")
+                }
+                Partition::Bitmap(partition) => partition.into(),
+                Partition::Vec(partition) => partition.into(),
+                Partition::Run(partition) => partition.into(),
+            }),
         }
     }
 
-    fn sparsity_ratio(&self) -> f64 {
+    fn segments(&self) -> usize {
         match self {
-            Partition::Full => 1.0,
-            Partition::Bitmap(p) => p.sparsity_ratio(),
-            Partition::Vec(p) => p.sparsity_ratio(),
-            Partition::Run(p) => p.sparsity_ratio(),
-            Partition::Tree(p) => p.sparsity_ratio(),
+            Partition::Full => 256,
+            Partition::Bitmap(..) | Partition::Vec(..) => {
+                count_unique_sorted(self.iter().map(|v| v.segment()))
+            }
+            Partition::Run(p) => p.segments(),
+            Partition::Tree(p) => p.segments(),
         }
     }
 
@@ -124,10 +133,10 @@ impl<L: Level> Partition<L> {
                     // if we are already a tree, then we should only stay a tree
                     // if we are the smallest option
                     tree.encoded_size() + 1
-                } else if L::ALLOW_TREE && self.sparsity_ratio() < TREE_SPARSE_THRESHOLD {
+                } else if L::ALLOW_TREE {
                     // switch to tree if this level prefers it and the
-                    // partition is sufficiently sparse
-                    0
+                    // estimated size is the smallest option
+                    TreePartition::<L>::estimate_encoded_size(self.segments()) + 1
                 } else {
                     // otherwise we don't want to be a tree
                     usize::MAX
@@ -143,7 +152,13 @@ impl<L: Level> Partition<L> {
             ),
             (
                 PartitionKind::Run,
-                if fast {
+                if let Partition::Run(run) = self {
+                    // if we are already a run partition, make sure we stay there
+                    // until a more optimal choice presents itself
+                    run.encoded_size() + 1
+                } else if fast {
+                    // if we are optimizing fast, avoid switching to run
+                    // partitions as counting runs can be slow
                     usize::MAX
                 } else {
                     RunPartition::<L>::encoded_size(self.count_runs()) + 1
@@ -178,11 +193,7 @@ impl<L: Level> Partition<L> {
     pub fn raw_remove(&mut self, value: L::Value) -> bool {
         match self {
             Partition::Full => {
-                self.switch_kind(if L::ALLOW_TREE {
-                    PartitionKind::Tree
-                } else {
-                    PartitionKind::Run
-                });
+                self.switch_kind(PartitionKind::Run);
                 self.raw_remove(value)
             }
             Partition::Bitmap(partition) => partition.remove(value),
@@ -379,11 +390,7 @@ impl<L: Level> PartitionWrite<L> for Partition<L> {
     fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
         match self {
             Partition::Full => {
-                self.switch_kind(if L::ALLOW_TREE {
-                    PartitionKind::Tree
-                } else {
-                    PartitionKind::Run
-                });
+                self.switch_kind(PartitionKind::Run);
                 self.remove_range(values)
             }
             Partition::Bitmap(partition) => partition.remove_range(values),
@@ -400,6 +407,12 @@ impl<L: Level> FromIterator<L::Value> for Partition<L> {
         let mut partition = Partition::Vec(iter.into_iter().collect());
         partition.optimize_fast();
         partition
+    }
+}
+
+impl<L: Level> From<RangeInclusive<L::Value>> for Partition<L> {
+    fn from(value: RangeInclusive<L::Value>) -> Self {
+        Partition::Run(value.into())
     }
 }
 

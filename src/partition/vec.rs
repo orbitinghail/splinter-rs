@@ -10,10 +10,9 @@ use range_set_blaze::SortedDisjoint;
 
 use crate::{
     codec::{Encodable, encoder::Encoder},
-    count::{count_runs_sorted, count_unique_sorted},
+    count::count_runs_sorted,
     level::Level,
     partition::{Partition, run::MergeRuns},
-    segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
     util::find_next_sorted,
 };
@@ -54,11 +53,6 @@ impl<L: Level> VecPartition<L> {
     #[inline]
     pub fn count_runs(&self) -> usize {
         count_runs_sorted(self.iter())
-    }
-
-    pub fn sparsity_ratio(&self) -> f64 {
-        let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
-        unique_segments as f64 / self.cardinality() as f64
     }
 }
 

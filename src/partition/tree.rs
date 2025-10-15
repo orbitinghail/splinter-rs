@@ -16,7 +16,7 @@ use crate::{
     },
     count::count_runs_sorted,
     level::Level,
-    partition::Partition,
+    partition::{Partition, bitmap::BitmapPartition, run::RunPartition, vec::VecPartition},
     segment::{IterSegmented, Segment, SplitSegment},
     traits::{Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite},
     util::RangeExt,
@@ -30,8 +30,8 @@ pub struct TreePartition<L: Level> {
 }
 
 impl<L: Level> TreePartition<L> {
-    pub fn sparsity_ratio(&self) -> f64 {
-        self.children.len() as f64 / self.cardinality as f64
+    pub fn segments(&self) -> usize {
+        self.children.len()
     }
 
     #[inline]
@@ -47,6 +47,14 @@ impl<L: Level> TreePartition<L> {
 
     fn refresh_cardinality(&mut self) {
         self.cardinality = self.children.values().map(|c| c.cardinality()).sum();
+    }
+
+    /// estimate the encoded size of a TreePartition based on the number of
+    /// segments
+    pub const fn estimate_encoded_size(segments: usize) -> usize {
+        let index_size = TreeIndexBuilder::<L>::encoded_size(segments);
+        // we add segments to account for the extra PartitionKind byte for each child
+        index_size + segments
     }
 }
 
@@ -82,14 +90,6 @@ impl<L: Level> Default for TreePartition<L> {
             cardinality: 0,
             _marker: std::marker::PhantomData,
         }
-    }
-}
-
-impl<L: Level> FromIterator<L::Value> for TreePartition<L> {
-    fn from_iter<T: IntoIterator<Item = L::Value>>(iter: T) -> Self {
-        let mut tree = TreePartition::default();
-        tree.extend(iter);
-        tree
     }
 }
 
@@ -442,6 +442,48 @@ impl<L: Level> Complement for TreePartition<L> {
     }
 }
 
+impl<L: Level> Extend<L::Value> for TreePartition<L> {
+    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
+        let segmented = IterSegmented::new(iter.into_iter());
+        let grouped = segmented.chunk_by(|(segment, _)| *segment);
+
+        for (segment, group) in grouped.into_iter() {
+            self.children
+                .entry(segment)
+                .or_default()
+                .extend(group.map(|(_, v)| v))
+        }
+
+        self.refresh_cardinality();
+    }
+}
+
+impl<L: Level> FromIterator<L::Value> for TreePartition<L> {
+    fn from_iter<T: IntoIterator<Item = L::Value>>(iter: T) -> Self {
+        let mut tree = TreePartition::default();
+        tree.extend(iter);
+        tree
+    }
+}
+
+impl<L: Level> From<&BitmapPartition<L>> for TreePartition<L> {
+    fn from(source: &BitmapPartition<L>) -> Self {
+        todo!()
+    }
+}
+
+impl<L: Level> From<&VecPartition<L>> for TreePartition<L> {
+    fn from(source: &VecPartition<L>) -> Self {
+        todo!()
+    }
+}
+
+impl<L: Level> From<&RunPartition<L>> for TreePartition<L> {
+    fn from(source: &RunPartition<L>) -> Self {
+        todo!()
+    }
+}
+
 impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
     fn from(value: &TreeRef<'_, L>) -> Self {
         let children = value
@@ -456,22 +498,6 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
         };
         partition.refresh_cardinality();
         partition
-    }
-}
-
-impl<L: Level> Extend<L::Value> for TreePartition<L> {
-    fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
-        let segmented = IterSegmented::new(iter.into_iter());
-        let grouped = segmented.chunk_by(|(segment, _)| *segment);
-
-        for (segment, group) in grouped.into_iter() {
-            self.children
-                .entry(segment)
-                .or_default()
-                .extend(group.map(|(_, v)| v))
-        }
-
-        self.refresh_cardinality();
     }
 }
 

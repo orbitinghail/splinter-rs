@@ -8,6 +8,7 @@ use crate::{
     level::High,
     partition::Partition,
     traits::{PartitionRead, PartitionWrite},
+    util::RangeExt,
 };
 
 /// A compressed bitmap optimized for small, sparse sets of 32-bit unsigned integers.
@@ -60,6 +61,9 @@ impl Splinter {
     /// An empty Splinter, suitable for usage in a const context.
     pub const EMPTY: Self = Splinter(Partition::EMPTY);
 
+    /// A full Splinter, suitable for usage in a const context.
+    pub const FULL: Self = Splinter(Partition::Full);
+
     /// Encodes this splinter into a [`SplinterRef`] for zero-copy querying.
     ///
     /// This method serializes the splinter data and returns a [`SplinterRef<Bytes>`]
@@ -100,6 +104,21 @@ impl Splinter {
 impl FromIterator<u32> for Splinter {
     fn from_iter<I: IntoIterator<Item = u32>>(iter: I) -> Self {
         Self(Partition::<High>::from_iter(iter))
+    }
+}
+
+impl<R: RangeBounds<u32>> From<R> for Splinter {
+    fn from(range: R) -> Self {
+        if let Some(range) = range.try_into_inclusive() {
+            if range.start() == &u32::MIN && range.end() == &u32::MAX {
+                Self::FULL
+            } else {
+                Self(Partition::<High>::from(range))
+            }
+        } else {
+            // range is empty
+            Self::EMPTY
+        }
     }
 }
 
@@ -432,6 +451,25 @@ mod tests {
     fn test_splinter_write() {
         let mut splinter = Splinter::from_iter(0u32..16384);
         test_partition_write(&mut splinter);
+    }
+
+    #[test]
+    fn test_splinter_from_range() {
+        let splinter = Splinter::from(..);
+        assert_eq!(splinter.cardinality(), (u32::MAX as usize) + 1);
+
+        let mut splinter = Splinter::from(1..);
+        assert_eq!(splinter.cardinality(), u32::MAX as usize);
+
+        splinter.remove(1024);
+        assert_eq!(splinter.cardinality(), (u32::MAX as usize) - 1);
+
+        let mut count = 2;
+        for i in (2048..=256000).step_by(1024) {
+            splinter.remove(i);
+            count += 1
+        }
+        assert_eq!(splinter.cardinality(), (u32::MAX as usize) - count);
     }
 
     proptest! {

@@ -17,10 +17,9 @@ use num::traits::AsPrimitive;
 
 use crate::{
     codec::{Encodable, encoder::Encoder},
-    count::{count_bitmap_runs, count_unique_sorted},
+    count::count_bitmap_runs,
     level::Level,
     partition::Partition,
-    segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite, TruncateFrom},
     util::RangeExt,
 };
@@ -37,11 +36,6 @@ impl<L: Level> BitmapPartition<L> {
     #[inline]
     pub fn count_runs(&self) -> usize {
         count_bitmap_runs(&self.bitmap)
-    }
-
-    pub fn sparsity_ratio(&self) -> f64 {
-        let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
-        unique_segments as f64 / self.cardinality() as f64
     }
 
     #[inline]

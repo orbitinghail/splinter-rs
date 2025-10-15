@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    iter::FusedIterator,
+    iter::{self, FusedIterator},
     mem::size_of,
     ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, RangeInclusive, SubAssign},
 };
@@ -149,14 +149,12 @@ impl<L: Level> RunPartition<L> {
         self.runs.ranges().len()
     }
 
-    #[inline]
-    pub fn sparsity_ratio(&self) -> f64 {
+    pub fn segments(&self) -> usize {
         let segments = self
             .runs
             .ranges()
             .flat_map(|r| r.start().segment()..=r.end().segment());
-        let unique_segments = count_unique_sorted(segments);
-        unique_segments as f64 / self.cardinality() as f64
+        count_unique_sorted(segments)
     }
 }
 
@@ -173,7 +171,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "RunPartition<{}>({}, {})",
+            "RunPartition<{}>{{ cardinality: {}, ranges: {} }}",
             L::DEBUG_NAME,
             self.cardinality(),
             self.runs.ranges_len()
@@ -341,6 +339,14 @@ impl<L: Level> From<&RunsRef<'_, L>> for RunPartition<L> {
     fn from(value: &RunsRef<'_, L>) -> Self {
         Self {
             runs: value.ranges().into_range_set_blaze(),
+        }
+    }
+}
+
+impl<L: Level> From<RangeInclusive<L::Value>> for RunPartition<L> {
+    fn from(value: RangeInclusive<L::Value>) -> Self {
+        Self {
+            runs: RangeSetBlaze::from_iter(iter::once(value)),
         }
     }
 }
