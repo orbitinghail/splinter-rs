@@ -464,7 +464,7 @@ mod tests {
         splinter.remove(1024);
         assert_eq!(splinter.cardinality(), (u32::MAX as usize) - 1);
 
-        let mut count = 2;
+        let mut count = 1;
         for i in (2048..=256000).step_by(1024) {
             splinter.remove(i);
             count += 1
@@ -708,20 +708,26 @@ mod tests {
             (4096, 65536, 5147, 8208),
             (65536, 65536, 25, 15),
             // small sets with values < 1024
-            (8, 1024, 49, 32),
+            (8, 1024, 44, 32),
             (16, 1024, 60, 48),
             (32, 1024, 79, 80),
             (64, 1024, 111, 144),
             (128, 1024, 168, 272),
         ];
 
-        for (count, max, s, r) in random_cases {
+        for (count, max, expected_splinter, expected_roaring) in random_cases {
             let name = if max == High::MAX_LEN {
                 format!("random/{count}")
             } else {
                 format!("random/{count}/{max}")
             };
-            run_test(&name, set_gen.random_max(count, max), count, s, r);
+            run_test(
+                &name,
+                set_gen.random_max(count, max),
+                count,
+                expected_splinter,
+                expected_roaring,
+            );
         }
 
         let mut fail_test = false;

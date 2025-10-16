@@ -7,6 +7,7 @@ use std::{
 
 use bytes::BufMut;
 use itertools::{EitherOrBoth, FoldWhile, Itertools};
+use range_set_blaze::CheckSortedDisjoint;
 
 use crate::{
     codec::{
@@ -16,7 +17,12 @@ use crate::{
     },
     count::count_runs_sorted,
     level::Level,
-    partition::{Partition, bitmap::BitmapPartition, run::RunPartition, vec::VecPartition},
+    partition::{
+        Partition,
+        bitmap::BitmapPartition,
+        run::{Run, RunPartition},
+        vec::VecPartition,
+    },
     segment::{IterSegmented, Segment, SplitSegment},
     traits::{Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite},
     util::RangeExt,
@@ -51,10 +57,11 @@ impl<L: Level> TreePartition<L> {
 
     /// estimate the encoded size of a TreePartition based on the number of
     /// segments
-    pub const fn estimate_encoded_size(segments: usize) -> usize {
+    pub const fn estimate_encoded_size(segments: usize, cardinality: usize) -> usize {
         let index_size = TreeIndexBuilder::<L>::encoded_size(segments);
         // we add segments to account for the extra PartitionKind byte for each child
-        index_size + segments
+        // we add cardinality as an estimate of value storage
+        index_size + segments + cardinality
     }
 }
 
@@ -466,21 +473,74 @@ impl<L: Level> FromIterator<L::Value> for TreePartition<L> {
     }
 }
 
+impl<L: Level> From<BTreeMap<Segment, L::Down>> for TreePartition<L> {
+    fn from(children: BTreeMap<Segment, L::Down>) -> Self {
+        let mut partition = TreePartition {
+            children,
+            cardinality: 0,
+            _marker: PhantomData,
+        };
+        partition.refresh_cardinality();
+        partition
+    }
+}
+
 impl<L: Level> From<&BitmapPartition<L>> for TreePartition<L> {
     fn from(source: &BitmapPartition<L>) -> Self {
-        todo!()
+        let children = source
+            .iter_segments()
+            .filter_map(|(segment, bits)| {
+                if bits.any() {
+                    let mut partition =
+                        Partition::Bitmap(BitmapPartition::<L::LevelDown>::from(bits));
+                    partition.optimize_fast();
+                    let down = L::Down::from(partition);
+                    Some((segment, down))
+                } else {
+                    None
+                }
+            })
+            .collect::<BTreeMap<_, _>>();
+        Self::from(children)
     }
 }
 
 impl<L: Level> From<&VecPartition<L>> for TreePartition<L> {
     fn from(source: &VecPartition<L>) -> Self {
-        todo!()
+        let children = source
+            .iter()
+            .chunk_by(|v| v.segment())
+            .into_iter()
+            .map(|(segment, chunk)| {
+                let mut child =
+                    Partition::Vec(VecPartition::<L::LevelDown>::from_sorted_unique_unchecked(
+                        chunk.map(|v| v.rest()),
+                    ));
+                child.optimize_fast();
+                let down = L::Down::from(child);
+                (segment, down)
+            })
+            .collect::<BTreeMap<_, _>>();
+        Self::from(children)
     }
 }
 
 impl<L: Level> From<&RunPartition<L>> for TreePartition<L> {
     fn from(source: &RunPartition<L>) -> Self {
-        todo!()
+        let children = source
+            .iter_runs()
+            .flat_map(|run| run.segmentize())
+            .chunk_by(|(s, _)| *s)
+            .into_iter()
+            .map(|(segment, chunk)| {
+                let chunk = CheckSortedDisjoint::new(chunk.map(|(_, r)| r).fuse());
+                let mut child = Partition::Run(RunPartition::from_sorted_disjoint(chunk));
+                child.optimize_fast();
+                let down = L::Down::from(child);
+                (segment, down)
+            })
+            .collect::<BTreeMap<_, _>>();
+        Self::from(children)
     }
 }
 
@@ -490,14 +550,8 @@ impl<L: Level> From<&TreeRef<'_, L>> for TreePartition<L> {
             .segments()
             .zip(value.children())
             .map(|(s, c)| (s, L::Down::from(&c)))
-            .collect();
-        let mut partition = TreePartition {
-            children,
-            cardinality: 0,
-            _marker: PhantomData,
-        };
-        partition.refresh_cardinality();
-        partition
+            .collect::<BTreeMap<_, _>>();
+        Self::from(children)
     }
 }
 
@@ -509,15 +563,27 @@ mod test {
     use proptest::proptest;
 
     use crate::{
-        level::Low,
-        partition::tree::TreePartition,
+        PartitionRead, PartitionWrite,
+        level::{High, Low},
+        partition::{run::RunPartition, tree::TreePartition},
         testutil::{test_partition_read, test_partition_write},
     };
 
     #[test]
     fn test_tree_write() {
-        let mut partition = TreePartition::<Low>::from_iter(0..=16384);
+        let mut partition = TreePartition::<High>::from_iter(0..=16384);
         test_partition_write(&mut partition);
+    }
+
+    #[test]
+    fn test_tree_from_run() {
+        let mut run = RunPartition::<Low>::default();
+        run.insert(1024);
+        run.insert(123);
+        run.insert(16384);
+
+        let tree = TreePartition::from(&run);
+        itertools::assert_equal(run.iter(), tree.iter());
     }
 
     proptest! {

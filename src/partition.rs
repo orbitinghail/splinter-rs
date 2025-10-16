@@ -89,9 +89,8 @@ impl<L: Level> Partition<L> {
     fn segments(&self) -> usize {
         match self {
             Partition::Full => 256,
-            Partition::Bitmap(..) | Partition::Vec(..) => {
-                count_unique_sorted(self.iter().map(|v| v.segment()))
-            }
+            Partition::Vec(p) => count_unique_sorted(p.iter().map(|v| v.segment())),
+            Partition::Bitmap(p) => p.segments(),
             Partition::Run(p) => p.segments(),
             Partition::Tree(p) => p.segments(),
         }
@@ -136,7 +135,7 @@ impl<L: Level> Partition<L> {
                 } else if L::ALLOW_TREE {
                     // switch to tree if this level prefers it and the
                     // estimated size is the smallest option
-                    TreePartition::<L>::estimate_encoded_size(self.segments()) + 1
+                    TreePartition::<L>::estimate_encoded_size(self.segments(), cardinality) + 1
                 } else {
                     // otherwise we don't want to be a tree
                     usize::MAX
@@ -485,7 +484,7 @@ mod tests {
             setgen.runs(4096, 0.2),
             setgen.runs(4096, 0.5),
             setgen.runs(4096, 0.9),
-            (0..Low::MAX_LEN)
+            (0..Block::MAX_LEN)
                 .map(|v| <Low as Level>::Value::truncate_from(v))
                 .collect_vec(),
         ];

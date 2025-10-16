@@ -288,14 +288,20 @@ mod test {
     use proptest::proptest;
 
     use crate::{
-        level::Block,
-        partition::vec::VecPartition,
+        level::{Block, Low},
+        partition::{Partition, vec::VecPartition},
         testutil::{test_partition_read, test_partition_write},
     };
 
     #[test]
     fn test_vec_write() {
-        let mut partition = VecPartition::<Block>::from_iter(0..=255);
+        let mut partition = VecPartition::<Low>::from_iter(0..=16384);
+        test_partition_write(&mut partition);
+    }
+
+    #[test]
+    fn test_vec_write_2() {
+        let mut partition = Partition::Vec(VecPartition::<Low>::from_iter(0..=16384));
         test_partition_write(&mut partition);
     }
 

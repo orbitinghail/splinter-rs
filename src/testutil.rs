@@ -237,8 +237,8 @@ where
     let mut initial_set = splinter.iter().collect_vec();
     initial_set.shuffle(&mut rand::rng());
     for v in initial_set {
-        assert!(!splinter.insert(v));
-        assert!(splinter.remove(v));
+        assert!(!splinter.insert(v), "insert of {v} failed; {splinter:?}");
+        assert!(splinter.remove(v), "remove of {v} failed; {splinter:?}");
     }
 
     // seed the splinter with some sample values
