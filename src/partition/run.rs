@@ -7,7 +7,11 @@ use std::{
 
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
-use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
+use num::{
+    PrimInt,
+    cast::AsPrimitive,
+    traits::{ConstOne, ConstZero},
+};
 use range_set_blaze::{Integer, RangeSetBlaze, SortedDisjoint, SortedStarts};
 
 use crate::{
@@ -18,7 +22,7 @@ use crate::{
     partition::Partition,
     segment::{Segment, SplitSegment},
     traits::{Complement, Cut, PartitionRead, TruncateFrom},
-    util::RangeExt,
+    util::{IteratorExt, RangeExt},
 };
 
 pub(crate) trait Run<T> {
@@ -155,6 +159,10 @@ pub struct RunPartition<L: Level> {
 }
 
 impl<L: Level> RunPartition<L> {
+    pub fn full() -> Self {
+        (L::Value::ZERO..=L::Value::truncate_from(L::MAX_LEN - 1)).into()
+    }
+
     #[inline]
     pub const fn encoded_size(runs: usize) -> usize {
         let vsize = size_of::<L::ValueUnaligned>();
@@ -268,7 +276,7 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.runs.iter()
+        self.runs.iter().with_size_hint(self.cardinality())
     }
 }
 

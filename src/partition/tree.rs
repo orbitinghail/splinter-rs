@@ -25,7 +25,7 @@ use crate::{
     },
     segment::{IterSegmented, Segment, SplitSegment},
     traits::{Complement, Cut, DefaultFull, Optimizable, PartitionRead, PartitionWrite},
-    util::RangeExt,
+    util::{IteratorExt, RangeExt},
 };
 
 #[derive(Clone, Eq)]
@@ -57,11 +57,16 @@ impl<L: Level> TreePartition<L> {
 
     /// estimate the encoded size of a `TreePartition` based on the number of
     /// segments
-    pub const fn estimate_encoded_size(segments: usize, cardinality: usize) -> usize {
+    pub fn estimate_encoded_size(segments: usize, cardinality: usize) -> usize {
         let index_size = TreeIndexBuilder::<L>::encoded_size(segments);
+
+        let avg_cardinality_per_segment = cardinality as f64 / segments as f64;
+        let per_segment_est =
+            VecPartition::<L::LevelDown>::encoded_size(avg_cardinality_per_segment as usize)
+                .min(BitmapPartition::<L::LevelDown>::ENCODED_SIZE);
+
         // we add segments to account for the extra PartitionKind byte for each child
-        // we add cardinality as an estimate of value storage
-        index_size + segments + cardinality
+        index_size + segments + (per_segment_est * segments)
     }
 }
 
@@ -177,11 +182,14 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.children.iter().flat_map(|(&segment, child)| {
-            child
-                .iter()
-                .map(move |value| L::Value::unsplit(segment, value))
-        })
+        self.children
+            .iter()
+            .flat_map(|(&segment, child)| {
+                child
+                    .iter()
+                    .map(move |value| L::Value::unsplit(segment, value))
+            })
+            .with_size_hint(self.cardinality)
     }
 }
 

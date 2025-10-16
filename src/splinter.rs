@@ -395,7 +395,7 @@ mod tests {
     use super::*;
     use crate::{
         codec::Encodable,
-        level::Level,
+        level::{Level, Low},
         testutil::{SetGen, mksplinter, ratio_to_marks, test_partition_read, test_partition_write},
         traits::Optimizable,
     };
@@ -404,6 +404,7 @@ mod tests {
         collection::{hash_set, vec},
         proptest,
     };
+    use rand::{SeedableRng, seq::index};
     use roaring::RoaringBitmap;
 
     #[test]
@@ -451,6 +452,18 @@ mod tests {
     fn test_splinter_write() {
         let mut splinter = Splinter::from_iter(0u32..16384);
         test_partition_write(&mut splinter);
+    }
+
+    #[test]
+    fn test_splinter_optimize_growth() {
+        let mut splinter = Splinter::EMPTY;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xdeadbeef);
+        let set = index::sample(&mut rng, Low::MAX_LEN, 8);
+        dbg!(&splinter);
+        for i in set {
+            splinter.insert(i as u32);
+            dbg!(&splinter);
+        }
     }
 
     #[test]

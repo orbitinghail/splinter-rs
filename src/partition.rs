@@ -18,6 +18,7 @@ use crate::{
     partition_kind::PartitionKind,
     segment::SplitSegment,
     traits::{DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
+    util::IteratorExt,
 };
 
 pub mod bitmap;
@@ -70,12 +71,15 @@ impl<L: Level> Partition<L> {
             PartitionKind::Vec => {
                 Partition::Vec(VecPartition::from_sorted_unique_unchecked(self.iter()))
             }
-            PartitionKind::Run => {
-                Partition::Run(RunPartition::from_sorted_unique_unchecked(self.iter()))
-            }
+            PartitionKind::Run => Partition::Run(match &self {
+                // optimize full partition conversion as we convert into run
+                // partitions when removing values from a full splinter
+                Partition::Full => RunPartition::full(),
+                other => RunPartition::from_sorted_unique_unchecked(other.iter()),
+            }),
             PartitionKind::Tree => Partition::Tree(match &self {
-                Partition::Full | Partition::Tree(..) => {
-                    // Full should never be optimized to Tree due to sparsity
+                Partition::Full | Partition::Tree(_) => {
+                    // Full should never be optimized to Tree due cardinality check
                     // Tree should never be optimized into Tree due to early exit
                     unreachable!("BUG: invalid tree conversion")
                 }
@@ -128,7 +132,7 @@ impl<L: Level> Partition<L> {
 
         let choices = [
             (PartitionKind::Tree, {
-                if !fast && let Partition::Tree(tree) = self {
+                if let Partition::Tree(tree) = self {
                     // if we are already a tree, then we should only stay a tree
                     // if we are the smallest option
                     tree.encoded_size() + 1
@@ -212,11 +216,8 @@ impl<L: Level> DefaultFull for Partition<L> {
 
 impl<L: Level> Optimizable for Partition<L> {
     fn optimize(&mut self) {
-        let this = &mut *self;
-        let optimized = this.optimize_kind(false);
-        if optimized != this.kind() {
-            this.switch_kind(optimized);
-        } else if let Partition::Tree(tree) = this {
+        self.switch_kind(self.optimize_kind(false));
+        if let Partition::Tree(tree) = self {
             tree.optimize_children();
         }
     }
@@ -360,7 +361,11 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         match self {
-            Partition::Full => Iter::Full((0..L::MAX_LEN).map(L::Value::truncate_from)),
+            Partition::Full => Iter::Full(
+                (0..L::MAX_LEN)
+                    .map(L::Value::truncate_from)
+                    .with_size_hint(L::MAX_LEN),
+            ),
             Partition::Bitmap(p) => Iter::Bitmap(p.iter()),
             Partition::Vec(p) => Iter::Vec(p.iter()),
             Partition::Run(p) => Iter::Run(p.iter()),

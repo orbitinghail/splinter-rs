@@ -9,6 +9,7 @@ use crate::{
     codec::{DecodeErr, partition_ref::decode_len_from_suffix},
     level::Level,
     partition::run::{Run, run_position, run_rank, run_select},
+    util::IteratorExt,
 };
 
 #[derive(Debug, Clone, Eq)]
@@ -35,11 +36,11 @@ impl<'a, L: Level> RunsRef<'a, L> {
         self.runs
             .iter()
             .flat_map(|r| num::iter::range_inclusive(r.start.into(), r.end.into()))
+            .with_size_hint(self.cardinality())
     }
 }
 
 impl<L: Level> PartitionRead<L> for RunsRef<'_, L> {
-    #[inline]
     fn cardinality(&self) -> usize {
         self.ranges().map(|run| run.len()).sum()
     }
@@ -49,7 +50,6 @@ impl<L: Level> PartitionRead<L> for RunsRef<'_, L> {
         self.runs.is_empty()
     }
 
-    #[inline]
     fn contains(&self, value: <L as Level>::Value) -> bool {
         self.ranges().any(|run| run.contains(&value))
     }
@@ -58,24 +58,22 @@ impl<L: Level> PartitionRead<L> for RunsRef<'_, L> {
         run_position(self.ranges(), value)
     }
 
-    #[inline]
     fn rank(&self, value: <L as Level>::Value) -> usize {
         run_rank(self.ranges(), value)
     }
 
-    #[inline]
     fn select(&self, idx: usize) -> Option<<L as Level>::Value> {
         run_select(self.ranges(), idx)
     }
 
-    #[inline]
     fn last(&self) -> Option<<L as Level>::Value> {
         self.runs.last().map(|v| v.end.into())
     }
 
-    fn iter(&self) -> impl Iterator<Item = <L as Level>::Value> {
+    fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.ranges()
             .flat_map(|r| num::iter::range_inclusive(r.first(), r.last()))
+            .with_size_hint(self.cardinality())
     }
 }
 

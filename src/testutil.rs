@@ -168,6 +168,8 @@ where
         assert!(!splinter.contains(not_exp), "not contains({not_exp})");
     }
 
+    let iter = splinter.iter();
+    assert_eq!(iter.size_hint().0, splinter.cardinality());
     assert_equal(splinter.iter(), expected.iter().copied());
 
     if splinter.is_empty() {

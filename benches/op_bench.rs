@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use rand::seq::index::{self, IndexVec};
 use roaring::RoaringBitmap;
 use std::hint::black_box;
 
@@ -74,26 +75,64 @@ fn benchmark_contains(c: &mut Criterion) {
 }
 
 fn benchmark_insert(c: &mut Criterion) {
-    const MAGIC: u32 = 513;
+    const SET_LEN: usize = 1024;
 
-    let mut group = c.benchmark_group("insert");
+    fn makeset() -> IndexVec {
+        index::sample(&mut rand::rng(), 16384, SET_LEN)
+    }
+
+    let mut group = c.benchmark_group("insert_many");
 
     group.bench_function("roaring/warm", |b| {
-        let mut roaring_bitmap = RoaringBitmap::default();
-        b.iter(|| roaring_bitmap.insert(black_box(MAGIC)))
+        let mut bitmap = RoaringBitmap::default();
+        b.iter_batched(
+            makeset,
+            |set| {
+                for i in set {
+                    bitmap.insert(black_box(i as u32));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
     });
 
     group.bench_function("splinter/warm", |b| {
-        let mut splinter = Splinter::EMPTY;
-        b.iter(|| splinter.insert(black_box(MAGIC)))
+        let mut bitmap = Splinter::EMPTY;
+        b.iter_batched(
+            makeset,
+            |set| {
+                for i in set {
+                    bitmap.insert(black_box(i as u32));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
     });
 
     group.bench_function("roaring/cold", |b| {
-        b.iter(|| RoaringBitmap::default().insert(black_box(MAGIC)))
+        b.iter_batched(
+            makeset,
+            |set| {
+                let mut bitmap = RoaringBitmap::default();
+                for i in set {
+                    bitmap.insert(black_box(i as u32));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
     });
 
     group.bench_function("splinter/cold", |b| {
-        b.iter(|| Splinter::default().insert(black_box(MAGIC)))
+        b.iter_batched(
+            makeset,
+            |set| {
+                let mut bitmap = Splinter::default();
+                for i in set {
+                    bitmap.insert(black_box(i as u32));
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
     });
 
     group.finish();

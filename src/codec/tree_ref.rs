@@ -14,6 +14,7 @@ use crate::{
     partition_kind::PartitionKind,
     segment::{Segment, SplitSegment},
     traits::TruncateFrom,
+    util::IteratorExt,
 };
 
 #[derive(Debug, Clone, Eq)]
@@ -171,10 +172,14 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.segments.iter().enumerate().flat_map(|(idx, segment)| {
-            let iter = self.load_child(idx).into_iter();
-            iter.map(move |v| L::Value::unsplit(segment, v))
-        })
+        self.segments
+            .iter()
+            .enumerate()
+            .flat_map(|(idx, segment)| {
+                let iter = self.load_child(idx).into_iter();
+                iter.map(move |v| L::Value::unsplit(segment, v))
+            })
+            .with_size_hint(self.cardinality())
     }
 }
 
@@ -184,6 +189,7 @@ impl<'a, L: Level + 'a> IntoIterator for TreeRef<'a, L> {
     type IntoIter = Box<dyn Iterator<Item = L::Value> + 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
+        let cardinality = self.cardinality();
         Box::new(
             self.segments
                 .clone()
@@ -192,7 +198,8 @@ impl<'a, L: Level + 'a> IntoIterator for TreeRef<'a, L> {
                 .flat_map(move |(idx, segment)| {
                     let iter = self.load_child(idx).into_iter();
                     iter.map(move |v| L::Value::unsplit(segment, v))
-                }),
+                })
+                .with_size_hint(cardinality),
         )
     }
 }
