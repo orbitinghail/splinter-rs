@@ -132,7 +132,7 @@ impl<L: Level> Partition<L> {
 
         let choices = [
             (PartitionKind::Tree, {
-                if let Partition::Tree(tree) = self {
+                if !fast && let Partition::Tree(tree) = self {
                     // if we are already a tree, then we should only stay a tree
                     // if we are the smallest option
                     tree.encoded_size() + 1
