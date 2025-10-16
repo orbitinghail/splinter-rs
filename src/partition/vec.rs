@@ -10,10 +10,9 @@ use range_set_blaze::SortedDisjoint;
 
 use crate::{
     codec::{Encodable, encoder::Encoder},
-    count::{count_runs_sorted, count_unique_sorted},
+    count::count_runs_sorted,
     level::Level,
     partition::{Partition, run::MergeRuns},
-    segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
     util::find_next_sorted,
 };
@@ -54,11 +53,6 @@ impl<L: Level> VecPartition<L> {
     #[inline]
     pub fn count_runs(&self) -> usize {
         count_runs_sorted(self.iter())
-    }
-
-    pub fn sparsity_ratio(&self) -> f64 {
-        let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
-        unique_segments as f64 / self.cardinality() as f64
     }
 }
 
@@ -294,14 +288,20 @@ mod test {
     use proptest::proptest;
 
     use crate::{
-        level::Block,
-        partition::vec::VecPartition,
+        level::{Block, Low},
+        partition::{Partition, vec::VecPartition},
         testutil::{test_partition_read, test_partition_write},
     };
 
     #[test]
     fn test_vec_write() {
-        let mut partition = VecPartition::<Block>::from_iter(0..=255);
+        let mut partition = VecPartition::<Low>::from_iter(0..=16384);
+        test_partition_write(&mut partition);
+    }
+
+    #[test]
+    fn test_vec_write_2() {
+        let mut partition = Partition::Vec(VecPartition::<Low>::from_iter(0..=16384));
         test_partition_write(&mut partition);
     }
 

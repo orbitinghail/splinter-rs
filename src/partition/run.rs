@@ -1,13 +1,17 @@
 use std::{
     fmt::Debug,
-    iter::FusedIterator,
+    iter::{self, FusedIterator},
     mem::size_of,
     ops::{BitAndAssign, BitOrAssign, BitXorAssign, RangeBounds, RangeInclusive, SubAssign},
 };
 
 use bytes::BufMut;
 use itertools::{FoldWhile, Itertools};
-use num::{PrimInt, cast::AsPrimitive, traits::ConstOne};
+use num::{
+    PrimInt,
+    cast::AsPrimitive,
+    traits::{ConstOne, ConstZero},
+};
 use range_set_blaze::{Integer, RangeSetBlaze, SortedDisjoint, SortedStarts};
 
 use crate::{
@@ -16,9 +20,9 @@ use crate::{
     count::count_unique_sorted,
     level::Level,
     partition::Partition,
-    segment::SplitSegment,
+    segment::{Segment, SplitSegment},
     traits::{Complement, Cut, PartitionRead, TruncateFrom},
-    util::RangeExt,
+    util::{IteratorExt, RangeExt},
 };
 
 pub(crate) trait Run<T> {
@@ -28,11 +32,14 @@ pub(crate) trait Run<T> {
     fn select(&self, idx: usize) -> Option<T>;
     fn first(&self) -> T;
     fn last(&self) -> T;
+    fn segmentize(self) -> impl Iterator<Item = (Segment, RangeInclusive<T::Rest>)>
+    where
+        T: SplitSegment;
 }
 
 impl<T> Run<T> for RangeInclusive<T>
 where
-    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize> + ConstOne,
 {
     #[inline]
     fn len(&self) -> usize {
@@ -64,11 +71,34 @@ where
     fn last(&self) -> T {
         *self.end()
     }
+
+    /// Split this run into a sequence of runs, corresponding to each segment
+    fn segmentize(self) -> impl Iterator<Item = (Segment, RangeInclusive<T::Rest>)>
+    where
+        T: SplitSegment,
+    {
+        let mut run = (*self.start(), *self.end());
+        let mut overflow = false;
+        std::iter::from_fn(move || {
+            if run.0 <= run.1 && !overflow {
+                let start = run.0;
+                let end = start.segment_end().min(run.1);
+                if let Some(end) = end.checked_add(&T::ONE) {
+                    run.0 = end
+                } else {
+                    overflow = true
+                }
+                Some((start.segment(), start.rest()..=end.rest()))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 pub(crate) fn run_position<T, I>(iter: I, value: T) -> Option<usize>
 where
-    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize> + ConstOne,
     I: IntoIterator<Item = RangeInclusive<T>>,
 {
     let mut found = false;
@@ -92,7 +122,7 @@ where
 
 pub(crate) fn run_rank<T, I>(iter: I, value: T) -> usize
 where
-    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize> + ConstOne,
     I: IntoIterator<Item = RangeInclusive<T>>,
 {
     iter.into_iter()
@@ -110,7 +140,7 @@ where
 
 pub(crate) fn run_select<T, I>(iter: I, mut n: usize) -> Option<T>
 where
-    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize>,
+    T: PrimInt + AsPrimitive<usize> + TruncateFrom<usize> + ConstOne,
     I: IntoIterator<Item = RangeInclusive<T>>,
 {
     for run in iter.into_iter() {
@@ -129,11 +159,22 @@ pub struct RunPartition<L: Level> {
 }
 
 impl<L: Level> RunPartition<L> {
+    pub fn full() -> Self {
+        (L::Value::ZERO..=L::Value::truncate_from(L::MAX_LEN - 1)).into()
+    }
+
     #[inline]
     pub const fn encoded_size(runs: usize) -> usize {
         let vsize = size_of::<L::ValueUnaligned>();
         // runs + len
         (runs * vsize * 2) + vsize
+    }
+
+    /// Construct an `RunPartition` from an iterator of sorted and disjoint ranges
+    pub fn from_sorted_disjoint<I: SortedDisjoint<L::Value>>(values: I) -> Self {
+        Self {
+            runs: RangeSetBlaze::from_sorted_disjoint(values),
+        }
     }
 
     /// Construct an `RunPartition` from a sorted iter of unique values
@@ -145,18 +186,24 @@ impl<L: Level> RunPartition<L> {
     }
 
     #[inline]
+    pub fn iter_runs(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = RangeInclusive<L::Value>> + ExactSizeIterator + FusedIterator
+    {
+        self.runs.ranges()
+    }
+
+    #[inline]
     pub fn count_runs(&self) -> usize {
         self.runs.ranges().len()
     }
 
-    #[inline]
-    pub fn sparsity_ratio(&self) -> f64 {
+    pub fn segments(&self) -> usize {
         let segments = self
             .runs
             .ranges()
             .flat_map(|r| r.start().segment()..=r.end().segment());
-        let unique_segments = count_unique_sorted(segments);
-        unique_segments as f64 / self.cardinality() as f64
+        count_unique_sorted(segments)
     }
 }
 
@@ -173,10 +220,10 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "RunPartition<{}>({}, {})",
+            "RunPartition<{}>{{ cardinality: {}, ranges: {:?} }}",
             L::DEBUG_NAME,
             self.cardinality(),
-            self.runs.ranges_len()
+            self.runs.ranges().collect_vec()
         )
     }
 }
@@ -229,7 +276,7 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
     }
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
-        self.runs.iter()
+        self.runs.iter().with_size_hint(self.cardinality())
     }
 }
 
@@ -345,6 +392,14 @@ impl<L: Level> From<&RunsRef<'_, L>> for RunPartition<L> {
     }
 }
 
+impl<L: Level> From<RangeInclusive<L::Value>> for RunPartition<L> {
+    fn from(value: RangeInclusive<L::Value>) -> Self {
+        Self {
+            runs: RangeSetBlaze::from_iter(iter::once(value)),
+        }
+    }
+}
+
 impl<L: Level> Extend<L::Value> for RunPartition<L> {
     #[inline]
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
@@ -416,12 +471,11 @@ where
 #[cfg(test)]
 mod tests {
 
+    use proptest::proptest;
     use std::collections::HashSet;
 
-    use proptest::proptest;
-
     use crate::{
-        level::Block,
+        level::{Block, Low},
         testutil::{test_partition_read, test_partition_write},
     };
 
@@ -464,6 +518,12 @@ mod tests {
         test_partition_write(&mut partition);
     }
 
+    #[test]
+    fn test_run_write_2() {
+        let mut partition = Partition::Run(RunPartition::<Low>::from_iter(0..=16384));
+        test_partition_write(&mut partition);
+    }
+
     proptest! {
         #[test]
         fn test_run_small_read_proptest(set: HashSet<u8>) {
@@ -471,6 +531,33 @@ mod tests {
             let partition = RunPartition::<Block>::from_iter(set);
             test_partition_read(&partition, &expected);
         }
+    }
 
+    #[test]
+    fn test_run_segmentize() {
+        let run = 0u16..=1024;
+        let seg = run.segmentize().collect_vec();
+        assert_eq!(
+            seg,
+            vec![
+                (0, 0..=255),
+                (1, 0..=255),
+                (2, 0..=255),
+                (3, 0..=255),
+                (4, 0..=0)
+            ]
+        );
+
+        let run = 4324u16..=4587;
+        let seg = run.segmentize().collect_vec();
+        assert_eq!(seg, vec![(16, 228..=255), (17, 0..=235)]);
+
+        let run = 65520u16..=65535;
+        let seg = run.segmentize().collect_vec();
+        assert_eq!(seg, vec![(255, 240..=255)]);
+
+        let run = 123u16..=123;
+        let seg = run.segmentize().collect_vec();
+        assert_eq!(seg, vec![(0, 123..=123)]);
     }
 }

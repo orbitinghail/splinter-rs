@@ -40,6 +40,7 @@ pub trait Level: Sized + Clone + Copy {
         + Complement
         + Extend<<Self::LevelDown as Level>::Value>
         + Cut<Out = Self::Down>
+        + From<Partition<Self::LevelDown>>
         + for<'a> Cut<PartitionRef<'a, Self::LevelDown>, Out = Self::Down>
         + for<'a> PartialEq<PartitionRef<'a, Self::LevelDown>>
         + for<'a> BitOrAssign<&'a Self::Down>

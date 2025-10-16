@@ -17,10 +17,10 @@ use num::traits::AsPrimitive;
 
 use crate::{
     codec::{Encodable, encoder::Encoder},
-    count::{count_bitmap_runs, count_unique_sorted},
+    count::count_bitmap_runs,
     level::Level,
     partition::Partition,
-    segment::SplitSegment,
+    segment::Segment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite, TruncateFrom},
     util::RangeExt,
 };
@@ -32,21 +32,44 @@ pub struct BitmapPartition<L: Level> {
 }
 
 impl<L: Level> BitmapPartition<L> {
+    /// The encoded size of a `BitmapPartition`
     pub const ENCODED_SIZE: usize = L::MAX_LEN / 8;
+
+    /// The number of bits associated with each `Segment` contained by this
+    /// `BitmapPartition`
+    pub const SEGMENT_SIZE: usize = L::MAX_LEN / 256;
 
     #[inline]
     pub fn count_runs(&self) -> usize {
         count_bitmap_runs(&self.bitmap)
     }
 
-    pub fn sparsity_ratio(&self) -> f64 {
-        let unique_segments = count_unique_sorted(self.iter().map(|v| v.segment()));
-        unique_segments as f64 / self.cardinality() as f64
-    }
-
     #[inline]
     pub(crate) fn as_bitbox(&self) -> &BitBox<u64, Lsb0> {
         &self.bitmap
+    }
+
+    /// Count the number of segments in the bitmap
+    pub(crate) fn segments(&self) -> usize {
+        let mut count = 0;
+        for (_, segment) in self.iter_segments() {
+            if segment.any() {
+                count += 1
+            }
+        }
+        count
+    }
+
+    /// iterate over the unique segments in the bitmap along with their
+    /// corresponding bitslice
+    pub(crate) fn iter_segments(&self) -> impl Iterator<Item = (Segment, &BitSlice<u64, Lsb0>)> {
+        let chunks = self.bitmap.chunks_exact(Self::SEGMENT_SIZE);
+        assert!(
+            chunks.remainder().is_empty(),
+            "BUG: bitmap length is not a multiple of 256"
+        );
+
+        (0..=255).zip(chunks)
     }
 }
 
@@ -325,14 +348,20 @@ mod test {
     use proptest::proptest;
 
     use crate::{
-        level::Block,
-        partition::bitmap::BitmapPartition,
+        level::{Block, Low},
+        partition::{Partition, bitmap::BitmapPartition},
         testutil::{test_partition_read, test_partition_write},
     };
 
     #[test]
     fn test_bitmap_write() {
-        let mut partition = BitmapPartition::<Block>::from_iter(0..=255);
+        let mut partition = BitmapPartition::<Low>::from_iter(0..=16384);
+        test_partition_write(&mut partition);
+    }
+
+    #[test]
+    fn test_bitmap_write_2() {
+        let mut partition = Partition::Bitmap(BitmapPartition::<Low>::from_iter(0..=4024));
         test_partition_write(&mut partition);
     }
 

@@ -6,6 +6,7 @@ use crate::{
     Encodable, PartitionRead, PartitionWrite,
     codec::{encoder::Encoder, partition_ref::PartitionRef},
     level::Level,
+    partition::Partition,
     traits::{Complement, Cut, DefaultFull, Optimizable},
 };
 
@@ -160,6 +161,12 @@ impl<L: Level> SubAssign<&PartitionRef<'_, L>> for Never {
 
 impl<L: Level> From<&PartitionRef<'_, L>> for Never {
     fn from(_value: &PartitionRef<'_, L>) -> Self {
+        unreachable!("Never::from")
+    }
+}
+
+impl<L: Level> From<Partition<L>> for Never {
+    fn from(_value: Partition<L>) -> Self {
         unreachable!("Never::from")
     }
 }

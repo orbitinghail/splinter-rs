@@ -17,9 +17,8 @@ macro_rules! MultiIter {
             $($name($name)),+
         }
 
-        impl<
-            T, $($name: Iterator<Item=T>),+
-        > Iterator for $type<$($name),+>
+        impl<T, $($name: Iterator<Item=T>),+> Iterator
+        for $type<$($name),+>
         {
             type Item = T;
 
@@ -28,7 +27,19 @@ macro_rules! MultiIter {
                     $(Self::$name(iter) => iter.next(),)+
                 }
             }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                match self {
+                    $(Self::$name(iter) => iter.size_hint(),)+
+                }
+            }
         }
+
+        impl<T, $($name: Iterator<Item=T> + std::iter::ExactSizeIterator),+> std::iter::ExactSizeIterator
+        for $type<$($name),+> { }
+
+        impl<T, $($name: Iterator<Item=T> + std::iter::FusedIterator),+> std::iter::FusedIterator
+        for $type<$($name),+> { }
     };
 }
 
@@ -89,5 +100,42 @@ impl<R: RangeBounds<T>, T: PrimInt + ConstOne + ConstZero> RangeExt<T> for R {
             };
             Some(start..=end)
         }
+    }
+}
+
+pub trait IteratorExt: Iterator + Sized {
+    #[inline]
+    fn with_size_hint(self, hint: usize) -> SizeHintIter<Self> {
+        SizeHintIter::new(hint, self)
+    }
+}
+
+impl<I: Iterator> IteratorExt for I {}
+
+/// A SizeHintIter wraps an iter with a lower bound.
+#[must_use]
+pub struct SizeHintIter<I> {
+    remaining: usize,
+    iter: I,
+}
+
+impl<T, I: Iterator<Item = T>> SizeHintIter<I> {
+    pub fn new(size: usize, iter: I) -> Self {
+        Self { remaining: size, iter }
+    }
+}
+
+impl<T, I: Iterator<Item = T>> Iterator for SizeHintIter<I> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.remaining = self.remaining.saturating_sub(1);
+        self.iter.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower, upper) = self.iter.size_hint();
+        (self.remaining.max(lower), upper)
     }
 }

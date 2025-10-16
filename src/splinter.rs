@@ -8,6 +8,7 @@ use crate::{
     level::High,
     partition::Partition,
     traits::{PartitionRead, PartitionWrite},
+    util::RangeExt,
 };
 
 /// A compressed bitmap optimized for small, sparse sets of 32-bit unsigned integers.
@@ -60,6 +61,9 @@ impl Splinter {
     /// An empty Splinter, suitable for usage in a const context.
     pub const EMPTY: Self = Splinter(Partition::EMPTY);
 
+    /// A full Splinter, suitable for usage in a const context.
+    pub const FULL: Self = Splinter(Partition::Full);
+
     /// Encodes this splinter into a [`SplinterRef`] for zero-copy querying.
     ///
     /// This method serializes the splinter data and returns a [`SplinterRef<Bytes>`]
@@ -100,6 +104,21 @@ impl Splinter {
 impl FromIterator<u32> for Splinter {
     fn from_iter<I: IntoIterator<Item = u32>>(iter: I) -> Self {
         Self(Partition::<High>::from_iter(iter))
+    }
+}
+
+impl<R: RangeBounds<u32>> From<R> for Splinter {
+    fn from(range: R) -> Self {
+        if let Some(range) = range.try_into_inclusive() {
+            if range.start() == &u32::MIN && range.end() == &u32::MAX {
+                Self::FULL
+            } else {
+                Self(Partition::<High>::from(range))
+            }
+        } else {
+            // range is empty
+            Self::EMPTY
+        }
     }
 }
 
@@ -376,7 +395,7 @@ mod tests {
     use super::*;
     use crate::{
         codec::Encodable,
-        level::Level,
+        level::{Level, Low},
         testutil::{SetGen, mksplinter, ratio_to_marks, test_partition_read, test_partition_write},
         traits::Optimizable,
     };
@@ -385,6 +404,7 @@ mod tests {
         collection::{hash_set, vec},
         proptest,
     };
+    use rand::{SeedableRng, seq::index};
     use roaring::RoaringBitmap;
 
     #[test]
@@ -432,6 +452,37 @@ mod tests {
     fn test_splinter_write() {
         let mut splinter = Splinter::from_iter(0u32..16384);
         test_partition_write(&mut splinter);
+    }
+
+    #[test]
+    fn test_splinter_optimize_growth() {
+        let mut splinter = Splinter::EMPTY;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xdeadbeef);
+        let set = index::sample(&mut rng, Low::MAX_LEN, 8);
+        dbg!(&splinter);
+        for i in set {
+            splinter.insert(i as u32);
+            dbg!(&splinter);
+        }
+    }
+
+    #[test]
+    fn test_splinter_from_range() {
+        let splinter = Splinter::from(..);
+        assert_eq!(splinter.cardinality(), (u32::MAX as usize) + 1);
+
+        let mut splinter = Splinter::from(1..);
+        assert_eq!(splinter.cardinality(), u32::MAX as usize);
+
+        splinter.remove(1024);
+        assert_eq!(splinter.cardinality(), (u32::MAX as usize) - 1);
+
+        let mut count = 1;
+        for i in (2048..=256000).step_by(1024) {
+            splinter.remove(i);
+            count += 1
+        }
+        assert_eq!(splinter.cardinality(), (u32::MAX as usize) - count);
     }
 
     proptest! {
@@ -670,20 +721,26 @@ mod tests {
             (4096, 65536, 5147, 8208),
             (65536, 65536, 25, 15),
             // small sets with values < 1024
-            (8, 1024, 49, 32),
+            (8, 1024, 44, 32),
             (16, 1024, 60, 48),
             (32, 1024, 79, 80),
             (64, 1024, 111, 144),
             (128, 1024, 168, 272),
         ];
 
-        for (count, max, s, r) in random_cases {
+        for (count, max, expected_splinter, expected_roaring) in random_cases {
             let name = if max == High::MAX_LEN {
                 format!("random/{count}")
             } else {
                 format!("random/{count}/{max}")
             };
-            run_test(&name, set_gen.random_max(count, max), count, s, r);
+            run_test(
+                &name,
+                set_gen.random_max(count, max),
+                count,
+                expected_splinter,
+                expected_roaring,
+            );
         }
 
         let mut fail_test = false;

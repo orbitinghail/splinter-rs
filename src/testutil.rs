@@ -168,6 +168,8 @@ where
         assert!(!splinter.contains(not_exp), "not contains({not_exp})");
     }
 
+    let iter = splinter.iter();
+    assert_eq!(iter.size_hint().0, splinter.cardinality());
     assert_equal(splinter.iter(), expected.iter().copied());
 
     if splinter.is_empty() {
@@ -237,8 +239,8 @@ where
     let mut initial_set = splinter.iter().collect_vec();
     initial_set.shuffle(&mut rand::rng());
     for v in initial_set {
-        assert!(!splinter.insert(v));
-        assert!(splinter.remove(v));
+        assert!(!splinter.insert(v), "insert of {v} failed; {splinter:?}");
+        assert!(splinter.remove(v), "remove of {v} failed; {splinter:?}");
     }
 
     // seed the splinter with some sample values
