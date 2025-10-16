@@ -69,7 +69,7 @@ impl<L: Level> BitmapPartition<L> {
             "BUG: bitmap length is not a multiple of 256"
         );
 
-        (0..=255).zip(chunks.into_iter())
+        (0..=255).zip(chunks)
     }
 }
 

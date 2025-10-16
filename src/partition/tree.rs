@@ -55,7 +55,7 @@ impl<L: Level> TreePartition<L> {
         self.cardinality = self.children.values().map(|c| c.cardinality()).sum();
     }
 
-    /// estimate the encoded size of a TreePartition based on the number of
+    /// estimate the encoded size of a `TreePartition` based on the number of
     /// segments
     pub const fn estimate_encoded_size(segments: usize, cardinality: usize) -> usize {
         let index_size = TreeIndexBuilder::<L>::encoded_size(segments);
