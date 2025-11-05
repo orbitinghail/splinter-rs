@@ -112,7 +112,7 @@ pub trait IteratorExt: Iterator + Sized {
 
 impl<I: Iterator> IteratorExt for I {}
 
-/// A SizeHintIter wraps an iter with a lower bound.
+/// A `SizeHintIter` wraps an iter with a lower bound.
 #[must_use]
 pub struct SizeHintIter<I> {
     remaining: usize,
