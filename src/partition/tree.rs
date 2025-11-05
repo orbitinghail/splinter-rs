@@ -238,8 +238,8 @@ impl<L: Level> PartitionWrite<L> for TreePartition<L> {
                     child.remove_range(range);
                     !child.is_empty()
                 } else {
-                    // this segment is fully contained in the range, drop it entirely
-                    false
+                    // retain remaining children which are not covered by the deletion range
+                    !segments.contains(segment)
                 }
             });
 

@@ -392,6 +392,8 @@ impl Extend<u32> for Splinter {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
+
     use super::*;
     use crate::{
         codec::Encodable,
@@ -399,7 +401,7 @@ mod tests {
         testutil::{SetGen, mksplinter, ratio_to_marks, test_partition_read, test_partition_write},
         traits::Optimizable,
     };
-    use itertools::Itertools;
+    use itertools::{Itertools, assert_equal};
     use proptest::{
         collection::{hash_set, vec},
         proptest,
@@ -528,6 +530,16 @@ mod tests {
             let b = mksplinter(&set);
             a.optimize();
             assert_eq!(a, b);
+        }
+
+        #[test]
+        fn test_splinter_remove_range_proptest(set in hash_set(0u32..16384, 0..1024)) {
+            let expected = set.iter().copied().sorted().collect_vec();
+            let mut splinter = mksplinter(&expected);
+            if let Some(last) = expected.last() {
+                splinter.remove_range((Bound::Excluded(last), Bound::Unbounded));
+                assert_equal(splinter.iter(), expected);
+            }
         }
     }
 

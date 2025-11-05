@@ -233,7 +233,7 @@ where
 pub fn test_partition_write<L, S>(splinter: &mut S)
 where
     L: Level,
-    S: PartitionRead<L> + PartitionWrite<L> + Debug + Extend<L::Value>,
+    S: PartitionRead<L> + PartitionWrite<L> + Debug + Extend<L::Value> + Clone,
 {
     // start by clearing the splinter while exercising insert/remove
     let mut initial_set = splinter.iter().collect_vec();
@@ -259,16 +259,16 @@ where
     splinter.remove_range(..);
     assert!(splinter.is_empty());
 
-    // remove chunks from a large splinter until the splinter is empty
+    // extend splinter with many values
     let mut cursor = L::Value::truncate_from(117);
     let mut set = std::iter::from_fn(|| {
         cursor = cursor + L::Value::ONE;
         (cursor < L::Value::truncate_from(121665)).then_some(cursor)
     })
     .collect_vec();
-
     splinter.extend(set.iter().copied());
 
+    // remove ranges of the splinter in chunks
     macro_rules! remove_range {
         ($range:expr) => {
             splinter.remove_range($range);
@@ -287,6 +287,10 @@ where
     remove_range!((
         Bound::Excluded(L::Value::truncate_from(61216)),
         Bound::Included(L::Value::truncate_from(61316))
+    ));
+    remove_range!((
+        Bound::Excluded(L::Value::truncate_from(70000)),
+        Bound::Unbounded
     ));
 }
 
