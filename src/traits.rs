@@ -41,6 +41,9 @@ pub trait PartitionRead<L: Level> {
             .skip_while(move |s| !range.contains(s))
             .take_while(move |s| r2.contains(s))
     }
+
+    /// returns true if this partition contains all values in the given range
+    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool;
 }
 
 pub trait PartitionWrite<L: Level> {

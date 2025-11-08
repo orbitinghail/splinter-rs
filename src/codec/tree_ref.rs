@@ -181,6 +181,44 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
             })
             .with_size_hint(self.cardinality())
     }
+
+    fn contains_range<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        use crate::util::RangeExt;
+        if let Some(values) = values.try_into_inclusive() {
+            let p1 = (*values.start()).segment_end().min(*values.end());
+            let p2 = (*values.end()).segment_start().max(*values.start());
+            let segments = values.start().segment()..=values.end().segment();
+
+            for segment in segments.clone() {
+                let child = match self.load_child_at_segment(segment) {
+                    Some(child) => child,
+                    None => return false, // missing segment
+                };
+
+                // Check the appropriate range for this segment
+                if segment == *segments.start() {
+                    // First segment
+                    if !child.contains_range(values.start().rest()..=p1.rest()) {
+                        return false;
+                    }
+                } else if segment == *segments.end() {
+                    // Last segment
+                    if !child.contains_range(p2.rest()..=values.end().rest()) {
+                        return false;
+                    }
+                } else {
+                    // Middle segments must be full
+                    if child.cardinality() != L::LevelDown::MAX_LEN {
+                        return false;
+                    }
+                }
+            }
+            true
+        } else {
+            // empty range is trivially contained
+            true
+        }
+    }
 }
 
 impl<'a, L: Level + 'a> IntoIterator for TreeRef<'a, L> {

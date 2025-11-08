@@ -1,7 +1,7 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use culprit::ResultExt;
 use either::Either;
-use num::traits::{AsPrimitive, Bounded};
+use num::traits::{AsPrimitive, Bounded, ConstOne};
 use zerocopy::{FromBytes, TryFromBytes};
 
 use crate::{
@@ -205,6 +205,54 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             Self::Run { runs } => Iter::Run(runs.iter()),
         }
     }
+
+    fn contains_range<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        use crate::util::RangeExt;
+        match self {
+            Self::Empty => {
+                // Empty partition only contains empty ranges
+                RangeExt::is_empty(&values)
+            }
+            Self::Full => {
+                // Full partition contains any range (including empty)
+                true
+            }
+            Self::Bitmap { bitmap } => {
+                if let Some(range) = values.try_into_inclusive() {
+                    let range = (*range.start()).as_()..=(*range.end()).as_();
+                    let slice = bitmap.get(range).unwrap();
+                    slice.all()
+                } else {
+                    true
+                }
+            }
+            Self::Vec { values: vec_values } => {
+                if let Some(range) = values.try_into_inclusive() {
+                    let start_idx = match vec_values.binary_search(&(*range.start()).into()) {
+                        Ok(idx) => idx,
+                        Err(_) => return false,
+                    };
+
+                    let mut expected = *range.start();
+                    for &actual in &vec_values[start_idx..] {
+                        let actual: L::Value = actual.into();
+                        if actual == expected {
+                            if expected == *range.end() {
+                                return true;
+                            }
+                            expected = expected + L::Value::ONE;
+                        } else {
+                            return false;
+                        }
+                    }
+                    false
+                } else {
+                    true
+                }
+            }
+            Self::Run { runs } => runs.contains_range(values),
+        }
+    }
 }
 
 impl<'a, L: Level> PartialEq for NonRecursivePartitionRef<'a, L> {
@@ -324,6 +372,13 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
         match self {
             Self::NonRecursive(p) => Either::Left(p.iter()),
             Self::Tree(p) => Either::Right(p.iter()),
+        }
+    }
+
+    fn contains_range<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Self::NonRecursive(p) => p.contains_range(values),
+            Self::Tree(p) => p.contains_range(values),
         }
     }
 }

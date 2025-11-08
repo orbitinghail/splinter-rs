@@ -277,6 +277,11 @@ impl PartitionRead<High> for Splinter {
     fn iter(&self) -> impl Iterator<Item = u32> {
         self.0.iter()
     }
+
+    #[inline]
+    fn contains_range<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.0.contains_range(values)
+    }
 }
 
 impl PartitionWrite<High> for Splinter {

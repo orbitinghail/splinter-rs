@@ -278,6 +278,26 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.runs.iter().with_size_hint(self.cardinality())
     }
+
+    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            // Check if any run completely contains the requested range
+            for run in self.runs.ranges() {
+                if run.start() <= range.start() && range.end() <= run.end() {
+                    return true;
+                }
+                // Early exit: runs are sorted and disjoint, so if we've passed
+                // the end of the range, we won't find it
+                if run.start() > range.end() {
+                    return false;
+                }
+            }
+            false
+        } else {
+            // empty range is trivially contained
+            true
+        }
+    }
 }
 
 impl<L: Level> PartitionWrite<L> for RunPartition<L> {

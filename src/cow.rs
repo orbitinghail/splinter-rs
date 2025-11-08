@@ -351,6 +351,13 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for CowSplinter<B> {
             CowSplinter::Owned(splinter) => Either::Right(splinter.iter()),
         }
     }
+
+    fn contains_range<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref.contains_range(values),
+            CowSplinter::Owned(splinter) => splinter.contains_range(values),
+        }
+    }
 }
 
 impl<B: Deref<Target = [u8]>> PartitionWrite<High> for CowSplinter<B> {

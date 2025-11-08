@@ -18,7 +18,7 @@ use crate::{
     partition_kind::PartitionKind,
     segment::SplitSegment,
     traits::{DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
-    util::IteratorExt,
+    util::{IteratorExt, RangeExt},
 };
 
 pub mod bitmap;
@@ -370,6 +370,24 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Vec(p) => Iter::Vec(p.iter()),
             Partition::Run(p) => Iter::Run(p.iter()),
             Partition::Tree(p) => Iter::Tree(p.iter()),
+        }
+    }
+
+    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Partition::Full => {
+                // Full partition contains any non-empty range
+                if let Some(_range) = values.try_into_inclusive() {
+                    true
+                } else {
+                    // empty range is trivially contained
+                    true
+                }
+            }
+            Partition::Bitmap(p) => p.contains_range(values),
+            Partition::Vec(p) => p.contains_range(values),
+            Partition::Run(p) => p.contains_range(values),
+            Partition::Tree(p) => p.contains_range(values),
         }
     }
 }

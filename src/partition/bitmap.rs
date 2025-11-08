@@ -158,6 +158,17 @@ impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.bitmap.iter_ones().map(L::Value::truncate_from)
     }
+
+    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            let range = (*range.start()).as_()..=(*range.end()).as_();
+            let slice = self.bitmap.get(range).unwrap();
+            slice.all()
+        } else {
+            // empty range is trivially contained
+            true
+        }
+    }
 }
 
 impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {

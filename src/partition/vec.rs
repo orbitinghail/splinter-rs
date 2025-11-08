@@ -6,6 +6,7 @@ use std::{
 
 use bytes::BufMut;
 use itertools::{EitherOrBoth, Itertools};
+use num::traits::ConstOne;
 use range_set_blaze::SortedDisjoint;
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     level::Level,
     partition::{Partition, run::MergeRuns},
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
-    util::find_next_sorted,
+    util::{RangeExt, find_next_sorted},
 };
 
 #[derive(Clone, Eq)]
@@ -111,6 +112,35 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.values.iter().copied()
+    }
+
+    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            // Find the first value >= range.start()
+            let start_idx = match self.values.binary_search(range.start()) {
+                Ok(idx) => idx,
+                Err(_) => return false, // range.start() not in partition
+            };
+
+            // Check if all values in the range are present
+            let mut expected = *range.start();
+            for &actual in &self.values[start_idx..] {
+                if actual == expected {
+                    if expected == *range.end() {
+                        return true;
+                    }
+                    expected = expected + L::Value::ONE;
+                } else {
+                    // Missing value in the range
+                    return false;
+                }
+            }
+            // Ran out of values before reaching range.end()
+            false
+        } else {
+            // empty range is trivially contained
+            true
+        }
     }
 }
 
