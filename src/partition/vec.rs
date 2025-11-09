@@ -14,7 +14,7 @@ use crate::{
     level::Level,
     partition::{Partition, run::MergeRuns},
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
-    util::find_next_sorted,
+    util::{RangeExt, RangeIter, find_next_sorted},
 };
 
 #[derive(Clone, Eq)]
@@ -111,6 +111,40 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
 
     fn iter(&self) -> impl Iterator<Item = L::Value> {
         self.values.iter().copied()
+    }
+
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            // Find the first value >= range.start()
+            let start_idx = match self.values.binary_search(range.start()) {
+                Ok(idx) => idx,
+                Err(_) => return false, // range.start() not in partition
+            };
+
+            // Check if all values in the range are present by comparing iterators
+            let range_end = *range.end();
+            let expected = RangeIter::new(range);
+            let actual = self.values[start_idx..].iter().copied();
+            itertools::equal(expected, actual.take_while(|&v| v <= range_end))
+        } else {
+            // empty range is trivially contained
+            true
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            // Binary search for the start of the range
+            let idx = self
+                .values
+                .binary_search(range.start())
+                .unwrap_or_else(|i| i);
+            // Check if there's any value in [range.start, range.end]
+            self.values.get(idx).is_some_and(|v| v <= range.end())
+        } else {
+            // empty range has no intersection
+            false
+        }
     }
 }
 

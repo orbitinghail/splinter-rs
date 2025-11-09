@@ -75,6 +75,49 @@ impl<L: Level> PartitionRead<L> for RunsRef<'_, L> {
             .flat_map(|r| num::iter::range_inclusive(r.first(), r.last()))
             .with_size_hint(self.cardinality())
     }
+
+    fn contains_all<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        use crate::util::RangeExt;
+        if let Some(range) = values.try_into_inclusive() {
+            // Check if any run completely contains the requested range
+            for run in self.ranges() {
+                if run.start() <= range.start() && range.end() <= run.end() {
+                    return true;
+                }
+                // Early exit: runs are sorted and disjoint, so if we've passed
+                // the end of the range, we won't find it
+                if run.start() > range.end() {
+                    return false;
+                }
+            }
+            false
+        } else {
+            // empty range is trivially contained
+            true
+        }
+    }
+
+    fn contains_any<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        use crate::util::RangeExt;
+        if let Some(range) = values.try_into_inclusive() {
+            // Check if any run has non-empty intersection with the requested range
+            for run in self.ranges() {
+                // Ranges overlap if: run.start <= range.end && range.start <= run.end
+                if run.start() <= range.end() && range.start() <= run.end() {
+                    return true;
+                }
+                // Early exit: runs are sorted and disjoint, so if we've passed
+                // the end of the range, there's no intersection
+                if run.start() > range.end() {
+                    return false;
+                }
+            }
+            false
+        } else {
+            // empty range has no intersection
+            false
+        }
+    }
 }
 
 impl<L: Level> PartialEq for RunsRef<'_, L> {

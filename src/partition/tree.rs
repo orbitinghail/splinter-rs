@@ -191,6 +191,73 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
             })
             .with_size_hint(self.cardinality)
     }
+
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(values) = values.try_into_inclusive() {
+            let p1 = (*values.start()).segment_end().min(*values.end());
+            let p2 = (*values.end()).segment_start().max(*values.start());
+            let segments = values.start().segment()..=values.end().segment();
+
+            for segment in segments.clone() {
+                let child = match self.children.get(&segment) {
+                    Some(child) => child,
+                    None => return false, // missing segment
+                };
+
+                // Check the appropriate range for this segment
+                let child_contains_all = if segment == *segments.start() {
+                    // First segment
+                    child.contains_all(values.start().rest()..=p1.rest())
+                } else if segment == *segments.end() {
+                    // Last segment
+                    child.contains_all(p2.rest()..=values.end().rest())
+                } else {
+                    // Middle segments must be full
+                    child.cardinality() == L::LevelDown::MAX_LEN
+                };
+
+                if !child_contains_all {
+                    return false;
+                }
+            }
+            true
+        } else {
+            // empty range is trivially contained
+            true
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(values) = values.try_into_inclusive() {
+            let p1 = (*values.start()).segment_end().min(*values.end());
+            let p2 = (*values.end()).segment_start().max(*values.start());
+            let segments = values.start().segment()..=values.end().segment();
+
+            for segment in segments.clone() {
+                if let Some(child) = self.children.get(&segment) {
+                    // Check the appropriate range for this segment
+                    let has_any = if segment == *segments.start() {
+                        // First segment
+                        child.contains_any(values.start().rest()..=p1.rest())
+                    } else if segment == *segments.end() {
+                        // Last segment
+                        child.contains_any(p2.rest()..=values.end().rest())
+                    } else {
+                        // Middle segment - any value would be in range
+                        !child.is_empty()
+                    };
+
+                    if has_any {
+                        return true;
+                    }
+                }
+            }
+            false
+        } else {
+            // empty range has no intersection
+            false
+        }
+    }
 }
 
 impl<L: Level> PartitionWrite<L> for TreePartition<L> {

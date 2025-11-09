@@ -277,6 +277,63 @@ impl PartitionRead<High> for Splinter {
     fn iter(&self) -> impl Iterator<Item = u32> {
         self.0.iter()
     }
+
+    /// Returns `true` if this splinter contains all values in the specified range.
+    ///
+    /// This method checks whether every value within the given range bounds is present
+    /// in the splinter. An empty range is trivially contained and returns `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead};
+    ///
+    /// let splinter = Splinter::from_iter([10, 11, 12, 13, 14, 15, 100]);
+    ///
+    /// // Check if range is fully contained
+    /// assert!(splinter.contains_all(10..=15));
+    /// assert!(splinter.contains_all(11..=14));
+    ///
+    /// // Missing values mean the range is not fully contained
+    /// assert!(!splinter.contains_all(10..=16));  // 16 is missing
+    /// assert!(!splinter.contains_all(9..=15));   // 9 is missing
+    ///
+    /// // Empty ranges are trivially contained
+    /// assert!(splinter.contains_all(50..50));
+    /// ```
+    #[inline]
+    fn contains_all<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.0.contains_all(values)
+    }
+
+    /// Returns `true` if this splinter has a non-empty intersection with the specified range.
+    ///
+    /// This method checks whether any value within the given range is present
+    /// in the splinter. Returns `false` for empty ranges.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use splinter_rs::{Splinter, PartitionRead};
+    ///
+    /// let splinter = Splinter::from_iter([10, 20, 30]);
+    ///
+    /// // Check for any overlap
+    /// assert!(splinter.contains_any(10..=15));   // Contains 10
+    /// assert!(splinter.contains_any(5..=10));    // Contains 10
+    /// assert!(splinter.contains_any(25..=35));   // Contains 30
+    ///
+    /// // No overlap
+    /// assert!(!splinter.contains_any(0..=9));    // No values in range
+    /// assert!(!splinter.contains_any(40..=50));  // No values in range
+    ///
+    /// // Empty ranges have no intersection
+    /// assert!(!splinter.contains_any(50..50));
+    /// ```
+    #[inline]
+    fn contains_any<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.0.contains_any(values)
+    }
 }
 
 impl PartitionWrite<High> for Splinter {

@@ -1,5 +1,5 @@
 use std::{
-    iter::Peekable,
+    iter::{FusedIterator, Peekable},
     ops::{Bound, RangeBounds, RangeInclusive},
 };
 
@@ -7,6 +7,7 @@ use num::{
     PrimInt,
     traits::{ConstOne, ConstZero},
 };
+use range_set_blaze::Integer;
 
 #[doc(hidden)]
 #[macro_export]
@@ -139,3 +140,49 @@ impl<T, I: Iterator<Item = T>> Iterator for SizeHintIter<I> {
         (self.remaining.max(lower), upper)
     }
 }
+
+/// Iterator over a range of integers using `range_set_blaze::Integer` trait
+pub struct RangeIter<T: Integer> {
+    range: Option<RangeInclusive<T>>,
+}
+
+impl<T: Integer> RangeIter<T> {
+    pub fn new(range: RangeInclusive<T>) -> Self {
+        Self { range: Some(range) }
+    }
+}
+
+impl<T: Integer> Iterator for RangeIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ref mut range) = self.range {
+            T::range_next(range)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if let Some(ref range) = self.range {
+            let len = T::safe_len(range);
+            let len = T::safe_len_to_f64_lossy(len) as usize;
+            (len, Some(len))
+        } else {
+            (0, Some(0))
+        }
+    }
+}
+
+impl<T: Integer> DoubleEndedIterator for RangeIter<T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if let Some(ref mut range) = self.range {
+            T::range_next_back(range)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: Integer> ExactSizeIterator for RangeIter<T> {}
+impl<T: Integer> FusedIterator for RangeIter<T> {}

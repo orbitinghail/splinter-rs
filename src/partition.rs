@@ -18,7 +18,7 @@ use crate::{
     partition_kind::PartitionKind,
     segment::SplitSegment,
     traits::{DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
-    util::IteratorExt,
+    util::{IteratorExt, RangeExt},
 };
 
 pub mod bitmap;
@@ -370,6 +370,29 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
             Partition::Vec(p) => Iter::Vec(p.iter()),
             Partition::Run(p) => Iter::Run(p.iter()),
             Partition::Tree(p) => Iter::Tree(p.iter()),
+        }
+    }
+
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Partition::Full => true, // Full partition contains every possible range
+            Partition::Bitmap(p) => p.contains_all(values),
+            Partition::Vec(p) => p.contains_all(values),
+            Partition::Run(p) => p.contains_all(values),
+            Partition::Tree(p) => p.contains_all(values),
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Partition::Full => {
+                // Full partition has intersection with any non-empty range
+                !RangeExt::is_empty(&values)
+            }
+            Partition::Bitmap(p) => p.contains_any(values),
+            Partition::Vec(p) => p.contains_any(values),
+            Partition::Run(p) => p.contains_any(values),
+            Partition::Tree(p) => p.contains_any(values),
         }
     }
 }

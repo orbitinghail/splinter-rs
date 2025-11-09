@@ -1,4 +1,7 @@
-use std::{fmt::Debug, ops::Deref};
+use std::{
+    fmt::Debug,
+    ops::{Deref, RangeBounds},
+};
 
 use bytes::Bytes;
 use culprit::Culprit;
@@ -293,6 +296,14 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRef<B> {
 
     fn iter(&self) -> impl Iterator<Item = u32> {
         self.load_unchecked().into_iter()
+    }
+
+    fn contains_all<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.load_unchecked().contains_all(values)
+    }
+
+    fn contains_any<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.load_unchecked().contains_any(values)
     }
 }
 

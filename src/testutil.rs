@@ -15,6 +15,7 @@ use rand::{
     rngs::StdRng,
     seq::{SliceRandom, index},
 };
+use range_set_blaze::SortedDisjoint;
 use zerocopy::IntoBytes;
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
     codec::{Encodable, footer::Footer},
     level::{High, Level},
     partition::Partition,
+    partition::run::MergeRuns,
     partition_kind::PartitionKind,
     splinter::Splinter,
     traits::TruncateFrom,
@@ -225,6 +227,48 @@ where
                 let splinter_range = splinter.range((start, end));
                 assert_equal(splinter_range, expected_range);
             }
+        }
+    }
+
+    // Test contains_all and contains_any
+
+    // test empty ranges
+    assert!(splinter.contains_all(L::Value::ZERO..L::Value::ZERO));
+    assert!(!splinter.contains_any(L::Value::ZERO..L::Value::ZERO));
+
+    if !expected.is_empty() {
+        // Unbounded range always intersects a non-empty splinter
+        assert!(splinter.contains_any(..));
+
+        let first = *expected.first().unwrap();
+        let last = *expected.last().unwrap();
+
+        // Test some trivial ranges
+        for n in [first, last] {
+            assert!(splinter.contains_all(n..=n));
+
+            assert!(splinter.contains_any(n..=n));
+            assert!(splinter.contains_any(L::Value::ZERO..=n));
+            assert!(splinter.contains_any(n..=L::Value::max_value()));
+        }
+
+        // Use MergeRuns to find all runs in expected (sort first to ensure longest runs)
+        let sorted = expected.iter().copied().sorted();
+        let runs = MergeRuns::new(sorted.clone()).collect_vec();
+        let runs_inverse = MergeRuns::new(sorted).complement().collect_vec();
+
+        // Test that all actual runs are contained
+        for run in runs {
+            assert!(splinter.contains_all(run.clone()));
+            assert!(splinter.contains_any(*run.start()..));
+            assert!(splinter.contains_any(..=*run.end()));
+            assert!(splinter.contains_any(run));
+        }
+
+        // Test that all other runs are *not* contained
+        for run in runs_inverse {
+            assert!(!splinter.contains_all(run.clone()));
+            assert!(!splinter.contains_any(run));
         }
     }
 }
