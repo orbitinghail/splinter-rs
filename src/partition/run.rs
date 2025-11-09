@@ -279,7 +279,7 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
         self.runs.iter().with_size_hint(self.cardinality())
     }
 
-    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
         if let Some(range) = values.try_into_inclusive() {
             // Check if any run completely contains the requested range
             for run in self.runs.ranges() {
@@ -296,6 +296,27 @@ impl<L: Level> PartitionRead<L> for RunPartition<L> {
         } else {
             // empty range is trivially contained
             true
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            // Check if any run has non-empty intersection with the requested range
+            for run in self.runs.ranges() {
+                // Ranges overlap if: run.start <= range.end && range.start <= run.end
+                if run.start() <= range.end() && range.start() <= run.end() {
+                    return true;
+                }
+                // Early exit: runs are sorted and disjoint, so if we've passed
+                // the end of the range, there's no intersection
+                if run.start() > range.end() {
+                    return false;
+                }
+            }
+            false
+        } else {
+            // empty range has no intersection
+            false
         }
     }
 }

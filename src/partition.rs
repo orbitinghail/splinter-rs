@@ -373,21 +373,26 @@ impl<L: Level> PartitionRead<L> for Partition<L> {
         }
     }
 
-    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Partition::Full => true, // Full partition contains every possible range
+            Partition::Bitmap(p) => p.contains_all(values),
+            Partition::Vec(p) => p.contains_all(values),
+            Partition::Run(p) => p.contains_all(values),
+            Partition::Tree(p) => p.contains_all(values),
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
         match self {
             Partition::Full => {
-                // Full partition contains any non-empty range
-                if let Some(_range) = values.try_into_inclusive() {
-                    true
-                } else {
-                    // empty range is trivially contained
-                    true
-                }
+                // Full partition has intersection with any non-empty range
+                !RangeExt::is_empty(&values)
             }
-            Partition::Bitmap(p) => p.contains_range(values),
-            Partition::Vec(p) => p.contains_range(values),
-            Partition::Run(p) => p.contains_range(values),
-            Partition::Tree(p) => p.contains_range(values),
+            Partition::Bitmap(p) => p.contains_any(values),
+            Partition::Vec(p) => p.contains_any(values),
+            Partition::Run(p) => p.contains_any(values),
+            Partition::Tree(p) => p.contains_any(values),
         }
     }
 }

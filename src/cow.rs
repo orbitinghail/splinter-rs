@@ -352,10 +352,17 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for CowSplinter<B> {
         }
     }
 
-    fn contains_range<R: RangeBounds<u32>>(&self, values: R) -> bool {
+    fn contains_all<R: RangeBounds<u32>>(&self, values: R) -> bool {
         match self {
-            CowSplinter::Ref(splinter_ref) => splinter_ref.contains_range(values),
-            CowSplinter::Owned(splinter) => splinter.contains_range(values),
+            CowSplinter::Ref(splinter_ref) => splinter_ref.contains_all(values),
+            CowSplinter::Owned(splinter) => splinter.contains_all(values),
+        }
+    }
+
+    fn contains_any<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        match self {
+            CowSplinter::Ref(splinter_ref) => splinter_ref.contains_any(values),
+            CowSplinter::Owned(splinter) => splinter.contains_any(values),
         }
     }
 }

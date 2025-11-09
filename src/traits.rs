@@ -43,7 +43,10 @@ pub trait PartitionRead<L: Level> {
     }
 
     /// returns true if this partition contains all values in the given range
-    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool;
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool;
+
+    /// returns true if this partition has a non-empty intersection with the given range
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool;
 }
 
 pub trait PartitionWrite<L: Level> {

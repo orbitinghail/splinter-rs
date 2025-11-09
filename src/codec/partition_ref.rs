@@ -1,7 +1,7 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
 use culprit::ResultExt;
 use either::Either;
-use num::traits::{AsPrimitive, Bounded, ConstOne};
+use num::traits::{AsPrimitive, Bounded};
 use zerocopy::{FromBytes, TryFromBytes};
 
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
     partition::{Partition, bitmap::BitmapPartition, vec::VecPartition},
     partition_kind::PartitionKind,
     traits::TruncateFrom,
+    util::{RangeExt, RangeIter},
 };
 
 pub(super) fn decode_len_from_suffix<L: Level>(
@@ -206,7 +207,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
         }
     }
 
-    fn contains_range<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+    fn contains_all<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
         use crate::util::RangeExt;
         match self {
             Self::Empty => {
@@ -214,7 +215,7 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
                 RangeExt::is_empty(&values)
             }
             Self::Full => {
-                // Full partition contains any range (including empty)
+                // Full partition contains every possible range (empty or not)
                 true
             }
             Self::Bitmap { bitmap } => {
@@ -228,29 +229,55 @@ impl<'a, L: Level> PartitionRead<L> for NonRecursivePartitionRef<'a, L> {
             }
             Self::Vec { values: vec_values } => {
                 if let Some(range) = values.try_into_inclusive() {
-                    let start_idx = match vec_values.binary_search(&(*range.start()).into()) {
+                    let (start, end) = (*range.start(), *range.end());
+                    let start_idx = match vec_values.binary_search(&start.into()) {
                         Ok(idx) => idx,
                         Err(_) => return false,
                     };
 
-                    let mut expected = *range.start();
-                    for &actual in &vec_values[start_idx..] {
-                        let actual: L::Value = actual.into();
-                        if actual == expected {
-                            if expected == *range.end() {
-                                return true;
-                            }
-                            expected = expected + L::Value::ONE;
-                        } else {
-                            return false;
-                        }
-                    }
-                    false
+                    // Check if all values in the range are present by comparing iterators
+                    let expected = RangeIter::new(range);
+                    let actual = vec_values[start_idx..].iter().map(|&v| v.into());
+                    itertools::equal(expected, actual.take_while(|&v| v <= end))
                 } else {
                     true
                 }
             }
-            Self::Run { runs } => runs.contains_range(values),
+            Self::Run { runs } => runs.contains_all(values),
+        }
+    }
+
+    fn contains_any<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Self::Empty => false, // Empty partition has no intersection with any range
+            Self::Full => {
+                // Full partition has intersection with any non-empty range
+                !RangeExt::is_empty(&values)
+            }
+            Self::Bitmap { bitmap } => {
+                if let Some(range) = values.try_into_inclusive() {
+                    let range = (*range.start()).as_()..=(*range.end()).as_();
+                    let slice = bitmap.get(range).unwrap();
+                    slice.any()
+                } else {
+                    false
+                }
+            }
+            Self::Vec { values: vec_values } => {
+                if let Some(range) = values.try_into_inclusive() {
+                    // Binary search for the start of the range
+                    let idx = vec_values
+                        .binary_search(&(*range.start()).into())
+                        .unwrap_or_else(|i| i);
+                    // Check if there's any value in [range.start, range.end]
+                    vec_values
+                        .get(idx)
+                        .is_some_and(|&v| v.into() <= *range.end())
+                } else {
+                    false
+                }
+            }
+            Self::Run { runs } => runs.contains_any(values),
         }
     }
 }
@@ -375,10 +402,17 @@ impl<'a, L: Level> PartitionRead<L> for PartitionRef<'a, L> {
         }
     }
 
-    fn contains_range<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+    fn contains_all<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
         match self {
-            Self::NonRecursive(p) => p.contains_range(values),
-            Self::Tree(p) => p.contains_range(values),
+            Self::NonRecursive(p) => p.contains_all(values),
+            Self::Tree(p) => p.contains_all(values),
+        }
+    }
+
+    fn contains_any<R: std::ops::RangeBounds<L::Value>>(&self, values: R) -> bool {
+        match self {
+            Self::NonRecursive(p) => p.contains_any(values),
+            Self::Tree(p) => p.contains_any(values),
         }
     }
 }

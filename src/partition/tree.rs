@@ -192,7 +192,7 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
             .with_size_hint(self.cardinality)
     }
 
-    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
         if let Some(values) = values.try_into_inclusive() {
             let p1 = (*values.start()).segment_end().min(*values.end());
             let p2 = (*values.end()).segment_start().max(*values.start());
@@ -205,27 +205,57 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
                 };
 
                 // Check the appropriate range for this segment
-                if segment == *segments.start() {
+                let child_contains_all = if segment == *segments.start() {
                     // First segment
-                    if !child.contains_range(values.start().rest()..=p1.rest()) {
-                        return false;
-                    }
+                    child.contains_all(values.start().rest()..=p1.rest())
                 } else if segment == *segments.end() {
                     // Last segment
-                    if !child.contains_range(p2.rest()..=values.end().rest()) {
-                        return false;
-                    }
+                    child.contains_all(p2.rest()..=values.end().rest())
                 } else {
                     // Middle segments must be full
-                    if child.cardinality() != L::LevelDown::MAX_LEN {
-                        return false;
-                    }
+                    child.cardinality() == L::LevelDown::MAX_LEN
+                };
+
+                if !child_contains_all {
+                    return false;
                 }
             }
             true
         } else {
             // empty range is trivially contained
             true
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(values) = values.try_into_inclusive() {
+            let p1 = (*values.start()).segment_end().min(*values.end());
+            let p2 = (*values.end()).segment_start().max(*values.start());
+            let segments = values.start().segment()..=values.end().segment();
+
+            for segment in segments.clone() {
+                if let Some(child) = self.children.get(&segment) {
+                    // Check the appropriate range for this segment
+                    let has_any = if segment == *segments.start() {
+                        // First segment
+                        child.contains_any(values.start().rest()..=p1.rest())
+                    } else if segment == *segments.end() {
+                        // Last segment
+                        child.contains_any(p2.rest()..=values.end().rest())
+                    } else {
+                        // Middle segment - any value would be in range
+                        !child.is_empty()
+                    };
+
+                    if has_any {
+                        return true;
+                    }
+                }
+            }
+            false
+        } else {
+            // empty range has no intersection
+            false
         }
     }
 }

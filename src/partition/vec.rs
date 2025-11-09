@@ -6,7 +6,6 @@ use std::{
 
 use bytes::BufMut;
 use itertools::{EitherOrBoth, Itertools};
-use num::traits::ConstOne;
 use range_set_blaze::SortedDisjoint;
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
     level::Level,
     partition::{Partition, run::MergeRuns},
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
-    util::{RangeExt, find_next_sorted},
+    util::{RangeExt, RangeIter, find_next_sorted},
 };
 
 #[derive(Clone, Eq)]
@@ -114,7 +113,7 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
         self.values.iter().copied()
     }
 
-    fn contains_range<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+    fn contains_all<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
         if let Some(range) = values.try_into_inclusive() {
             // Find the first value >= range.start()
             let start_idx = match self.values.binary_search(range.start()) {
@@ -122,24 +121,29 @@ impl<L: Level> PartitionRead<L> for VecPartition<L> {
                 Err(_) => return false, // range.start() not in partition
             };
 
-            // Check if all values in the range are present
-            let mut expected = *range.start();
-            for &actual in &self.values[start_idx..] {
-                if actual == expected {
-                    if expected == *range.end() {
-                        return true;
-                    }
-                    expected = expected + L::Value::ONE;
-                } else {
-                    // Missing value in the range
-                    return false;
-                }
-            }
-            // Ran out of values before reaching range.end()
-            false
+            // Check if all values in the range are present by comparing iterators
+            let range_end = *range.end();
+            let expected = RangeIter::new(range);
+            let actual = self.values[start_idx..].iter().copied();
+            itertools::equal(expected, actual.take_while(|&v| v <= range_end))
         } else {
             // empty range is trivially contained
             true
+        }
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, values: R) -> bool {
+        if let Some(range) = values.try_into_inclusive() {
+            // Binary search for the start of the range
+            let idx = self
+                .values
+                .binary_search(range.start())
+                .unwrap_or_else(|i| i);
+            // Check if there's any value in [range.start, range.end]
+            self.values.get(idx).is_some_and(|v| v <= range.end())
+        } else {
+            // empty range has no intersection
+            false
         }
     }
 }

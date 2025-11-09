@@ -15,6 +15,7 @@ use rand::{
     rngs::StdRng,
     seq::{SliceRandom, index},
 };
+use range_set_blaze::SortedDisjoint;
 use zerocopy::IntoBytes;
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
     codec::{Encodable, footer::Footer},
     level::{High, Level},
     partition::Partition,
+    partition::run::MergeRuns,
     partition_kind::PartitionKind,
     splinter::Splinter,
     traits::TruncateFrom,
@@ -228,75 +230,45 @@ where
         }
     }
 
-    // Test contains_range
-    // Empty range is always contained
-    assert!(splinter.contains_range(L::Value::ZERO..L::Value::ZERO));
+    // Test contains_all and contains_any
+
+    // test empty ranges
+    assert!(splinter.contains_all(L::Value::ZERO..L::Value::ZERO));
+    assert!(!splinter.contains_any(L::Value::ZERO..L::Value::ZERO));
 
     if !expected.is_empty() {
-        let first = expected.first().unwrap();
-        let last = expected.last().unwrap();
+        // Unbounded range always intersects a non-empty splinter
+        assert!(splinter.contains_any(..));
 
-        // Single value ranges
-        assert!(
-            splinter.contains_range(*first..=*first),
-            "contains_range single first"
-        );
-        assert!(
-            splinter.contains_range(*last..=*last),
-            "contains_range single last"
-        );
+        let first = *expected.first().unwrap();
+        let last = *expected.last().unwrap();
 
-        // Test ranges that should be contained
-        if expected.len() >= 2 {
-            // Check if we have at least two consecutive values
-            let mut has_consecutive = false;
-            for i in 0..expected.len() - 1 {
-                if expected[i] + L::Value::ONE == expected[i + 1] {
-                    has_consecutive = true;
-                    assert!(
-                        splinter.contains_range(expected[i]..=expected[i + 1]),
-                        "contains_range consecutive {:?}..={:?}",
-                        expected[i],
-                        expected[i + 1]
-                    );
-                }
-            }
+        // Test some trivial ranges
+        for n in [first, last] {
+            assert!(splinter.contains_all(n..=n));
 
-            // Test a range that should NOT be contained (if there's a gap)
-            if !has_consecutive && expected.len() >= 2 {
-                assert!(
-                    !splinter.contains_range(expected[0]..=expected[1]),
-                    "should not contain non-consecutive range"
-                );
-            }
+            assert!(splinter.contains_any(n..=n));
+            assert!(splinter.contains_any(L::Value::ZERO..=n));
+            assert!(splinter.contains_any(n..=L::Value::max_value()));
         }
 
-        // Test full range if all values are consecutive
-        if expected.len() > 1 {
-            let all_consecutive = expected.windows(2).all(|w| w[0] + L::Value::ONE == w[1]);
-            if all_consecutive {
-                assert!(
-                    splinter.contains_range(*first..=*last),
-                    "contains_range full consecutive"
-                );
-            }
+        // Use MergeRuns to find all runs in expected (sort first to ensure longest runs)
+        let sorted = expected.iter().copied().sorted();
+        let runs = MergeRuns::new(sorted.clone()).collect_vec();
+        let runs_inverse = MergeRuns::new(sorted).complement().collect_vec();
+
+        // Test that all actual runs are contained
+        for run in runs {
+            assert!(splinter.contains_all(run.clone()));
+            assert!(splinter.contains_any(*run.start()..));
+            assert!(splinter.contains_any(..=*run.end()));
+            assert!(splinter.contains_any(run));
         }
 
-        // Test range that extends beyond the partition
-        if let Some(after_last) = last.checked_add(&L::Value::ONE) {
-            assert!(
-                !splinter.contains_range(*first..=after_last),
-                "should not contain range beyond end"
-            );
-        }
-
-        // Test range before the partition
-        if *first > L::Value::ZERO {
-            let before_first = *first - L::Value::ONE;
-            assert!(
-                !splinter.contains_range(before_first..=before_first),
-                "should not contain value before start"
-            );
+        // Test that all other runs are *not* contained
+        for run in runs_inverse {
+            assert!(!splinter.contains_all(run.clone()));
+            assert!(!splinter.contains_any(run));
         }
     }
 }

@@ -87,8 +87,12 @@ impl<L: Level> PartitionRead<L> for Never {
         std::iter::empty()
     }
 
-    fn contains_range<R: RangeBounds<L::Value>>(&self, _values: R) -> bool {
-        unreachable!("Never::contains_range")
+    fn contains_all<R: RangeBounds<L::Value>>(&self, _values: R) -> bool {
+        unreachable!("Never::contains_all")
+    }
+
+    fn contains_any<R: RangeBounds<L::Value>>(&self, _values: R) -> bool {
+        unreachable!("Never::contains_any")
     }
 }
 

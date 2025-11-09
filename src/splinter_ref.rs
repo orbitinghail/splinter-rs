@@ -298,8 +298,12 @@ impl<B: Deref<Target = [u8]>> PartitionRead<High> for SplinterRef<B> {
         self.load_unchecked().into_iter()
     }
 
-    fn contains_range<R: RangeBounds<u32>>(&self, values: R) -> bool {
-        self.load_unchecked().contains_range(values)
+    fn contains_all<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.load_unchecked().contains_all(values)
+    }
+
+    fn contains_any<R: RangeBounds<u32>>(&self, values: R) -> bool {
+        self.load_unchecked().contains_any(values)
     }
 }
 
