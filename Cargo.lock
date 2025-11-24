@@ -183,9 +183,9 @@ checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
 
 [[package]]
 name = "crc64fast-nvme"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4955638f00a809894c947f85a024020a20815b65a5eea633798ea7924edab2b3"
+checksum = "38fe9239af6a04e140c7424d36d1615f37f1804700c17d5339af162add9022e0"
 dependencies = [
  "crc",
 ]
