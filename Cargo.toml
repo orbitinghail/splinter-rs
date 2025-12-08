@@ -38,7 +38,7 @@ zerocopy = { version = "0.8", features = ["derive"] }
 [dev-dependencies]
 splinter-rs = { path = ".", features = ["testutil"] }
 
-criterion = "=0.7.0"
+criterion = "=0.8.0"
 lz4 = "=1.28.1"
 roaring = "=0.11.2"
 
