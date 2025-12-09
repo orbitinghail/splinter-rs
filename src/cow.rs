@@ -5,7 +5,6 @@ use std::ops::{
 };
 
 use bytes::{BufMut, Bytes};
-use culprit::Culprit;
 use either::Either;
 
 use crate::{
@@ -185,7 +184,7 @@ impl<B: Deref<Target = [u8]>> CowSplinter<B> {
     /// let cow = CowSplinter::from_bytes(bytes).unwrap();
     /// assert!(cow.contains(42));
     /// ```
-    pub fn from_bytes(data: B) -> Result<Self, Culprit<DecodeErr>> {
+    pub fn from_bytes(data: B) -> Result<Self, DecodeErr> {
         Ok(Self::Ref(SplinterRef::from_bytes(data)?))
     }
 

@@ -378,7 +378,7 @@ pub fn mksplinter_buf(values: &[u32]) -> BytesMut {
 #[macro_export]
 macro_rules! assert_error {
     ($expr:expr, $err:path$(, $($rest:tt),+)?) => {
-        assert_matches::assert_matches!(($expr).expect_err("expected an error").ctx(), $err $(, $($rest),+)?)
+        assert_matches::assert_matches!(($expr).expect_err("expected an error"), $err $(, $($rest),+)?)
     };
 }
 

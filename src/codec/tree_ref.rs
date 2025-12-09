@@ -26,7 +26,7 @@ pub struct TreeRef<'a, L: Level> {
 }
 
 impl<'a, L: Level> TreeRef<'a, L> {
-    pub(super) fn from_suffix(data: &'a [u8]) -> culprit::Result<Self, DecodeErr> {
+    pub(super) fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
         let (data, num_children) = decode_len_from_suffix::<Block>(data)?;
         assert_ne!(
             num_children, 0,
