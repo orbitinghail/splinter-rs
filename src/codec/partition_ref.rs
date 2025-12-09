@@ -1,5 +1,4 @@
 use bitvec::{order::Lsb0, slice::BitSlice};
-use culprit::ResultExt;
 use either::Either;
 use num::traits::{AsPrimitive, Bounded};
 use zerocopy::{FromBytes, TryFromBytes};
@@ -14,9 +13,7 @@ use crate::{
     util::{RangeExt, RangeIter},
 };
 
-pub(super) fn decode_len_from_suffix<L: Level>(
-    data: &[u8],
-) -> culprit::Result<(&[u8], usize), DecodeErr> {
+pub(super) fn decode_len_from_suffix<L: Level>(data: &[u8]) -> Result<(&[u8], usize), DecodeErr> {
     let (data, len) = L::ValueUnaligned::try_read_from_suffix(data)?;
     // length is decremented when stored
     Ok((data, len.into().as_() + 1))
@@ -33,10 +30,7 @@ pub enum NonRecursivePartitionRef<'a, L: Level> {
 }
 
 impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
-    pub fn from_suffix_with_kind(
-        kind: PartitionKind,
-        data: &'a [u8],
-    ) -> culprit::Result<Self, DecodeErr> {
+    pub fn from_suffix_with_kind(kind: PartitionKind, data: &'a [u8]) -> Result<Self, DecodeErr> {
         match kind {
             PartitionKind::Empty => Ok(Self::Empty),
             PartitionKind::Full => Ok(Self::Full),
@@ -57,9 +51,7 @@ impl<'a, L: Level> NonRecursivePartitionRef<'a, L> {
                     values: <[L::ValueUnaligned]>::ref_from_bytes_with_elems(&data[range], len)?,
                 })
             }
-            PartitionKind::Run => Ok(Self::Run {
-                runs: RunsRef::from_suffix(data).or_into_ctx()?,
-            }),
+            PartitionKind::Run => Ok(Self::Run { runs: RunsRef::from_suffix(data)? }),
             PartitionKind::Tree => unreachable!("non-recursive"),
         }
     }
@@ -81,7 +73,7 @@ impl<'a> NonRecursivePartitionRef<'a, Block> {
         kind: PartitionKind,
         num_children: usize,
         data: &'a [u8],
-    ) -> culprit::Result<Self, DecodeErr> {
+    ) -> Result<Self, DecodeErr> {
         match kind {
             PartitionKind::Full => Ok(Self::Full),
             PartitionKind::Bitmap => {
@@ -326,12 +318,12 @@ pub enum PartitionRef<'a, L: Level> {
 }
 
 impl<'a, L: Level> PartitionRef<'a, L> {
-    pub fn from_suffix(data: &'a [u8]) -> culprit::Result<Self, DecodeErr> {
+    pub fn from_suffix(data: &'a [u8]) -> Result<Self, DecodeErr> {
         let (data, kind) = PartitionKind::try_read_from_suffix(data)?;
         match kind {
-            PartitionKind::Tree => Ok(Self::Tree(TreeRef::from_suffix(data).or_into_ctx()?)),
+            PartitionKind::Tree => Ok(Self::Tree(TreeRef::from_suffix(data)?)),
             kind => Ok(Self::NonRecursive(
-                NonRecursivePartitionRef::from_suffix_with_kind(kind, data).or_into_ctx()?,
+                NonRecursivePartitionRef::from_suffix_with_kind(kind, data)?,
             )),
         }
     }

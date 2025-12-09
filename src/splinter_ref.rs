@@ -4,7 +4,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use culprit::Culprit;
 use zerocopy::FromBytes;
 
 use crate::{
@@ -239,19 +238,19 @@ impl<B: Deref<Target = [u8]>> SplinterRef<B> {
     ///
     /// let invalid_bytes = vec![0u8; 5]; // Too short
     /// let result = SplinterRef::from_bytes(invalid_bytes);
-    /// assert!(matches!(result.unwrap_err().ctx(), DecodeErr::Length));
+    /// assert!(matches!(result.unwrap_err(), DecodeErr::Length));
     /// ```
-    pub fn from_bytes(data: B) -> culprit::Result<Self, DecodeErr> {
+    pub fn from_bytes(data: B) -> Result<Self, DecodeErr> {
         pub(crate) const SPLINTER_V1_MAGIC: [u8; 4] = [0xDA, 0xAE, 0x12, 0xDF];
         if data.len() >= 4
             && data.starts_with(&SPLINTER_V1_MAGIC)
             && !data.ends_with(&SPLINTER_V2_MAGIC)
         {
-            return Err(Culprit::new(DecodeErr::SplinterV1));
+            return Err(DecodeErr::SplinterV1);
         }
 
         if data.len() < Footer::SIZE {
-            return Err(Culprit::new(DecodeErr::Length));
+            return Err(DecodeErr::Length);
         }
         let (partitions, footer) = data.split_at(data.len() - Footer::SIZE);
         Footer::ref_from_bytes(footer)?.validate(partitions)?;

@@ -1,5 +1,4 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use culprit::Culprit;
 use thiserror::Error;
 use zerocopy::{ConvertError, SizeError};
 
@@ -94,9 +93,9 @@ pub enum DecodeErr {
 
 impl DecodeErr {
     #[inline]
-    fn ensure_bytes_available(data: &[u8], len: usize) -> culprit::Result<(), DecodeErr> {
+    fn ensure_bytes_available(data: &[u8], len: usize) -> Result<(), DecodeErr> {
         if data.len() < len {
-            Err(Culprit::new(Self::Length))
+            Err(Self::Length)
         } else {
             Ok(())
         }

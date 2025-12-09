@@ -266,15 +266,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "culprit"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91da57f31052de4df497178bdeea96a5d005691abb2dd973978c0f6a50ac1b85"
-dependencies = [
- "smallvec",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -806,12 +797,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "smallvec"
-version = "1.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
 name = "splinter-rs"
 version = "0.9.1"
 dependencies = [
@@ -820,7 +805,6 @@ dependencies = [
  "bytes",
  "crc64fast-nvme",
  "criterion",
- "culprit",
  "either",
  "itertools 0.14.0",
  "lz4",
