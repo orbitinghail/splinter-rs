@@ -23,10 +23,7 @@ impl<L: Level> PartialEq for Partition<L> {
             (Tree(a), Tree(b)) => a == b,
 
             // otherwise fall back to logical ops
-            (a, b) => {
-                debug_assert_ne!(a.kind(), b.kind(), "should have different storage classes");
-                itertools::equal(a.iter(), b.iter())
-            }
+            (a, b) => itertools::equal(a.iter(), b.iter()),
         }
     }
 }
@@ -136,7 +133,7 @@ impl<L: Level> BitAndAssign<&Partition<L>> for Partition<L> {
                 *a = std::mem::take(a)
                     .iter()
                     .merge_join_by(b.iter(), L::Value::cmp)
-                    .flat_map(|x| match x {
+                    .filter_map(|x| match x {
                         EitherOrBoth::Left(_) => None,
                         EitherOrBoth::Right(_) => None,
                         EitherOrBoth::Both(l, _) => Some(l),
@@ -174,7 +171,7 @@ impl<L: Level> BitAndAssign<&PartitionRef<'_, L>> for Partition<L> {
                 *a = std::mem::take(a)
                     .iter()
                     .merge_join_by(b.iter(), L::Value::cmp)
-                    .flat_map(|x| match x {
+                    .filter_map(|x| match x {
                         EitherOrBoth::Left(_) => None,
                         EitherOrBoth::Right(_) => None,
                         EitherOrBoth::Both(l, _) => Some(l),
@@ -214,7 +211,7 @@ impl<L: Level> BitXorAssign<&Partition<L>> for Partition<L> {
                 *a = std::mem::take(a)
                     .iter()
                     .merge_join_by(b.iter(), L::Value::cmp)
-                    .flat_map(|x| match x {
+                    .filter_map(|x| match x {
                         EitherOrBoth::Left(l) => Some(l),
                         EitherOrBoth::Right(r) => Some(r),
                         EitherOrBoth::Both(_, _) => None,
@@ -255,7 +252,7 @@ impl<L: Level> BitXorAssign<&PartitionRef<'_, L>> for Partition<L> {
                 *a = std::mem::take(a)
                     .iter()
                     .merge_join_by(b.iter(), L::Value::cmp)
-                    .flat_map(|x| match x {
+                    .filter_map(|x| match x {
                         EitherOrBoth::Left(l) => Some(l),
                         EitherOrBoth::Right(r) => Some(r),
                         EitherOrBoth::Both(_, _) => None,
@@ -281,7 +278,7 @@ impl<L: Level> SubAssign<&Partition<L>> for Partition<L> {
             (a, Full) => *a = Partition::EMPTY,
 
             // special case empty
-            // (a, b) if a.is_empty() || b.is_empty() => (),
+            (a, b) if a.is_empty() || b.is_empty() => (),
 
             // use fast physical ops if both partitions share storage
             (Bitmap(a), Bitmap(b)) => a.sub_assign(b),
@@ -293,12 +290,7 @@ impl<L: Level> SubAssign<&Partition<L>> for Partition<L> {
             (a, b) => {
                 *a = std::mem::take(a)
                     .iter()
-                    .merge_join_by(b.iter(), L::Value::cmp)
-                    .flat_map(|x| match x {
-                        EitherOrBoth::Left(l) => Some(l),
-                        EitherOrBoth::Right(_) => None,
-                        EitherOrBoth::Both(_, _) => None,
-                    })
+                    .filter(|a| !b.contains(*a))
                     .collect();
             }
         }
@@ -333,12 +325,7 @@ impl<L: Level> SubAssign<&PartitionRef<'_, L>> for Partition<L> {
             (a, b) => {
                 *a = std::mem::take(a)
                     .iter()
-                    .merge_join_by(b.iter(), L::Value::cmp)
-                    .flat_map(|x| match x {
-                        EitherOrBoth::Left(l) => Some(l),
-                        EitherOrBoth::Right(_) => None,
-                        EitherOrBoth::Both(_, _) => None,
-                    })
+                    .filter(|a| !b.contains(*a))
                     .collect();
             }
         }
