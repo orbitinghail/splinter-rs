@@ -82,7 +82,7 @@ impl<L: Level> Encodable for TreePartition<L> {
         let mut index = TreeIndexBuilder::<L>::new(self.children.len());
         for (&segment, child) in self.children.iter() {
             child.encode(encoder);
-            index.push(segment, encoder.bytes_written());
+            index.push(segment, encoder.bytes_written(), child.cardinality());
         }
         encoder.put_tree_index(index);
     }

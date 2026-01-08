@@ -686,82 +686,82 @@ mod tests {
 
         // 1 half full block
         let set = set_gen.distributed(1, 1, 1, 128);
-        run_test("1 half full block", set, 128, 63, 255);
+        run_test("1 half full block", set, 128, 72, 255);
 
         // 1 sparse block
         let set = set_gen.distributed(1, 1, 1, 16);
-        run_test("1 sparse block", set, 16, 48, 48);
+        run_test("1 sparse block", set, 16, 57, 48);
 
         // 8 half full blocks
         let set = set_gen.distributed(1, 1, 8, 128);
-        run_test("8 half full blocks", set, 1024, 315, 2003);
+        run_test("8 half full blocks", set, 1024, 338, 2003);
 
         // 8 sparse blocks
         let set = set_gen.distributed(1, 1, 8, 2);
-        run_test("8 sparse blocks", set, 16, 60, 48);
+        run_test("8 sparse blocks", set, 16, 67, 48);
 
         // 64 half full blocks
         let set = set_gen.distributed(4, 4, 4, 128);
-        run_test("64 half full blocks", set, 8192, 2442, 16452);
+        run_test("64 half full blocks", set, 8192, 2634, 16452);
 
         // 64 sparse blocks
         let set = set_gen.distributed(4, 4, 4, 2);
-        run_test("64 sparse blocks", set, 128, 410, 392);
+        run_test("64 sparse blocks", set, 128, 450, 392);
 
         // 256 half full blocks
         let set = set_gen.distributed(4, 8, 8, 128);
-        run_test("256 half full blocks", set, 32768, 9450, 65580);
+        run_test("256 half full blocks", set, 32768, 10074, 65580);
 
         // 256 sparse blocks
         let set = set_gen.distributed(4, 8, 8, 2);
-        run_test("256 sparse blocks", set, 512, 1290, 1288);
+        run_test("256 sparse blocks", set, 512, 1402, 1288);
 
         // 512 half full blocks
         let set = set_gen.distributed(8, 8, 8, 128);
-        run_test("512 half full blocks", set, 65536, 18886, 130810);
+        run_test("512 half full blocks", set, 65536, 20134, 130810);
 
         // 512 sparse blocks
         let set = set_gen.distributed(8, 8, 8, 2);
-        run_test("512 sparse blocks", set, 1024, 2566, 2568);
+        run_test("512 sparse blocks", set, 1024, 2790, 2568);
 
         // the rest of the compression tests use 4k elements
         let elements = 4096;
 
         // fully dense splinter
         let set = set_gen.distributed(1, 1, 16, 256);
-        run_test("fully dense", set, elements, 80, 63);
+        run_test("fully dense", set, elements, 121, 63);
 
         // 128 elements per block; dense partitions
         let set = set_gen.distributed(1, 1, 32, 128);
-        run_test("128/block; dense", set, elements, 1179, 8208);
+        run_test("128/block; dense", set, elements, 1250, 8208);
 
         // 32 elements per block; dense partitions
         let set = set_gen.distributed(1, 1, 128, 32);
-        run_test("32/block; dense", set, elements, 4539, 8208);
+        run_test("32/block; dense", set, elements, 4802, 8208);
 
         // 16 element per block; dense low partitions
         let set = set_gen.distributed(1, 1, 256, 16);
-        run_test("16/block; dense", set, elements, 5147, 8208);
+        run_test("16/block; dense", set, elements, 5666, 8208);
 
         // 128 elements per block; sparse mid partitions
         let set = set_gen.distributed(1, 32, 1, 128);
-        run_test("128/block; sparse mid", set, elements, 1365, 8282);
+        run_test("128/block; sparse mid", set, elements, 1529, 8282);
 
         // 128 elements per block; sparse high partitions
         let set = set_gen.distributed(32, 1, 1, 128);
-        run_test("128/block; sparse high", set, elements, 1582, 8224);
+        run_test("128/block; sparse high", set, elements, 1870, 8224);
 
         // 1 element per block; sparse mid partitions
         let set = set_gen.distributed(1, 256, 16, 1);
-        run_test("1/block; sparse mid", set, elements, 9749, 10248);
+        run_test("1/block; sparse mid", set, elements, 10521, 10248);
 
         // 1 element per block; sparse high partitions
         let set = set_gen.distributed(256, 16, 1, 1);
-        run_test("1/block; sparse high", set, elements, 14350, 40968);
+        run_test("1/block; sparse high", set, elements, 15374, 40968);
 
         // 1/block; spread low
         let set = set_gen.dense(1, 16, 256, 1);
-        run_test("1/block; spread low", set, elements, 8325, 8328);
+        run_test("1/block; spread low", set, elements, 8377, 8328);
 
         // each partition is dense
         let set = set_gen.dense(8, 8, 8, 8);
@@ -780,21 +780,21 @@ mod tests {
             (32, High::MAX_LEN, 145, 328),
             (256, High::MAX_LEN, 1041, 2544),
             (1024, High::MAX_LEN, 4113, 10168),
-            (4096, High::MAX_LEN, 14350, 40056),
-            (16384, High::MAX_LEN, 51214, 148656),
-            (65536, High::MAX_LEN, 198670, 461288),
+            (4096, High::MAX_LEN, 15374, 40056),
+            (16384, High::MAX_LEN, 52238, 148656),
+            (65536, High::MAX_LEN, 199694, 461288),
             // random sets with values < 65536
-            (32, 65536, 92, 80),
-            (256, 65536, 540, 528),
-            (1024, 65536, 2071, 2064),
-            (4096, 65536, 5147, 8208),
+            (32, 65536, 99, 80),
+            (256, 65536, 547, 528),
+            (1024, 65536, 2083, 2064),
+            (4096, 65536, 5666, 8208),
             (65536, 65536, 25, 15),
             // small sets with values < 1024
-            (8, 1024, 44, 32),
-            (16, 1024, 60, 48),
-            (32, 1024, 79, 80),
-            (64, 1024, 111, 144),
-            (128, 1024, 168, 272),
+            (8, 1024, 49, 32),
+            (16, 1024, 67, 48),
+            (32, 1024, 94, 80),
+            (64, 1024, 126, 144),
+            (128, 1024, 183, 272),
         ];
 
         for (count, max, expected_splinter, expected_roaring) in random_cases {
