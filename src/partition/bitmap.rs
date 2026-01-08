@@ -123,6 +123,11 @@ impl<L: Level> FromIterator<L::Value> for BitmapPartition<L> {
 
 impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
     fn cardinality(&self) -> usize {
+        debug_assert_eq!(
+            self.bitmap.count_ones(),
+            self.cardinality,
+            "BUG: BitmapPartition cardinality not in sync"
+        );
         self.cardinality
     }
 
@@ -215,9 +220,8 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
         if let Some(range) = values.try_into_inclusive() {
             let range = (*range.start()).as_()..=(*range.end()).as_();
             let slice = self.bitmap.get_mut(range).unwrap();
-            let removed = slice.count_ones();
             slice.fill(false);
-            self.cardinality -= removed;
+            self.cardinality = self.bitmap.count_ones();
         }
     }
 }
@@ -386,12 +390,9 @@ impl<L: Level> Extend<L::Value> for BitmapPartition<L> {
     #[inline]
     fn extend<T: IntoIterator<Item = L::Value>>(&mut self, iter: T) {
         for value in iter {
-            let idx = value.as_();
-            if !self.bitmap[idx] {
-                self.bitmap.set(idx, true);
-                self.cardinality += 1;
-            }
+            self.bitmap.set(value.as_(), true);
         }
+        self.cardinality = self.bitmap.count_ones()
     }
 }
 

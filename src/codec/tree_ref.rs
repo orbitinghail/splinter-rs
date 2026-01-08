@@ -166,8 +166,8 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
         // We're looking for the first index where cumulative_cardinalities[idx] > n
         // Since we store cumulative - 1, we compare encoded < n (equivalent to cumulative - 1 < n, i.e., cumulative <= n)
         let idx = self.cumulative_cardinalities.partition_point(|c| {
-            let cum: usize = (*c).into().as_();
-            cum < n
+            let c: usize = (*c).into().as_();
+            c < n
         });
 
         let prefix = self.prefix_cardinality(idx);
@@ -327,12 +327,12 @@ impl<L: Level> TreeIndexBuilder<L> {
         num_children * size_of::<L::ValueUnaligned>()
     }
 
-    pub(super) const fn cardinalities_size(num_children: usize) -> usize {
+    const fn cardinalities_size(num_children: usize) -> usize {
         num_children * size_of::<L::ValueUnaligned>()
     }
 
     /// Calculate the encoded size and partition kind for the segments store
-    pub(super) const fn pick_segments_store(num_children: usize) -> (usize, PartitionKind) {
+    const fn pick_segments_store(num_children: usize) -> (usize, PartitionKind) {
         if num_children == Block::MAX_LEN {
             (0, PartitionKind::Full)
         } else {
@@ -356,6 +356,13 @@ impl<L: Level> TreeIndexBuilder<L> {
         self.cumulative_cardinalities.push(prev + cardinality);
     }
 
+    /// Consumes the builder and returns the components needed for encoding.
+    ///
+    /// Returns a tuple of:
+    /// - `num_children`: The number of child partitions
+    /// - `segments`: The partition storing which segments have children
+    /// - `offsets`: Iterator of relative offsets (from end of children data)
+    /// - `cardinalities`: Iterator of cumulative cardinalities minus 1 (to avoid overflow)
     pub fn build(
         self,
     ) -> (

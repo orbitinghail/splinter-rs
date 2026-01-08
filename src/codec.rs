@@ -299,7 +299,7 @@ mod tests {
             ]
         );
 
-        // corrupt the tree len (now at position 9 due to added cardinalities)
+        // corrupt the tree len
         buf[9] = 5;
 
         assert_error!(PartitionRef::<Block>::from_suffix(&buf), DecodeErr::Length);

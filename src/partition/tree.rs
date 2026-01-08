@@ -128,7 +128,7 @@ impl<L: Level> PartitionRead<L> for TreePartition<L> {
         let child = self.children.get(&segment)?;
         let child_pos = child.position(value)?;
 
-        // Only now calculate the prefix cardinality
+        // Then calculate the prefix cardinality
         let prefix_cardinality: usize = self
             .children
             .range(..segment)
