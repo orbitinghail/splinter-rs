@@ -79,13 +79,15 @@ impl<B: BufMut> Encoder<B> {
 
     /// Encode a Tree partition into the buffer.
     pub(crate) fn put_tree_index<L: Level>(&mut self, tree_index_builder: TreeIndexBuilder<L>) {
-        let (num_children, segments, offsets) = tree_index_builder.build();
+        let (num_children, segments, offsets, cardinalities) = tree_index_builder.build();
         assert!(
             num_children > 0 && num_children <= Block::MAX_LEN,
             "num_children out of range"
         );
 
+        // Encoding order: [offsets][cardinalities][segments][num_children]
         self.put_iter::<L>(offsets);
+        self.put_iter::<L>(cardinalities);
 
         match segments {
             Partition::Full => {}

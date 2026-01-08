@@ -28,6 +28,7 @@ use crate::{
 #[derive(Clone, Eq)]
 pub struct BitmapPartition<L: Level> {
     bitmap: BitBox<u64, Lsb0>,
+    cardinality: usize,
     _marker: std::marker::PhantomData<L>,
 }
 
@@ -77,6 +78,7 @@ impl<L: Level> Default for BitmapPartition<L> {
     fn default() -> Self {
         Self {
             bitmap: bitbox![u64, Lsb0; 0; L::MAX_LEN],
+            cardinality: 0,
             _marker: std::marker::PhantomData,
         }
     }
@@ -110,8 +112,10 @@ impl<L: Level> FromIterator<L::Value> for BitmapPartition<L> {
         for v in iter {
             bitmap.set(v.as_(), true);
         }
+        let cardinality = bitmap.count_ones();
         BitmapPartition {
             bitmap,
+            cardinality,
             _marker: std::marker::PhantomData,
         }
     }
@@ -119,7 +123,12 @@ impl<L: Level> FromIterator<L::Value> for BitmapPartition<L> {
 
 impl<L: Level> PartitionRead<L> for BitmapPartition<L> {
     fn cardinality(&self) -> usize {
-        self.bitmap.count_ones()
+        debug_assert_eq!(
+            self.bitmap.count_ones(),
+            self.cardinality,
+            "BUG: BitmapPartition cardinality not in sync"
+        );
+        self.cardinality
     }
 
     fn is_empty(&self) -> bool {
@@ -188,7 +197,11 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
             .bitmap
             .get_mut(value.as_())
             .expect("value out of range");
-        !bit.replace(true)
+        let was_absent = !bit.replace(true);
+        if was_absent {
+            self.cardinality += 1;
+        }
+        was_absent
     }
 
     fn remove(&mut self, value: L::Value) -> bool {
@@ -196,14 +209,19 @@ impl<L: Level> PartitionWrite<L> for BitmapPartition<L> {
             .bitmap
             .get_mut(value.as_())
             .expect("value out of range");
-        bit.replace(false)
+        let was_present = bit.replace(false);
+        if was_present {
+            self.cardinality -= 1;
+        }
+        was_present
     }
 
     fn remove_range<R: RangeBounds<L::Value>>(&mut self, values: R) {
         if let Some(range) = values.try_into_inclusive() {
             let range = (*range.start()).as_()..=(*range.end()).as_();
             let slice = self.bitmap.get_mut(range).unwrap();
-            slice.fill(false)
+            slice.fill(false);
+            self.cardinality = self.bitmap.count_ones();
         }
     }
 }
@@ -229,7 +247,8 @@ where
 impl<L: Level> BitOrAssign<&BitmapPartition<L>> for BitmapPartition<L> {
     #[inline]
     fn bitor_assign(&mut self, rhs: &BitmapPartition<L>) {
-        self.bitmap |= &rhs.bitmap
+        self.bitmap |= &rhs.bitmap;
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
@@ -241,14 +260,16 @@ where
 {
     #[inline]
     fn bitor_assign(&mut self, rhs: &BitSlice<T, O>) {
-        self.bitmap |= rhs
+        self.bitmap |= rhs;
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
 impl<L: Level> BitAndAssign<&BitmapPartition<L>> for BitmapPartition<L> {
     #[inline]
     fn bitand_assign(&mut self, rhs: &BitmapPartition<L>) {
-        self.bitmap &= &rhs.bitmap
+        self.bitmap &= &rhs.bitmap;
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
@@ -260,14 +281,16 @@ where
 {
     #[inline]
     fn bitand_assign(&mut self, rhs: &BitSlice<T, O>) {
-        self.bitmap &= rhs
+        self.bitmap &= rhs;
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
 impl<L: Level> BitXorAssign<&BitmapPartition<L>> for BitmapPartition<L> {
     #[inline]
     fn bitxor_assign(&mut self, rhs: &BitmapPartition<L>) {
-        self.bitmap ^= &rhs.bitmap
+        self.bitmap ^= &rhs.bitmap;
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
@@ -279,7 +302,8 @@ where
 {
     #[inline]
     fn bitxor_assign(&mut self, rhs: &BitSlice<T, O>) {
-        self.bitmap ^= rhs
+        self.bitmap ^= rhs;
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
@@ -287,6 +311,7 @@ impl<L: Level> SubAssign<&BitmapPartition<L>> for BitmapPartition<L> {
     #[inline]
     fn sub_assign(&mut self, rhs: &BitmapPartition<L>) {
         self.bitmap &= !rhs.bitmap.clone();
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
@@ -298,7 +323,8 @@ where
 {
     #[inline]
     fn sub_assign(&mut self, rhs: &BitSlice<T, O>) {
-        self.bitmap &= (!BitBox::from_bitslice(rhs)).as_bitslice()
+        self.bitmap &= (!BitBox::from_bitslice(rhs)).as_bitslice();
+        self.cardinality = self.bitmap.count_ones();
     }
 }
 
@@ -322,8 +348,11 @@ where
     fn cut(&mut self, rhs: &&BitSlice<T, O>) -> Self::Out {
         let intersection = self.bitmap.clone() & *rhs;
         self.bitmap &= !intersection.clone();
+        let intersection_cardinality = intersection.count_ones();
+        self.cardinality = self.bitmap.count_ones();
         Partition::Bitmap(BitmapPartition {
             bitmap: intersection,
+            cardinality: intersection_cardinality,
             _marker: PhantomData,
         })
     }
@@ -334,6 +363,7 @@ impl<L: Level> Complement for BitmapPartition<L> {
         for elem in self.bitmap.as_raw_mut_slice().iter_mut() {
             elem.store_value(!elem.load_value());
         }
+        self.cardinality = L::MAX_LEN - self.cardinality;
     }
 }
 
@@ -346,8 +376,11 @@ where
     fn from(value: &BitSlice<T, O>) -> Self {
         let mut bitvec = BitVec::new();
         bitvec.extend_from_bitslice(value);
+        let bitmap = bitvec.into_boxed_bitslice();
+        let cardinality = bitmap.count_ones();
         Self {
-            bitmap: bitvec.into_boxed_bitslice(),
+            bitmap,
+            cardinality,
             _marker: PhantomData,
         }
     }
@@ -359,6 +392,7 @@ impl<L: Level> Extend<L::Value> for BitmapPartition<L> {
         for value in iter {
             self.bitmap.set(value.as_(), true);
         }
+        self.cardinality = self.bitmap.count_ones()
     }
 }
 

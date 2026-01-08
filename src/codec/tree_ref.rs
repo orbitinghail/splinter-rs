@@ -1,4 +1,3 @@
-use itertools::{FoldWhile, Itertools};
 use num::traits::AsPrimitive;
 use std::{marker::PhantomData, mem::size_of};
 use zerocopy::FromBytes;
@@ -22,6 +21,7 @@ pub struct TreeRef<'a, L: Level> {
     num_children: usize,
     segments: NonRecursivePartitionRef<'a, Block>,
     offsets: &'a [L::ValueUnaligned],
+    cumulative_cardinalities: &'a [L::ValueUnaligned],
     children: &'a [u8],
 }
 
@@ -35,12 +35,19 @@ impl<'a, L: Level> TreeRef<'a, L> {
 
         let (segments_size, segments_kind) =
             TreeIndexBuilder::<L>::pick_segments_store(num_children);
+        let cardinalities_size = TreeIndexBuilder::<L>::cardinalities_size(num_children);
         let offsets_size = TreeIndexBuilder::<L>::offsets_size(num_children);
 
-        DecodeErr::ensure_bytes_available(data, segments_size + offsets_size)?;
+        DecodeErr::ensure_bytes_available(data, segments_size + cardinalities_size + offsets_size)?;
 
+        // Parse from end backwards:
+        // 1. segments (just before num_children)
+        // 2. cardinalities (just before segments)
+        // 3. offsets (just before cardinalities)
+        // 4. children_data (remainder)
         let segments_range = (data.len() - segments_size)..data.len();
-        let offsets_range = (segments_range.start - offsets_size)..segments_range.start;
+        let cardinalities_range = (segments_range.start - cardinalities_size)..segments_range.start;
+        let offsets_range = (cardinalities_range.start - offsets_size)..cardinalities_range.start;
         let data_range = 0..offsets_range.start;
 
         Ok(Self {
@@ -54,6 +61,10 @@ impl<'a, L: Level> TreeRef<'a, L> {
                 &data[offsets_range],
                 num_children,
             )?,
+            cumulative_cardinalities: <[L::ValueUnaligned]>::ref_from_bytes_with_elems(
+                &data[cardinalities_range],
+                num_children,
+            )?,
             children: &data[data_range],
         })
     }
@@ -62,6 +73,18 @@ impl<'a, L: Level> TreeRef<'a, L> {
         let relative_offset: usize = self.offsets[idx].into().as_();
         let offset = self.children.len() - relative_offset;
         PartitionRef::from_suffix(&self.children[..offset]).unwrap()
+    }
+
+    /// Returns the cumulative cardinality before the given index (sum of all children < idx)
+    #[inline]
+    fn prefix_cardinality(&self, idx: usize) -> usize {
+        if idx == 0 {
+            0
+        } else {
+            // Add 1 since we store cumulative - 1 to avoid overflow
+            let encoded: usize = self.cumulative_cardinalities[idx - 1].into().as_();
+            encoded + 1
+        }
     }
 
     pub(crate) fn load_child_at_segment(
@@ -82,7 +105,15 @@ impl<'a, L: Level> TreeRef<'a, L> {
 
 impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
     fn cardinality(&self) -> usize {
-        self.children().map(|c| c.cardinality()).sum()
+        if self.num_children == 0 {
+            0
+        } else {
+            // Add 1 since we store cumulative - 1 to avoid overflow
+            let encoded: usize = self.cumulative_cardinalities[self.num_children - 1]
+                .into()
+                .as_();
+            encoded + 1
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -100,65 +131,51 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
 
     fn position(&self, value: L::Value) -> Option<usize> {
         let (segment, value) = value.split();
-        let mut found = false;
-        let pos = self
-            .segments
-            .iter()
-            .enumerate()
-            .fold_while(0, |acc, (idx, child_segment)| {
-                if child_segment < segment {
-                    let child = self.load_child(idx);
-                    FoldWhile::Continue(acc + child.cardinality())
-                } else if child_segment == segment {
-                    let child = self.load_child(idx);
-                    if let Some(pos) = child.position(value) {
-                        found = true;
-                        FoldWhile::Done(acc + pos)
-                    } else {
-                        FoldWhile::Done(acc)
-                    }
-                } else {
-                    FoldWhile::Done(acc)
-                }
-            })
-            .into_inner();
 
-        found.then_some(pos)
+        // First find the index of the segment and check if value is in the child
+        let idx = self.segments.position(segment)?;
+        let child = self.load_child(idx);
+        let child_pos = child.position(value)?;
+
+        // O(1) prefix cardinality lookup using cumulative cardinalities
+        Some(self.prefix_cardinality(idx) + child_pos)
     }
 
     fn rank(&self, value: L::Value) -> usize {
         let (segment, value) = value.split();
-        self.segments
-            .iter()
-            .enumerate()
-            .fold_while(0, |acc, (idx, child_segment)| {
-                if child_segment < segment {
-                    let child = self.load_child(idx);
-                    FoldWhile::Continue(acc + child.cardinality())
-                } else if child_segment == segment {
-                    let child = self.load_child(idx);
-                    FoldWhile::Done(acc + child.rank(value))
-                } else {
-                    FoldWhile::Done(acc)
-                }
-            })
-            .into_inner()
+        match self.segments.position(segment) {
+            Some(idx) => {
+                // Segment exists: O(1) prefix cardinality + rank within child
+                let child = self.load_child(idx);
+                self.prefix_cardinality(idx) + child.rank(value)
+            }
+            None => {
+                // Segment doesn't exist: return cardinality of all segments < target
+                let count_less = self.segments.rank(segment);
+                self.prefix_cardinality(count_less)
+            }
+        }
     }
 
-    fn select(&self, mut n: usize) -> Option<L::Value> {
-        let iter = self
-            .segments
-            .iter()
-            .enumerate()
-            .map(|(idx, segment)| (segment, self.load_child(idx)));
-        for (segment, child) in iter {
-            let len = child.cardinality();
-            if n < len {
-                return child.select(n).map(|v| L::Value::unsplit(segment, v));
-            }
-            n -= len;
+    fn select(&self, n: usize) -> Option<L::Value> {
+        if n >= self.cardinality() {
+            return None;
         }
-        None
+
+        // Binary search to find the child containing position n
+        // We're looking for the first index where cumulative_cardinalities[idx] > n
+        // Since we store cumulative - 1, we compare encoded < n (equivalent to cumulative - 1 < n, i.e., cumulative <= n)
+        let idx = self.cumulative_cardinalities.partition_point(|c| {
+            let c: usize = (*c).into().as_();
+            c < n
+        });
+
+        let prefix = self.prefix_cardinality(idx);
+        let segment = self.segments.select(idx)?;
+        let child = self.load_child(idx);
+        child
+            .select(n - prefix)
+            .map(|v| L::Value::unsplit(segment, v))
     }
 
     fn last(&self) -> Option<L::Value> {
@@ -283,6 +300,7 @@ impl<'a, L: Level> PartialEq for TreeRef<'a, L> {
 pub struct TreeIndexBuilder<L: Level> {
     segments: Partition<Block>,
     offsets: Vec<usize>,
+    cumulative_cardinalities: Vec<usize>,
     _marker: PhantomData<L>,
 }
 
@@ -292,6 +310,7 @@ impl<L: Level> TreeIndexBuilder<L> {
         Self {
             segments: segments.build(),
             offsets: Vec::with_capacity(num_children),
+            cumulative_cardinalities: Vec::with_capacity(num_children),
             _marker: PhantomData,
         }
     }
@@ -299,11 +318,16 @@ impl<L: Level> TreeIndexBuilder<L> {
     pub const fn encoded_size(num_children: usize) -> usize {
         let (segments_size, _) = Self::pick_segments_store(num_children);
         let offsets_size = Self::offsets_size(num_children);
-        // offsets + segments + num_children
-        offsets_size + segments_size + 1
+        let cardinalities_size = Self::cardinalities_size(num_children);
+        // offsets + cardinalities + segments + num_children
+        offsets_size + cardinalities_size + segments_size + 1
     }
 
     const fn offsets_size(num_children: usize) -> usize {
+        num_children * size_of::<L::ValueUnaligned>()
+    }
+
+    const fn cardinalities_size(num_children: usize) -> usize {
         num_children * size_of::<L::ValueUnaligned>()
     }
 
@@ -321,12 +345,32 @@ impl<L: Level> TreeIndexBuilder<L> {
         }
     }
 
-    pub fn push(&mut self, segment: Segment, offset: usize) {
+    pub fn push(&mut self, segment: Segment, offset: usize, cardinality: usize) {
+        debug_assert_ne!(
+            cardinality, 0,
+            "BUG: tree children must have cardinality > 0"
+        );
         self.segments.insert(segment);
         self.offsets.push(offset);
+        let prev = self.cumulative_cardinalities.last().copied().unwrap_or(0);
+        self.cumulative_cardinalities.push(prev + cardinality);
     }
 
-    pub fn build(self) -> (usize, Partition<Block>, impl Iterator<Item = L::Value>) {
+    /// Consumes the builder and returns the components needed for encoding.
+    ///
+    /// Returns a tuple of:
+    /// - `num_children`: The number of child partitions
+    /// - `segments`: The partition storing which segments have children
+    /// - `offsets`: Iterator of relative offsets (from end of children data)
+    /// - `cardinalities`: Iterator of cumulative cardinalities minus 1 (to avoid overflow)
+    pub fn build(
+        self,
+    ) -> (
+        usize,
+        Partition<Block>,
+        impl Iterator<Item = L::Value>,
+        impl Iterator<Item = L::Value>,
+    ) {
         let num_children = self.offsets.len();
         assert_ne!(num_children, 0, "BUG: tree index builder with 0 children");
         let last_offset = self
@@ -338,6 +382,12 @@ impl<L: Level> TreeIndexBuilder<L> {
             let relative = last_offset - offset;
             L::Value::truncate_from(relative)
         });
-        (num_children, self.segments, offsets)
+        // Store cumulative cardinalities - 1 to avoid overflow when cardinality == L::MAX_LEN
+        // (similar to how lengths are stored as len - 1)
+        let cardinalities = self
+            .cumulative_cardinalities
+            .into_iter()
+            .map(|c| L::Value::truncate_from(c - 1));
+        (num_children, self.segments, offsets, cardinalities)
     }
 }

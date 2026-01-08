@@ -290,17 +290,17 @@ mod tests {
         assert_eq!(
             buf.as_ref(),
             &[
-                // Vec partition
+                // Vec partition (child)
                 // 1     2   len  kind
                 0x01, 0x02, 0x01, 0x03,
                 // Tree partition
-                // offsets (u16), segments, len, kind
-                0x00, 0x00, 0x00, 0x00, 0x05
+                // offsets (u16), cumulative_cardinalities-1 (u16), segments, len, kind
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x05
             ]
         );
 
         // corrupt the tree len
-        buf[7] = 5;
+        buf[9] = 5;
 
         assert_error!(PartitionRef::<Block>::from_suffix(&buf), DecodeErr::Length);
     }
