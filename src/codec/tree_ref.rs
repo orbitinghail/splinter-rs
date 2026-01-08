@@ -87,29 +87,6 @@ impl<'a, L: Level> TreeRef<'a, L> {
         }
     }
 
-    /// Returns the cardinality of the child at the given index
-    #[inline]
-    #[allow(dead_code)]
-    fn child_cardinality(&self, idx: usize) -> usize {
-        // Add 1 since we store cumulative - 1 to avoid overflow
-        let encoded: usize = self.cumulative_cardinalities[idx].into().as_();
-        (encoded + 1) - self.prefix_cardinality(idx)
-    }
-
-    /// Returns the total cardinality (sum of all children)
-    #[inline]
-    fn total_cardinality(&self) -> usize {
-        if self.num_children == 0 {
-            0
-        } else {
-            // Add 1 since we store cumulative - 1 to avoid overflow
-            let encoded: usize = self.cumulative_cardinalities[self.num_children - 1]
-                .into()
-                .as_();
-            encoded + 1
-        }
-    }
-
     pub(crate) fn load_child_at_segment(
         &self,
         segment: Segment,
@@ -128,7 +105,15 @@ impl<'a, L: Level> TreeRef<'a, L> {
 
 impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
     fn cardinality(&self) -> usize {
-        self.total_cardinality()
+        if self.num_children == 0 {
+            0
+        } else {
+            // Add 1 since we store cumulative - 1 to avoid overflow
+            let encoded: usize = self.cumulative_cardinalities[self.num_children - 1]
+                .into()
+                .as_();
+            encoded + 1
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -173,8 +158,7 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
     }
 
     fn select(&self, n: usize) -> Option<L::Value> {
-        let total = self.total_cardinality();
-        if n >= total {
+        if n >= self.cardinality() {
             return None;
         }
 
@@ -362,6 +346,10 @@ impl<L: Level> TreeIndexBuilder<L> {
     }
 
     pub fn push(&mut self, segment: Segment, offset: usize, cardinality: usize) {
+        debug_assert_ne!(
+            cardinality, 0,
+            "BUG: tree children must have cardinality > 0"
+        );
         self.segments.insert(segment);
         self.offsets.push(offset);
         let prev = self.cumulative_cardinalities.last().copied().unwrap_or(0);
