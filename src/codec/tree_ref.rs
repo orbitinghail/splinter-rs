@@ -38,10 +38,7 @@ impl<'a, L: Level> TreeRef<'a, L> {
         let cardinalities_size = TreeIndexBuilder::<L>::cardinalities_size(num_children);
         let offsets_size = TreeIndexBuilder::<L>::offsets_size(num_children);
 
-        DecodeErr::ensure_bytes_available(
-            data,
-            segments_size + cardinalities_size + offsets_size,
-        )?;
+        DecodeErr::ensure_bytes_available(data, segments_size + cardinalities_size + offsets_size)?;
 
         // Parse from end backwards:
         // 1. segments (just before num_children)
@@ -49,8 +46,7 @@ impl<'a, L: Level> TreeRef<'a, L> {
         // 3. offsets (just before cardinalities)
         // 4. children_data (remainder)
         let segments_range = (data.len() - segments_size)..data.len();
-        let cardinalities_range =
-            (segments_range.start - cardinalities_size)..segments_range.start;
+        let cardinalities_range = (segments_range.start - cardinalities_size)..segments_range.start;
         let offsets_range = (cardinalities_range.start - offsets_size)..cardinalities_range.start;
         let data_range = 0..offsets_range.start;
 
@@ -107,7 +103,9 @@ impl<'a, L: Level> TreeRef<'a, L> {
             0
         } else {
             // Add 1 since we store cumulative - 1 to avoid overflow
-            let encoded: usize = self.cumulative_cardinalities[self.num_children - 1].into().as_();
+            let encoded: usize = self.cumulative_cardinalities[self.num_children - 1]
+                .into()
+                .as_();
             encoded + 1
         }
     }
@@ -183,17 +181,17 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
         // Binary search to find the child containing position n
         // We're looking for the first index where cumulative_cardinalities[idx] > n
         // Since we store cumulative - 1, we compare encoded < n (equivalent to cumulative - 1 < n, i.e., cumulative <= n)
-        let idx = self
-            .cumulative_cardinalities
-            .partition_point(|c| {
-                let cum: usize = (*c).into().as_();
-                cum < n
-            });
+        let idx = self.cumulative_cardinalities.partition_point(|c| {
+            let cum: usize = (*c).into().as_();
+            cum < n
+        });
 
         let prefix = self.prefix_cardinality(idx);
         let segment = self.segments.select(idx)?;
         let child = self.load_child(idx);
-        child.select(n - prefix).map(|v| L::Value::unsplit(segment, v))
+        child
+            .select(n - prefix)
+            .map(|v| L::Value::unsplit(segment, v))
     }
 
     fn last(&self) -> Option<L::Value> {
