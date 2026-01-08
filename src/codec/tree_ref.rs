@@ -100,30 +100,16 @@ impl<'a, L: Level> PartitionRead<L> for TreeRef<'a, L> {
 
     fn position(&self, value: L::Value) -> Option<usize> {
         let (segment, value) = value.split();
-        let mut found = false;
-        let pos = self
-            .segments
-            .iter()
-            .enumerate()
-            .fold_while(0, |acc, (idx, child_segment)| {
-                if child_segment < segment {
-                    let child = self.load_child(idx);
-                    FoldWhile::Continue(acc + child.cardinality())
-                } else if child_segment == segment {
-                    let child = self.load_child(idx);
-                    if let Some(pos) = child.position(value) {
-                        found = true;
-                        FoldWhile::Done(acc + pos)
-                    } else {
-                        FoldWhile::Done(acc)
-                    }
-                } else {
-                    FoldWhile::Done(acc)
-                }
-            })
-            .into_inner();
 
-        found.then_some(pos)
+        // First find the index of the segment and check if value is in the child
+        let idx = self.segments.position(segment)?;
+        let child = self.load_child(idx);
+        let child_pos = child.position(value)?;
+
+        // Only now calculate the prefix cardinality
+        let prefix_cardinality: usize = (0..idx).map(|i| self.load_child(i).cardinality()).sum();
+
+        Some(prefix_cardinality + child_pos)
     }
 
     fn rank(&self, value: L::Value) -> usize {
