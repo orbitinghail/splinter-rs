@@ -380,6 +380,10 @@ impl<L: Level> TreeIndexBuilder<L> {
             .expect("BUG: offsets must be non-empty if num_children is not zero");
         let offsets = self.offsets.into_iter().map(move |offset| {
             let relative = last_offset - offset;
+            assert!(
+                relative < L::MAX_LEN,
+                "tree child data too large to encode offsets at this level"
+            );
             L::Value::truncate_from(relative)
         });
         // Store cumulative cardinalities - 1 to avoid overflow when cardinality == L::MAX_LEN
@@ -389,5 +393,69 @@ impl<L: Level> TreeIndexBuilder<L> {
             .into_iter()
             .map(|c| L::Value::truncate_from(c - 1));
         (num_children, self.segments, offsets, cardinalities)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::TreeIndexBuilder;
+    use bytes::BytesMut;
+
+    use crate::{
+        Encodable, PartitionRead,
+        codec::{encoder::Encoder, partition_ref::PartitionRef},
+        level::{Block, Low},
+        partition::{Partition, tree::TreePartition, vec::VecPartition},
+        partition_kind::PartitionKind,
+    };
+
+    #[test]
+    fn test_low_tree_ref_offsets_distinguish_large_children() {
+        let mut children = BTreeMap::new();
+
+        // Keep segment 0 intentionally sparse so mis-indexing is observable.
+        children.insert(0, Partition::Vec(VecPartition::from_iter([0u8])));
+
+        // Force children blob > 64KiB while keeping every non-zero segment dense.
+        for segment in 1u8..=u8::MAX {
+            let mut p = Partition::Vec(VecPartition::from_iter(0u8..=u8::MAX));
+            p.optimize_fast();
+            children.insert(segment, p);
+        }
+
+        let partition = Partition::Tree(TreePartition::<Low>::from(children));
+        let encoded = partition.encode_to_bytes();
+        let decoded = PartitionRef::<Low>::from_suffix(&encoded).unwrap();
+
+        // Segment 0 should only contain rest=0.
+        assert!(decoded.contains(0));
+        assert!(!decoded.contains(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "tree child data too large to encode offsets at this level")]
+    fn test_low_tree_ref_offset_truncation_with_large_unoptimized_children() {
+        let mut buf = BytesMut::new();
+        let mut encoder = Encoder::new(&mut buf);
+        let mut index = TreeIndexBuilder::<Low>::new(256);
+
+        for segment in 0u8..=u8::MAX {
+            let child = if segment == 0 {
+                Partition::<Block>::Vec(VecPartition::from_iter([0u8]))
+            } else {
+                Partition::<Block>::Vec(VecPartition::from_iter(0u8..=u8::MAX))
+            };
+
+            child.encode(&mut encoder);
+            index.push(segment, encoder.bytes_written(), child.cardinality());
+        }
+
+        encoder.put_tree_index(index);
+        encoder.put_kind(PartitionKind::Tree);
+
+        // Encoding must reject this invalid representation instead of silently truncating offsets.
+        let _ = PartitionRef::<Low>::from_suffix(&buf);
     }
 }

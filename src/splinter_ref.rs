@@ -415,4 +415,11 @@ mod test {
         let ref2 = mksplinter(&set).encode_to_splinter_ref();
         assert_eq!(ref1, ref2)
     }
+
+    #[test]
+    fn test_splinter_ref_reencode_is_valid() {
+        let splinter_ref = mksplinter(&[1, 2, 3]).encode_to_splinter_ref();
+        let bytes = splinter_ref.encode_to_bytes();
+        assert_eq!(splinter_ref.data, bytes);
+    }
 }

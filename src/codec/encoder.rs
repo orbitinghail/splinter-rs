@@ -18,6 +18,7 @@ pub struct Encoder<B: BufMut> {
     buf: B,
     bytes_written: usize,
     checksum: Digest,
+    wrote_footer: bool,
 }
 
 impl<B: BufMut> Encoder<B> {
@@ -26,6 +27,7 @@ impl<B: BufMut> Encoder<B> {
             buf,
             bytes_written: 0,
             checksum: Digest::new(),
+            wrote_footer: false,
         }
     }
 
@@ -38,10 +40,17 @@ impl<B: BufMut> Encoder<B> {
     pub(crate) fn write_splinter(&mut self, splinter: &[u8]) {
         self.buf.put_slice(splinter);
         self.bytes_written += splinter.len();
+        // assuming the splinter is valid, it already has a footer
+        self.wrote_footer = true;
     }
 
     /// Write the checksum and Splinter Magic value to the buffer
     pub(crate) fn write_footer(&mut self) {
+        assert!(
+            !self.wrote_footer,
+            "invalid encoder usage: footer already present"
+        );
+        self.wrote_footer = true;
         let footer = Footer::from_checksum(self.checksum.sum64());
         self.put_slice(footer.as_bytes());
     }

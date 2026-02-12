@@ -10,9 +10,10 @@ use range_set_blaze::SortedDisjoint;
 
 use crate::{
     codec::{Encodable, encoder::Encoder},
-    count::count_runs_sorted,
+    count::{count_runs_sorted, count_unique_sorted},
     level::Level,
     partition::{Partition, run::MergeRuns},
+    segment::SplitSegment,
     traits::{Complement, Cut, PartitionRead, PartitionWrite},
     util::{RangeExt, RangeIter, find_next_sorted},
 };
@@ -53,6 +54,11 @@ impl<L: Level> VecPartition<L> {
     #[inline]
     pub fn count_runs(&self) -> usize {
         count_runs_sorted(self.iter())
+    }
+
+    #[inline]
+    pub fn segments(&self) -> usize {
+        count_unique_sorted(self.iter().map(|v| v.segment()))
     }
 }
 

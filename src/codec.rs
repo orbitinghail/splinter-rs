@@ -122,6 +122,7 @@ impl<A, S, V> From<ConvertError<A, S, V>> for DecodeErr {
 
 #[cfg(test)]
 mod tests {
+    use bytes::BytesMut;
     use itertools::Itertools;
     use proptest::proptest;
 
@@ -129,6 +130,7 @@ mod tests {
         Encodable, Splinter, SplinterRef, assert_error,
         codec::{
             DecodeErr,
+            encoder::Encoder,
             footer::{Footer, SPLINTER_V2_MAGIC},
             partition_ref::PartitionRef,
         },
@@ -340,5 +342,23 @@ mod tests {
             SplinterRef::from_bytes(empty_splinter_v1.as_slice()),
             DecodeErr::SplinterV1
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "footer already present")]
+    fn test_encoder_panics_when_footer_is_written_after_splinter_blob() {
+        let mut buf = BytesMut::new();
+        let mut encoder = Encoder::new(&mut buf);
+        encoder.write_splinter(&[1, 2, 3]);
+        encoder.write_footer();
+    }
+
+    #[test]
+    #[should_panic(expected = "footer already present")]
+    fn test_encoder_panics_when_footer_is_written_twice() {
+        let mut buf = BytesMut::new();
+        let mut encoder = Encoder::new(&mut buf);
+        encoder.write_footer();
+        encoder.write_footer();
     }
 }

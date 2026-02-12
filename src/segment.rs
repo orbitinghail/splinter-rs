@@ -82,22 +82,22 @@ impl SplitSegment for u8 {
     type Rest = u8;
 
     fn segment(self) -> Segment {
-        unreachable!()
+        self
     }
     fn rest(self) -> Self::Rest {
-        unreachable!()
+        unreachable!("BUG: can't split a u8")
     }
     fn split(self) -> (Segment, Self::Rest) {
-        unreachable!()
+        unreachable!("BUG: can't split a u8")
     }
     fn unsplit(_segment: Segment, _rest: Self::Rest) -> Self {
-        unreachable!()
+        unreachable!("BUG: can't unsplit a u8")
     }
     fn segment_start(self) -> Self {
-        unreachable!()
+        self
     }
     fn segment_end(self) -> Self {
-        unreachable!()
+        self
     }
 }
 
