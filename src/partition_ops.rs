@@ -7,6 +7,7 @@ use crate::{
     codec::partition_ref::{NonRecursivePartitionRef, PartitionRef},
     level::Level,
     partition::Partition,
+    partition_kind::PartitionKind,
     traits::{Complement, Cut},
 };
 
@@ -341,8 +342,13 @@ impl<L: Level> Cut for Partition<L> {
         use Partition::*;
 
         let mut intersection = match (&mut *self, rhs) {
+            // special case empty
+            (_, b) if b.is_empty() => Partition::default(),
+
+            // special case full
+            (a, Full) => std::mem::take(a),
+
             // use fast physical ops if both partitions share storage
-            (a @ Full, Full) => std::mem::take(a),
             (Bitmap(a), Bitmap(b)) => a.cut(b),
             (Run(a), Run(b)) => a.cut(b),
             (Tree(a), Tree(b)) => a.cut(b),
@@ -353,9 +359,15 @@ impl<L: Level> Cut for Partition<L> {
             // otherwise fall back to logical ops
             (a, b) => {
                 let mut intersection = Partition::default();
+                let mut remaining = a.cardinality();
                 for val in b.iter() {
                     if a.remove(val) {
+                        remaining -= 1;
                         intersection.raw_insert(val);
+                    }
+                    if remaining == 0 {
+                        debug_assert!(a.is_empty(), "BUG: cardinality out of sync");
+                        break;
                     }
                 }
                 intersection
@@ -379,8 +391,10 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L> {
             // special case empty
             (_, NonRecursive(Empty)) => Partition::default(),
 
+            // special case empty
+            (a, NonRecursive(Full)) => std::mem::take(a),
+
             // use fast physical ops if both partitions share storage
-            (a @ Partition::Full, NonRecursive(Full)) => std::mem::take(a),
             (Partition::Bitmap(a), NonRecursive(Bitmap { bitmap })) => a.cut(bitmap),
             (Partition::Run(a), NonRecursive(Run { runs })) => a.cut(runs),
             (Partition::Tree(a), Tree(b)) => a.cut(b),
@@ -391,9 +405,15 @@ impl<L: Level> Cut<PartitionRef<'_, L>> for Partition<L> {
             // otherwise fall back to logical ops
             (a, b) => {
                 let mut intersection = Partition::default();
+                let mut remaining = a.cardinality();
                 for val in b.iter() {
                     if a.remove(val) {
+                        remaining -= 1;
                         intersection.raw_insert(val);
+                    }
+                    if remaining == 0 {
+                        debug_assert!(a.is_empty(), "BUG: cardinality out of sync");
+                        break;
                     }
                 }
                 intersection
@@ -414,8 +434,21 @@ impl<L: Level> Complement for Partition<L> {
             p @ Full => {
                 *p = Partition::EMPTY;
             }
+            p if p.is_empty() => {
+                *p = Partition::Full;
+            }
             Bitmap(p) => p.complement(),
-            Vec(p) => p.complement(),
+            Vec(p) => {
+                let complement_cardinality = L::MAX_LEN.saturating_sub(p.cardinality());
+                if complement_cardinality > L::MAX_LEN / 2 {
+                    // if the complement is more than half the universe, switch
+                    // to a run partition before complementing
+                    self.switch_kind(PartitionKind::Run);
+                    self.complement();
+                } else {
+                    p.complement();
+                }
+            }
             Run(p) => p.complement(),
             Tree(p) => p.complement(),
         }
@@ -431,5 +464,46 @@ impl<L: Level> From<&PartitionRef<'_, L>> for Partition<L> {
             NonRecursive(p) => p.into(),
             Tree(t) => Partition::Tree(t.into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use crate::{
+        Cut, PartitionRead,
+        level::{High, Level, Low},
+        partition::{Partition, vec::VecPartition},
+        traits::Complement,
+    };
+
+    #[test]
+    fn test_cut_with_full_rhs_takes_lhs() {
+        let set = 0u16..=1024u16;
+        let mut lhs = Partition::<Low>::from_iter(set.clone());
+        let rhs = Partition::<Low>::Full;
+
+        let cut = lhs.cut(&rhs);
+
+        assert!(lhs.is_empty());
+        itertools::equal(cut.iter(), set);
+    }
+
+    #[test]
+    fn test_complement_small_vec() {
+        let mut partition = Partition::<High>::Vec(VecPartition::from_iter([1u32]));
+        partition.complement();
+        assert_matches!(partition, Partition::Run(_));
+        assert_eq!(partition.cardinality(), High::MAX_LEN - 1);
+    }
+
+    #[test]
+    fn test_complement_empty_full() {
+        let mut partition = Partition::<High>::Vec(VecPartition::default());
+        partition.complement();
+        assert_eq!(partition, Partition::Full);
+        partition.complement();
+        assert_eq!(partition, Partition::EMPTY);
     }
 }

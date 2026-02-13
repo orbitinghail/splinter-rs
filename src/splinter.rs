@@ -729,7 +729,7 @@ mod tests {
 
         // fully dense splinter
         let set = set_gen.distributed(1, 1, 16, 256);
-        run_test("fully dense", set, elements, 121, 63);
+        run_test("fully dense", set, elements, 87, 63);
 
         // 128 elements per block; dense partitions
         let set = set_gen.distributed(1, 1, 32, 128);
@@ -765,15 +765,15 @@ mod tests {
 
         // each partition is dense
         let set = set_gen.dense(8, 8, 8, 8);
-        run_test("dense throughout", set, elements, 4113, 2700);
+        run_test("dense throughout", set, elements, 2790, 2700);
 
         // the lowest partitions are dense
         let set = set_gen.dense(1, 1, 64, 64);
-        run_test("dense low", set, elements, 529, 267);
+        run_test("dense low", set, elements, 291, 267);
 
         // the mid and low partitions are dense
         let set = set_gen.dense(1, 32, 16, 8);
-        run_test("dense mid/low", set, elements, 4113, 2376);
+        run_test("dense mid/low", set, elements, 2393, 2376);
 
         let random_cases = [
             // random sets drawing from the enire u32 range

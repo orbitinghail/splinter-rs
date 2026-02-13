@@ -76,9 +76,10 @@ impl<R: RangeBounds<T>, T: PrimInt + ConstOne + ConstZero> RangeExt<T> for R {
 
             (Unbounded, _) | (_, Unbounded) => false,
 
-            (Included(start), Excluded(end))
-            | (Excluded(start), Included(end))
-            | (Excluded(start), Excluded(end)) => start >= end,
+            (Included(start), Excluded(end)) | (Excluded(start), Included(end)) => start >= end,
+
+            // Integer-exclusive bounds have an extra gap: (n, n + 1) is empty.
+            (Excluded(start), Excluded(end)) => (*start).saturating_add(T::ONE) >= *end,
 
             (Included(start), Included(end)) => start > end,
         }
@@ -186,3 +187,103 @@ impl<T: Integer> DoubleEndedIterator for RangeIter<T> {
 
 impl<T: Integer> ExactSizeIterator for RangeIter<T> {}
 impl<T: Integer> FusedIterator for RangeIter<T> {}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Bound;
+
+    use crate::{PartitionRead, Splinter, util::RangeExt};
+
+    #[test]
+    fn test_full_contains_any_exclusive_adjacent_range_is_false() {
+        // (5, 6) is empty over integers and should never intersect, even with FULL.
+        let range = (Bound::Excluded(5), Bound::Excluded(6));
+        assert!(!Splinter::FULL.contains_any(range));
+    }
+
+    #[test]
+    fn test_range_ext_is_empty_table() {
+        type Case = (&'static str, (Bound<u8>, Bound<u8>), bool);
+        let cases: &[Case] = &[
+            (
+                "unbounded..unbounded",
+                (Bound::Unbounded, Bound::Unbounded),
+                false,
+            ),
+            (
+                "unbounded..=included",
+                (Bound::Unbounded, Bound::Included(3)),
+                false,
+            ),
+            (
+                "unbounded..excluded_zero",
+                (Bound::Unbounded, Bound::Excluded(0)),
+                true,
+            ),
+            (
+                "unbounded..excluded_nonzero",
+                (Bound::Unbounded, Bound::Excluded(1)),
+                false,
+            ),
+            (
+                "included..unbounded",
+                (Bound::Included(3), Bound::Unbounded),
+                false,
+            ),
+            (
+                "excluded_max..unbounded",
+                (Bound::Excluded(u8::MAX), Bound::Unbounded),
+                true,
+            ),
+            (
+                "excluded_not_max..unbounded",
+                (Bound::Excluded(u8::MAX - 1), Bound::Unbounded),
+                false,
+            ),
+            (
+                "included..included_non_empty",
+                (Bound::Included(3), Bound::Included(3)),
+                false,
+            ),
+            (
+                "included..included_empty",
+                (Bound::Included(4), Bound::Included(3)),
+                true,
+            ),
+            (
+                "included..excluded_non_empty",
+                (Bound::Included(3), Bound::Excluded(4)),
+                false,
+            ),
+            (
+                "included..excluded_empty",
+                (Bound::Included(3), Bound::Excluded(3)),
+                true,
+            ),
+            (
+                "excluded..included_non_empty",
+                (Bound::Excluded(2), Bound::Included(3)),
+                false,
+            ),
+            (
+                "excluded..included_empty",
+                (Bound::Excluded(3), Bound::Included(3)),
+                true,
+            ),
+            (
+                "excluded..excluded_non_empty",
+                (Bound::Excluded(3), Bound::Excluded(5)),
+                false,
+            ),
+            (
+                "excluded..excluded_adjacent_empty",
+                (Bound::Excluded(3), Bound::Excluded(4)),
+                true,
+            ),
+        ];
+
+        for (name, range, expected_empty) in cases {
+            assert_eq!(RangeExt::is_empty(range), *expected_empty, "case: {name}");
+        }
+    }
+}

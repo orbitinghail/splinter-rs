@@ -10,13 +10,11 @@ use num::traits::{AsPrimitive, Bounded};
 use crate::{
     MultiIter,
     codec::{Encodable, encoder::Encoder},
-    count::count_unique_sorted,
     level::Level,
     partition::{
         bitmap::BitmapPartition, run::RunPartition, tree::TreePartition, vec::VecPartition,
     },
     partition_kind::PartitionKind,
-    segment::SplitSegment,
     traits::{DefaultFull, Optimizable, PartitionRead, PartitionWrite, TruncateFrom},
     util::{IteratorExt, RangeExt},
 };
@@ -48,7 +46,7 @@ impl<L: Level> Partition<L> {
         }
     }
 
-    fn switch_kind(&mut self, kind: PartitionKind) {
+    pub(crate) fn switch_kind(&mut self, kind: PartitionKind) {
         if self.kind() == kind {
             return;
         }
@@ -93,7 +91,7 @@ impl<L: Level> Partition<L> {
     fn segments(&self) -> usize {
         match self {
             Partition::Full => 256,
-            Partition::Vec(p) => count_unique_sorted(p.iter().map(|v| v.segment())),
+            Partition::Vec(p) => p.segments(),
             Partition::Bitmap(p) => p.segments(),
             Partition::Run(p) => p.segments(),
             Partition::Tree(p) => p.segments(),
@@ -216,9 +214,20 @@ impl<L: Level> DefaultFull for Partition<L> {
 
 impl<L: Level> Optimizable for Partition<L> {
     fn optimize(&mut self) {
-        self.switch_kind(self.optimize_kind(false));
+        // we need to optimize children first to ensure that optimize_kind
+        // chooses the best result
         if let Partition::Tree(tree) = self {
             tree.optimize_children();
+        }
+
+        let kind = self.optimize_kind(false);
+        if self.kind() != kind {
+            self.switch_kind(kind);
+
+            // if we switched to a tree, make sure we fully optimize children
+            if let Partition::Tree(tree) = self {
+                tree.optimize_children();
+            }
         }
     }
 }
@@ -463,7 +472,7 @@ mod tests {
     use itertools::Itertools;
 
     use crate::{
-        PartitionRead,
+        PartitionRead, PartitionWrite,
         level::{Block, High, Level, Low},
         partition::Partition,
         partition_kind::PartitionKind,
@@ -530,5 +539,13 @@ mod tests {
                 test_partition_write(&mut partition);
             }
         }
+    }
+
+    #[test]
+    fn test_block_segments() {
+        let mut p = Partition::<Block>::default();
+        p.insert(1);
+        // this should not panic
+        let _ = p.segments();
     }
 }
