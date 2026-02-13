@@ -57,7 +57,3 @@ harness = false
 [[bench]]
 name = "count_bench"
 harness = false
-
-[[bench]]
-name = "bitop_bench"
-harness = false
