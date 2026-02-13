@@ -1,0 +1,1 @@
+allow-branch = ["*"] # We use JJ, just make sure you're releaseing from an empty changeset on main!
