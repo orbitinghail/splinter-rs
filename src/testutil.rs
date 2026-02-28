@@ -11,7 +11,7 @@ use num::{
     traits::{Bounded, ConstOne, ConstZero},
 };
 use rand::{
-    Rng, SeedableRng,
+    RngExt, SeedableRng,
     rngs::StdRng,
     seq::{SliceRandom, index},
 };
