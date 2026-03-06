@@ -140,7 +140,7 @@ mod tests {
             LevelSetGen, mkpartition, mkpartition_buf, mksplinter_buf, mksplinter_manual,
             test_partition_read,
         },
-        traits::{Optimizable, TruncateFrom},
+        traits::{Optimizable, PartitionRead, TruncateFrom},
     };
 
     #[test]
@@ -206,6 +206,17 @@ mod tests {
 
             test_partition_read(&splinter_ref, &expected);
         }
+    }
+
+    #[test]
+    fn test_dense_splinter_roundtrip_7936_boundary() {
+        let encoded = (1u32..=7936).collect::<Splinter>().encode_to_bytes();
+        let decoded = SplinterRef::from_bytes(encoded).expect("decode");
+
+        assert_eq!(decoded.cardinality(), 7936);
+        assert_eq!(decoded.select(0), Some(1));
+        assert_eq!(decoded.last(), Some(7936));
+        assert!(!decoded.contains(0));
     }
 
     #[test]
