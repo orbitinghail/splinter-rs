@@ -3,7 +3,7 @@ use std::{marker::PhantomData, mem::size_of};
 use zerocopy::FromBytes;
 
 use crate::{
-    PartitionRead, PartitionWrite,
+    PartitionRead,
     codec::{
         DecodeErr,
         partition_ref::{NonRecursivePartitionRef, PartitionRef, decode_len_from_suffix},
@@ -350,7 +350,9 @@ impl<L: Level> TreeIndexBuilder<L> {
             cardinality, 0,
             "BUG: tree children must have cardinality > 0"
         );
-        self.segments.insert(segment);
+        // The tree codec infers the segment index representation from the final
+        // child count, so keep the preselected store stable while populating it.
+        self.segments.raw_insert(segment);
         self.offsets.push(offset);
         let prev = self.cumulative_cardinalities.last().copied().unwrap_or(0);
         self.cumulative_cardinalities.push(prev + cardinality);
