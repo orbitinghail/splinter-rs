@@ -480,9 +480,7 @@ mod test {
     /// SplinterRef select and rank match owned Splinter.
     #[hegel::test]
     fn test_splinter_ref_select_rank(tc: hegel::TestCase) {
-        let values: Vec<u32> = tc.draw(
-            generators::vecs(generators::integers::<u32>()).min_size(1),
-        );
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()).min_size(1));
         let splinter = mksplinter(&values);
         let splinter_ref = splinter.encode_to_splinter_ref();
         let cardinality = splinter.cardinality();

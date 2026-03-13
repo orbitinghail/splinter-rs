@@ -611,7 +611,11 @@ mod tests {
         let splinter = Splinter::from_iter(values);
         let items: Vec<u32> = splinter.iter().collect();
         for window in items.windows(2) {
-            assert!(window[0] < window[1], "iter not strictly sorted: {:?}", window);
+            assert!(
+                window[0] < window[1],
+                "iter not strictly sorted: {:?}",
+                window
+            );
         }
     }
 
@@ -683,9 +687,7 @@ mod tests {
     /// Select and position are inverses: select(position(v)) == v and position(select(i)) == i.
     #[hegel::test]
     fn test_select_position_inverse(tc: hegel::TestCase) {
-        let values: Vec<u32> = tc.draw(
-            generators::vecs(generators::integers::<u32>()).min_size(1),
-        );
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()).min_size(1));
         let splinter = Splinter::from_iter(values);
         let cardinality = splinter.cardinality();
         let idx = tc.draw(generators::integers::<usize>().max_value(cardinality - 1));
@@ -696,9 +698,8 @@ mod tests {
     /// Rank is consistent: rank(v) == number of elements <= v.
     #[hegel::test]
     fn test_rank_consistency(tc: hegel::TestCase) {
-        let values: Vec<u32> = tc.draw(
-            generators::vecs(generators::integers::<u32>().max_value(65535)).min_size(1),
-        );
+        let values: Vec<u32> =
+            tc.draw(generators::vecs(generators::integers::<u32>().max_value(65535)).min_size(1));
         let splinter = Splinter::from_iter(values);
         let query = tc.draw(generators::integers::<u32>().max_value(65535));
         let rank = splinter.rank(query);
