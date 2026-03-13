@@ -301,7 +301,7 @@ mod tests {
     use proptest::proptest;
 
     use crate::testutil::{mksplinter_cow, mksplinter_ref};
-    use crate::{Optimizable, Splinter, testutil::mksplinter, traits::Cut};
+    use crate::{Optimizable, PartitionRead, Splinter, testutil::mksplinter, traits::Cut};
 
     macro_rules! exercise_bitop {
         ($a:expr, $b:expr, $seta:expr, $setb:expr, $op_method:ident, $hashset_method:ident) => {
@@ -508,5 +508,138 @@ mod tests {
             assert_eq!(actual_intersection,expected_intersection);
             assert_eq!(source,expected_remaining);
         }
+    }
+
+    // -- Hegel property-based tests --
+
+    use hegel::generators;
+
+    /// Union is commutative: a | b == b | a
+    #[hegel::test]
+    fn test_union_commutative(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        assert_eq!(&a | &b, &b | &a);
+    }
+
+    /// Intersection is commutative: a & b == b & a
+    #[hegel::test]
+    fn test_intersection_commutative(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        assert_eq!(&a & &b, &b & &a);
+    }
+
+    /// XOR is commutative: a ^ b == b ^ a
+    #[hegel::test]
+    fn test_xor_commutative(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        assert_eq!(&a ^ &b, &b ^ &a);
+    }
+
+    /// Union with self is idempotent: a | a == a
+    #[hegel::test]
+    fn test_union_idempotent(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(values);
+        assert_eq!(&a | &a, a);
+    }
+
+    /// Intersection with self is idempotent: a & a == a
+    #[hegel::test]
+    fn test_intersection_idempotent(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(values);
+        assert_eq!(&a & &a, a);
+    }
+
+    /// XOR with self is empty: a ^ a == empty
+    #[hegel::test]
+    fn test_xor_self_is_empty(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(values);
+        assert_eq!(&a ^ &a, Splinter::EMPTY);
+    }
+
+    /// Difference with self is empty: a - a == empty
+    #[hegel::test]
+    fn test_difference_self_is_empty(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(values);
+        assert_eq!(&a - &a, Splinter::EMPTY);
+    }
+
+    /// Union with empty is identity: a | empty == a
+    #[hegel::test]
+    fn test_union_empty_identity(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(values);
+        assert_eq!(&a | &Splinter::EMPTY, a);
+    }
+
+    /// Intersection with empty is empty: a & empty == empty
+    #[hegel::test]
+    fn test_intersection_empty_is_empty(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(values);
+        assert_eq!(&a & &Splinter::EMPTY, Splinter::EMPTY);
+    }
+
+    /// |a & b| <= min(|a|, |b|)
+    #[hegel::test]
+    fn test_intersection_cardinality_bound(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        let intersection = &a & &b;
+        assert!(intersection.cardinality() <= a.cardinality().min(b.cardinality()));
+    }
+
+    /// |a | b| >= max(|a|, |b|)
+    #[hegel::test]
+    fn test_union_cardinality_bound(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        let union = &a | &b;
+        assert!(union.cardinality() >= a.cardinality().max(b.cardinality()));
+    }
+
+    /// Inclusion-exclusion: |a | b| = |a| + |b| - |a & b|
+    #[hegel::test]
+    fn test_inclusion_exclusion(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        let union_card = (&a | &b).cardinality();
+        let intersection_card = (&a & &b).cardinality();
+        assert_eq!(union_card, a.cardinality() + b.cardinality() - intersection_card);
+    }
+
+    /// Cut decomposes into intersection + remainder: cut(a, b) returns a&b, leaves a-b.
+    #[hegel::test]
+    fn test_cut_decomposition(tc: hegel::TestCase) {
+        let va: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let vb: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut a = Splinter::from_iter(va);
+        let b = Splinter::from_iter(vb);
+        let original_a = a.clone();
+        let intersection = a.cut(&b);
+        // a now holds the remainder (a - b)
+        // intersection holds (a & b)
+        // Verify: remainder | intersection == original_a
+        assert_eq!(&a | &intersection, original_a);
+        // Verify: remainder & intersection == empty (disjoint)
+        assert_eq!(&a & &intersection, Splinter::EMPTY);
     }
 }

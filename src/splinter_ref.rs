@@ -422,4 +422,74 @@ mod test {
         let bytes = splinter_ref.encode_to_bytes();
         assert_eq!(splinter_ref.data, bytes);
     }
+
+    // -- Hegel property-based tests --
+
+    use hegel::generators;
+
+    /// SplinterRef contains exactly the same values as the original Splinter.
+    #[hegel::test]
+    fn test_splinter_ref_contains_same_values(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let splinter = mksplinter(&values);
+        let splinter_ref = splinter.encode_to_splinter_ref();
+        assert_eq!(splinter.cardinality(), splinter_ref.cardinality());
+        assert_eq!(splinter.is_empty(), splinter_ref.is_empty());
+        assert_eq!(splinter.last(), splinter_ref.last());
+        for v in splinter.iter() {
+            assert!(splinter_ref.contains(v));
+        }
+    }
+
+    /// SplinterRef iter matches the original Splinter iter.
+    #[hegel::test]
+    fn test_splinter_ref_iter_matches(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let splinter = mksplinter(&values);
+        let splinter_ref = splinter.encode_to_splinter_ref();
+        let owned_items: Vec<u32> = splinter.iter().collect();
+        let ref_items: Vec<u32> = splinter_ref.iter().collect();
+        assert_eq!(owned_items, ref_items);
+    }
+
+    /// Optimized Splinter encodes to an equivalent SplinterRef.
+    #[hegel::test]
+    fn test_optimized_splinter_ref_equivalence(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut optimized = mksplinter(&values);
+        optimized.optimize();
+        let unoptimized = mksplinter(&values);
+        let opt_ref = optimized.encode_to_splinter_ref();
+        let unopt_ref = unoptimized.encode_to_splinter_ref();
+        assert_eq!(opt_ref, unopt_ref);
+    }
+
+    /// Double encode/decode roundtrip: encode → decode → encode → decode is stable.
+    #[hegel::test]
+    fn test_double_roundtrip(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = mksplinter(&values);
+        splinter.optimize();
+        let ref1 = splinter.encode_to_splinter_ref();
+        let decoded1 = ref1.decode_to_splinter();
+        let ref2 = decoded1.encode_to_splinter_ref();
+        let decoded2 = ref2.decode_to_splinter();
+        assert_eq!(decoded1, decoded2);
+    }
+
+    /// SplinterRef select and rank match owned Splinter.
+    #[hegel::test]
+    fn test_splinter_ref_select_rank(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(
+            generators::vecs(generators::integers::<u32>()).min_size(1),
+        );
+        let splinter = mksplinter(&values);
+        let splinter_ref = splinter.encode_to_splinter_ref();
+        let cardinality = splinter.cardinality();
+        let idx = tc.draw(generators::integers::<usize>().max_value(cardinality - 1));
+        assert_eq!(splinter.select(idx), splinter_ref.select(idx));
+        let val = splinter.select(idx).unwrap();
+        assert_eq!(splinter.rank(val), splinter_ref.rank(val));
+        assert_eq!(splinter.position(val), splinter_ref.position(val));
+    }
 }

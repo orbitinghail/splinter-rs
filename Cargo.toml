@@ -38,6 +38,7 @@ zerocopy = { version = "0.8", features = ["derive"] }
 splinter-rs = { path = ".", features = ["testutil"] }
 
 criterion = "=0.8.2"
+hegel = { git = "https://github.com/hegeldev/hegel-rust" }
 lz4 = "=1.28.1"
 roaring = "=0.11.3"
 

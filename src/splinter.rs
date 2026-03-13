@@ -600,6 +600,157 @@ mod tests {
         }
     }
 
+    // -- Hegel property-based tests --
+
+    use hegel::generators;
+
+    /// Iter always produces sorted, deduplicated output.
+    #[hegel::test]
+    fn test_iter_sorted_and_deduped(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let splinter = Splinter::from_iter(values);
+        let items: Vec<u32> = splinter.iter().collect();
+        for window in items.windows(2) {
+            assert!(window[0] < window[1], "iter not strictly sorted: {:?}", window);
+        }
+    }
+
+    /// Cardinality equals the number of items yielded by iter.
+    #[hegel::test]
+    fn test_cardinality_equals_iter_count(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let splinter = Splinter::from_iter(values);
+        assert_eq!(splinter.cardinality(), splinter.iter().count());
+    }
+
+    /// Every inserted value is contained; every iterated value is contained.
+    #[hegel::test]
+    fn test_contains_all_inserted_values(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let splinter = Splinter::from_iter(values.iter().copied());
+        for &v in &values {
+            assert!(splinter.contains(v), "missing value {v}");
+        }
+    }
+
+    /// Insert returns true for new values, false for duplicates.
+    #[hegel::test]
+    fn test_insert_returns_correct_bool(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = Splinter::EMPTY;
+        let mut seen = std::collections::HashSet::new();
+        for v in values {
+            let was_new = seen.insert(v);
+            assert_eq!(splinter.insert(v), was_new);
+        }
+    }
+
+    /// Remove returns true when value was present, false otherwise.
+    #[hegel::test]
+    fn test_remove_returns_correct_bool(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = Splinter::from_iter(values.iter().copied());
+        let to_remove: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut present: std::collections::HashSet<u32> = values.into_iter().collect();
+        for v in to_remove {
+            let was_present = present.remove(&v);
+            assert_eq!(splinter.remove(v), was_present);
+        }
+    }
+
+    /// Optimize preserves the set of elements.
+    #[hegel::test]
+    fn test_optimize_preserves_elements(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = Splinter::from_iter(values.iter().copied());
+        let before: Vec<u32> = splinter.iter().collect();
+        splinter.optimize();
+        let after: Vec<u32> = splinter.iter().collect();
+        assert_eq!(before, after);
+    }
+
+    /// Optimize is idempotent: optimizing twice gives the same result.
+    #[hegel::test]
+    fn test_optimize_idempotent(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = Splinter::from_iter(values);
+        splinter.optimize();
+        let after_first = splinter.clone();
+        splinter.optimize();
+        assert_eq!(splinter, after_first);
+    }
+
+    /// Select and position are inverses: select(position(v)) == v and position(select(i)) == i.
+    #[hegel::test]
+    fn test_select_position_inverse(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(
+            generators::vecs(generators::integers::<u32>()).min_size(1),
+        );
+        let splinter = Splinter::from_iter(values);
+        let cardinality = splinter.cardinality();
+        let idx = tc.draw(generators::integers::<usize>().max_value(cardinality - 1));
+        let value = splinter.select(idx).unwrap();
+        assert_eq!(splinter.position(value), Some(idx));
+    }
+
+    /// Rank is consistent: rank(v) == number of elements <= v.
+    #[hegel::test]
+    fn test_rank_consistency(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(
+            generators::vecs(generators::integers::<u32>().max_value(65535)).min_size(1),
+        );
+        let splinter = Splinter::from_iter(values);
+        let query = tc.draw(generators::integers::<u32>().max_value(65535));
+        let rank = splinter.rank(query);
+        let count_leq = splinter.iter().filter(|&v| v <= query).count();
+        assert_eq!(rank, count_leq);
+    }
+
+    /// Encode/decode roundtrip: encode → SplinterRef → decode recovers the same set.
+    #[hegel::test]
+    fn test_encode_decode_roundtrip(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = Splinter::from_iter(values);
+        splinter.optimize();
+        let encoded = splinter.encode_to_bytes();
+        let splinter_ref = SplinterRef::from_bytes(encoded).unwrap();
+        let decoded = splinter_ref.decode_to_splinter();
+        assert_eq!(splinter, decoded);
+    }
+
+    /// encoded_size matches actual encoded byte length.
+    #[hegel::test]
+    fn test_encoded_size_matches(tc: hegel::TestCase) {
+        let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
+        let mut splinter = Splinter::from_iter(values);
+        splinter.optimize();
+        let declared_size = splinter.encoded_size();
+        let actual_bytes = splinter.encode_to_bytes();
+        assert_eq!(declared_size, actual_bytes.len());
+    }
+
+    /// Splinter from a range contains exactly the values in that range.
+    #[hegel::test]
+    fn test_from_range_contains_all(tc: hegel::TestCase) {
+        let mut a = tc.draw(generators::integers::<u16>());
+        let mut b = tc.draw(generators::integers::<u16>());
+        if a > b {
+            (a, b) = (b, a);
+        }
+        let start = a as u32;
+        let end = b as u32;
+        let splinter = Splinter::from(start..=end);
+        assert_eq!(splinter.cardinality(), (end - start + 1) as usize);
+        assert!(splinter.contains(start));
+        assert!(splinter.contains(end));
+        if start > 0 {
+            assert!(!splinter.contains(start - 1));
+        }
+        if end < u32::MAX {
+            assert!(!splinter.contains(end + 1));
+        }
+    }
+
     #[test]
     fn test_expected_compression() {
         fn to_roaring(set: impl Iterator<Item = u32>) -> Vec<u8> {
