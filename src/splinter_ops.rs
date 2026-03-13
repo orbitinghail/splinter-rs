@@ -623,7 +623,10 @@ mod tests {
         let b = Splinter::from_iter(vb);
         let union_card = (&a | &b).cardinality();
         let intersection_card = (&a & &b).cardinality();
-        assert_eq!(union_card, a.cardinality() + b.cardinality() - intersection_card);
+        assert_eq!(
+            union_card,
+            a.cardinality() + b.cardinality() - intersection_card
+        );
     }
 
     /// Cut decomposes into intersection + remainder: cut(a, b) returns a&b, leaves a-b.
