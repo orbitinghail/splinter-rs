@@ -398,16 +398,39 @@ impl<L: Level> Extend<L::Value> for BitmapPartition<L> {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
 
+    use hegel::generators;
     use itertools::Itertools;
     use proptest::proptest;
 
     use crate::{
+        count::count_runs_sorted,
         level::{Block, Low},
         partition::{Partition, bitmap::BitmapPartition},
         testutil::{test_partition_read, test_partition_write},
+        traits::{Complement, Cut, PartitionRead, PartitionWrite},
     };
+
+    fn sorted_unique_u16(values: Vec<u16>) -> Vec<u16> {
+        values.into_iter().collect::<BTreeSet<_>>().into_iter().collect()
+    }
+
+    fn sorted_unique_u8(values: Vec<u8>) -> Vec<u8> {
+        values.into_iter().collect::<BTreeSet<_>>().into_iter().collect()
+    }
+
+    fn count_segments(values: &[u16]) -> usize {
+        values.iter().map(|&v| (v >> 8) as u8).collect::<BTreeSet<_>>().len()
+    }
+
+    fn position(values: &[u16], needle: u16) -> Option<usize> {
+        values.binary_search(&needle).ok()
+    }
+
+    fn rank(values: &[u16], needle: u16) -> usize {
+        values.partition_point(|&value| value <= needle)
+    }
 
     #[test]
     fn test_bitmap_write() {
@@ -421,6 +444,70 @@ mod test {
         test_partition_write(&mut partition);
     }
 
+    #[test]
+    fn test_bitmap_direct_bitops_match_model() {
+        let lhs_values = [1u16, 2, 3, 255, 256, 1024];
+        let rhs_values = [2u16, 4, 255, 300, 1024, 4096];
+
+        let lhs_model = lhs_values.into_iter().collect::<BTreeSet<_>>();
+        let rhs_model = rhs_values.into_iter().collect::<BTreeSet<_>>();
+
+        let lhs = BitmapPartition::<Low>::from_iter(lhs_model.iter().copied());
+        let rhs = BitmapPartition::<Low>::from_iter(rhs_model.iter().copied());
+
+        assert!(lhs == lhs.as_bitbox().as_bitslice());
+
+        let mut union = lhs.clone();
+        union |= &rhs;
+        assert_eq!(
+            union.iter().collect::<BTreeSet<_>>(),
+            lhs_model.union(&rhs_model).copied().collect()
+        );
+
+        let mut union_bits = lhs.clone();
+        union_bits |= rhs.as_bitbox().as_bitslice();
+        assert_eq!(union_bits.iter().collect::<BTreeSet<_>>(), union.iter().collect());
+
+        let mut intersection = lhs.clone();
+        intersection &= &rhs;
+        assert_eq!(
+            intersection.iter().collect::<BTreeSet<_>>(),
+            lhs_model.intersection(&rhs_model).copied().collect()
+        );
+
+        let mut intersection_bits = lhs.clone();
+        intersection_bits &= rhs.as_bitbox().as_bitslice();
+        assert_eq!(
+            intersection_bits.iter().collect::<BTreeSet<_>>(),
+            intersection.iter().collect()
+        );
+
+        let mut xor = lhs.clone();
+        xor ^= &rhs;
+        assert_eq!(
+            xor.iter().collect::<BTreeSet<_>>(),
+            lhs_model.symmetric_difference(&rhs_model).copied().collect()
+        );
+
+        let mut xor_bits = lhs.clone();
+        xor_bits ^= rhs.as_bitbox().as_bitslice();
+        assert_eq!(xor_bits.iter().collect::<BTreeSet<_>>(), xor.iter().collect());
+
+        let mut difference = lhs.clone();
+        difference -= &rhs;
+        assert_eq!(
+            difference.iter().collect::<BTreeSet<_>>(),
+            lhs_model.difference(&rhs_model).copied().collect()
+        );
+
+        let mut difference_bits = lhs.clone();
+        difference_bits -= rhs.as_bitbox().as_bitslice();
+        assert_eq!(
+            difference_bits.iter().collect::<BTreeSet<_>>(),
+            difference.iter().collect()
+        );
+    }
+
     proptest! {
         #[test]
         fn test_bitmap_small_read_proptest(set: HashSet<u8>) {
@@ -428,5 +515,122 @@ mod test {
             let partition = BitmapPartition::<Block>::from_iter(set);
             test_partition_read(&partition, &expected);
         }
+    }
+
+    #[hegel::test]
+    fn test_bitmap_low_matches_model(tc: hegel::TestCase) {
+        let values = tc.draw(
+            generators::vecs(generators::integers::<u16>())
+                .unique()
+                .max_size(512),
+        );
+        let probes = tc.draw(generators::vecs(generators::integers::<u16>()).max_size(64));
+
+        let expected = sorted_unique_u16(values);
+        let partition = BitmapPartition::<Low>::from_iter(expected.iter().copied());
+
+        assert_eq!(partition.cardinality(), expected.len());
+        assert_eq!(partition.iter().collect_vec(), expected);
+        assert_eq!(partition.last(), expected.last().copied());
+        assert_eq!(partition.count_runs(), count_runs_sorted(expected.iter().copied()));
+        assert_eq!(partition.segments(), count_segments(&expected));
+
+        for probe in probes {
+            assert_eq!(partition.contains(probe), expected.binary_search(&probe).is_ok());
+            assert_eq!(partition.position(probe), position(&expected, probe));
+            assert_eq!(partition.rank(probe), rank(&expected, probe));
+        }
+
+        for (idx, &value) in expected.iter().enumerate() {
+            assert_eq!(partition.select(idx), Some(value));
+        }
+        assert_eq!(partition.select(expected.len()), None);
+    }
+
+    #[hegel::test]
+    fn test_bitmap_low_range_ops_match_model(tc: hegel::TestCase) {
+        let values = tc.draw(
+            generators::vecs(generators::integers::<u16>())
+                .unique()
+                .max_size(512),
+        );
+        let mut start = tc.draw(generators::integers::<u16>());
+        let mut end = tc.draw(generators::integers::<u16>());
+        if start > end {
+            (start, end) = (end, start);
+        }
+
+        let expected = sorted_unique_u16(values);
+        let expected_all = (start..=end).all(|value| expected.binary_search(&value).is_ok());
+        let expected_any = (start..=end).any(|value| expected.binary_search(&value).is_ok());
+
+        let mut partition = BitmapPartition::<Low>::from_iter(expected.iter().copied());
+        assert_eq!(partition.contains_all(start..=end), expected_all);
+        assert_eq!(partition.contains_any(start..=end), expected_any);
+
+        partition.remove_range(start..=end);
+        let after = expected
+            .into_iter()
+            .filter(|&value| !(start..=end).contains(&value))
+            .collect_vec();
+
+        assert_eq!(partition.iter().collect_vec(), after);
+        assert_eq!(partition.cardinality(), after.len());
+    }
+
+    #[hegel::test]
+    fn test_bitmap_low_cut_matches_model(tc: hegel::TestCase) {
+        let lhs_values = tc.draw(
+            generators::vecs(generators::integers::<u16>())
+                .unique()
+                .max_size(512),
+        );
+        let rhs_values = tc.draw(
+            generators::vecs(generators::integers::<u16>())
+                .unique()
+                .max_size(512),
+        );
+
+        let lhs_model = sorted_unique_u16(lhs_values);
+        let rhs_model = sorted_unique_u16(rhs_values);
+
+        let mut lhs = BitmapPartition::<Low>::from_iter(lhs_model.iter().copied());
+        let rhs = BitmapPartition::<Low>::from_iter(rhs_model.iter().copied());
+        let cut = lhs.cut(&rhs);
+
+        let expected_cut = lhs_model
+            .iter()
+            .copied()
+            .filter(|value| rhs_model.binary_search(value).is_ok())
+            .collect_vec();
+        let expected_remaining = lhs_model
+            .iter()
+            .copied()
+            .filter(|value| rhs_model.binary_search(value).is_err())
+            .collect_vec();
+
+        assert_eq!(cut.iter().collect_vec(), expected_cut);
+        assert_eq!(lhs.iter().collect_vec(), expected_remaining);
+        assert_eq!(lhs.cardinality(), expected_remaining.len());
+    }
+
+    #[hegel::test]
+    fn test_bitmap_block_complement_matches_model(tc: hegel::TestCase) {
+        let values = tc.draw(
+            generators::vecs(generators::integers::<u8>())
+                .unique()
+                .max_size(256),
+        );
+
+        let values = sorted_unique_u8(values);
+        let mut partition = BitmapPartition::<Block>::from_iter(values.iter().copied());
+        partition.complement();
+
+        let expected = (u8::MIN..=u8::MAX)
+            .filter(|value| values.binary_search(value).is_err())
+            .collect_vec();
+
+        assert_eq!(partition.iter().collect_vec(), expected);
+        assert_eq!(partition.cardinality(), expected.len());
     }
 }
