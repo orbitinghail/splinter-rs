@@ -413,15 +413,27 @@ mod test {
     };
 
     fn sorted_unique_u16(values: Vec<u16>) -> Vec<u16> {
-        values.into_iter().collect::<BTreeSet<_>>().into_iter().collect()
+        values
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     fn sorted_unique_u8(values: Vec<u8>) -> Vec<u8> {
-        values.into_iter().collect::<BTreeSet<_>>().into_iter().collect()
+        values
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     fn count_segments(values: &[u16]) -> usize {
-        values.iter().map(|&v| (v >> 8) as u8).collect::<BTreeSet<_>>().len()
+        values
+            .iter()
+            .map(|&v| (v >> 8) as u8)
+            .collect::<BTreeSet<_>>()
+            .len()
     }
 
     fn position(values: &[u16], needle: u16) -> Option<usize> {
@@ -466,7 +478,10 @@ mod test {
 
         let mut union_bits = lhs.clone();
         union_bits |= rhs.as_bitbox().as_bitslice();
-        assert_eq!(union_bits.iter().collect::<BTreeSet<_>>(), union.iter().collect());
+        assert_eq!(
+            union_bits.iter().collect::<BTreeSet<_>>(),
+            union.iter().collect()
+        );
 
         let mut intersection = lhs.clone();
         intersection &= &rhs;
@@ -486,12 +501,18 @@ mod test {
         xor ^= &rhs;
         assert_eq!(
             xor.iter().collect::<BTreeSet<_>>(),
-            lhs_model.symmetric_difference(&rhs_model).copied().collect()
+            lhs_model
+                .symmetric_difference(&rhs_model)
+                .copied()
+                .collect()
         );
 
         let mut xor_bits = lhs.clone();
         xor_bits ^= rhs.as_bitbox().as_bitslice();
-        assert_eq!(xor_bits.iter().collect::<BTreeSet<_>>(), xor.iter().collect());
+        assert_eq!(
+            xor_bits.iter().collect::<BTreeSet<_>>(),
+            xor.iter().collect()
+        );
 
         let mut difference = lhs.clone();
         difference -= &rhs;
@@ -532,11 +553,17 @@ mod test {
         assert_eq!(partition.cardinality(), expected.len());
         assert_eq!(partition.iter().collect_vec(), expected);
         assert_eq!(partition.last(), expected.last().copied());
-        assert_eq!(partition.count_runs(), count_runs_sorted(expected.iter().copied()));
+        assert_eq!(
+            partition.count_runs(),
+            count_runs_sorted(expected.iter().copied())
+        );
         assert_eq!(partition.segments(), count_segments(&expected));
 
         for probe in probes {
-            assert_eq!(partition.contains(probe), expected.binary_search(&probe).is_ok());
+            assert_eq!(
+                partition.contains(probe),
+                expected.binary_search(&probe).is_ok()
+            );
             assert_eq!(partition.position(probe), position(&expected, probe));
             assert_eq!(partition.rank(probe), rank(&expected, probe));
         }
