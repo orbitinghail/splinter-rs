@@ -417,13 +417,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hegel"
-version = "0.5.0"
-source = "git+https://github.com/hegeldev/hegel-rust#9ed8b24b23868575da31009d1e12106784313076"
+name = "hegeltest"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86761ec0bb54a7e91ee0c096e29f6aabb77e120539880030e5d482142d117377"
 dependencies = [
  "ciborium",
  "crc32fast",
- "hegel-derive",
+ "hegeltest-macros",
  "num",
  "paste",
  "serde",
@@ -431,9 +432,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "hegel-derive"
-version = "0.5.0"
-source = "git+https://github.com/hegeldev/hegel-rust#9ed8b24b23868575da31009d1e12106784313076"
+name = "hegeltest-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1063de2a07dfae55474af3efb801ea7ead7e7ceb1e8593bf0bb335e42a10699"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -981,7 +983,7 @@ dependencies = [
  "crc64fast-nvme",
  "criterion",
  "either",
- "hegel",
+ "hegeltest",
  "itertools 0.14.0",
  "lz4",
  "num",

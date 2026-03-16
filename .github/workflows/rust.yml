@@ -30,13 +30,6 @@ jobs:
 
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
 
-      - name: Install Hegel server
-        run: |
-          uv venv .hegel-server
-          uv pip install --python .hegel-server/bin/python \
-            'hegel @ git+https://github.com/hegeldev/hegel-core@5d9c0f134d3f868274d95c52118a3b414a411859'
-          echo "HEGEL_SERVER_COMMAND=$GITHUB_WORKSPACE/.hegel-server/bin/hegel" >> "$GITHUB_ENV"
-
       - name: Install Nextest
         run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/bin
 
