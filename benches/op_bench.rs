@@ -34,24 +34,24 @@ fn benchmark_contains(c: &mut Criterion) {
     for &cardinality in &cardinalities {
         let set = set_gen.random(cardinality as usize);
         // we want to lookup the cardinality/3th element
-        let lookup = set[(set.len() / 3) as usize];
+        let lookup = set[set.len() / 3];
 
         group.bench_function(BenchmarkId::new("splinter", cardinality), |b| {
             let splinter = mksplinter(set.clone());
-            assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
+            assert!(splinter.contains(black_box(lookup)), "lookup {lookup}");
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
         group.bench_function(BenchmarkId::new("splinter optimized", cardinality), |b| {
             let mut splinter = mksplinter(set.clone());
             splinter.optimize();
-            assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
+            assert!(splinter.contains(black_box(lookup)), "lookup {lookup}");
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
         group.bench_function(BenchmarkId::new("splinter ref", cardinality), |b| {
             let splinter = mksplinter_ref(set.clone());
-            assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
+            assert!(splinter.contains(black_box(lookup)), "lookup {lookup}");
             b.iter(|| splinter.contains(black_box(lookup)))
         });
 
@@ -61,21 +61,21 @@ fn benchmark_contains(c: &mut Criterion) {
                 let mut splinter = mksplinter(set.clone());
                 splinter.optimize();
                 let splinter = splinter.encode_to_splinter_ref();
-                assert!(splinter.contains(black_box(lookup)), "lookup {}", lookup);
+                assert!(splinter.contains(black_box(lookup)), "lookup {lookup}");
                 b.iter(|| splinter.contains(black_box(lookup)))
             },
         );
 
         group.bench_function(BenchmarkId::new("roaring", cardinality), |b| {
             let bitmap = RoaringBitmap::from_sorted_iter(set.clone()).unwrap();
-            assert!(bitmap.contains(black_box(lookup)), "lookup {}", lookup);
+            assert!(bitmap.contains(black_box(lookup)), "lookup {lookup}");
             b.iter(|| bitmap.contains(black_box(lookup)))
         });
 
         group.bench_function(BenchmarkId::new("roaring optimized", cardinality), |b| {
             let mut bitmap = RoaringBitmap::from_sorted_iter(set.clone()).unwrap();
             bitmap.optimize();
-            assert!(bitmap.contains(black_box(lookup)), "lookup {}", lookup);
+            assert!(bitmap.contains(black_box(lookup)), "lookup {lookup}");
             b.iter(|| bitmap.contains(black_box(lookup)))
         });
     }
@@ -155,7 +155,7 @@ fn benchmark_position(c: &mut Criterion) {
 
     for &cardinality in &cardinalities {
         let set = set_gen.random(cardinality as usize);
-        let lookup = set[(set.len() / 3) as usize];
+        let lookup = set[set.len() / 3];
 
         group.bench_function(BenchmarkId::new("splinter", cardinality), |b| {
             let splinter = mksplinter(set.clone());

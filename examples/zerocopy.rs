@@ -18,7 +18,7 @@ fn main() {
     println!("First 32 bytes of serialized splinter:");
     // print out the first 32 bytes of the serialized splinter in hex
     for byte in bytes.iter().take(32) {
-        print!("{:02X} ", byte);
+        print!("{byte:02X} ");
     }
     println!();
 

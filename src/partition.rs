@@ -489,11 +489,7 @@ mod tests {
             <High as Level>::MAX_LEN,
             "cardinality"
         );
-        assert_eq!(
-            splinter.last(),
-            Some(<High as Level>::Value::max_value()),
-            "last"
-        );
+        assert_eq!(splinter.last(), Some(<High as Level>::Value::MAX), "last");
 
         let block = Partition::<Block>::Full;
         test_partition_read(&block, &(0..=255).collect_vec());
@@ -522,7 +518,7 @@ mod tests {
             setgen.runs(4096, 0.5),
             setgen.runs(4096, 0.9),
             (0..Block::MAX_LEN)
-                .map(|v| <Low as Level>::Value::truncate_from(v))
+                .map(<Low as Level>::Value::truncate_from)
                 .collect_vec(),
         ];
 
@@ -534,8 +530,8 @@ mod tests {
                     println!("break")
                 }
 
-                let mut partition = mkpartition::<Low>(kind, &set);
-                test_partition_read(&partition, &set);
+                let mut partition = mkpartition::<Low>(kind, set);
+                test_partition_read(&partition, set);
                 test_partition_write(&mut partition);
             }
         }

@@ -164,7 +164,7 @@ mod tests {
             setgen.runs(4096, 0.5),
             setgen.runs(4096, 0.9),
             (0..Low::MAX_LEN)
-                .map(|v| <Low as Level>::Value::truncate_from(v))
+                .map(<Low as Level>::Value::truncate_from)
                 .collect_vec(),
         ];
 
@@ -172,7 +172,7 @@ mod tests {
             for (i, set) in sets.iter().enumerate() {
                 println!("Testing partition kind: {kind:?} with set {i}");
 
-                let partition = mkpartition::<Low>(kind, &set);
+                let partition = mkpartition::<Low>(kind, set);
                 let buf = partition.encode_to_bytes();
                 assert_eq!(
                     partition.encoded_size(),
@@ -183,7 +183,7 @@ mod tests {
                 let partition_ref = PartitionRef::<'_, Low>::from_suffix(&buf).unwrap();
 
                 assert_eq!(partition_ref.kind(), kind);
-                test_partition_read(&partition_ref, &set);
+                test_partition_read(&partition_ref, set);
             }
         }
     }

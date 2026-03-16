@@ -543,7 +543,7 @@ mod tests {
         let partition = RunPartition::<Block>::from_sorted_unique_unchecked(vals.iter().copied());
 
         itertools::assert_equal(partition.runs.ranges(), [1..=2, 5..=5, 7..=8, 11..=11]);
-        itertools::assert_equal(vals.into_iter(), partition.iter());
+        itertools::assert_equal(vals, partition.iter());
     }
 
     #[test]

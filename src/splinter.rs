@@ -504,7 +504,7 @@ mod tests {
         splinter.optimize();
 
         dbg!(&splinter, splinter.encoded_size(), baseline_size, set.len());
-        itertools::assert_equal(splinter.iter(), set.into_iter());
+        itertools::assert_equal(splinter.iter(), set);
     }
 
     #[test]
@@ -613,8 +613,7 @@ mod tests {
         for window in items.windows(2) {
             assert!(
                 window[0] < window[1],
-                "iter not strictly sorted: {:?}",
-                window
+                "iter not strictly sorted: {window:?}"
             );
         }
     }
@@ -707,7 +706,7 @@ mod tests {
         assert_eq!(rank, count_leq);
     }
 
-    /// Encode/decode roundtrip: encode → SplinterRef → decode recovers the same set.
+    /// Encode/decode roundtrip: encode → `SplinterRef` → decode recovers the same set.
     #[hegel::test]
     fn test_encode_decode_roundtrip(tc: hegel::TestCase) {
         let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
@@ -719,7 +718,7 @@ mod tests {
         assert_eq!(splinter, decoded);
     }
 
-    /// encoded_size matches actual encoded byte length.
+    /// `encoded_size` matches actual encoded byte length.
     #[hegel::test]
     fn test_encoded_size_matches(tc: hegel::TestCase) {
         let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));

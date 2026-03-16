@@ -95,7 +95,7 @@ impl<L: Level> LevelSetGen<L> {
 
     pub fn linear(&mut self, count: usize) -> Vec<L::Value> {
         assert!(count <= L::MAX_LEN, "count must be less than L::MAX_LEN");
-        (0..count).map(|i| L::Value::truncate_from(i)).collect()
+        (0..count).map(L::Value::truncate_from).collect()
     }
 
     pub fn random(&mut self, len: usize) -> Vec<L::Value> {
@@ -297,7 +297,7 @@ where
         assert!(splinter.insert(sample));
     }
 
-    itertools::assert_equal(splinter.iter(), samples.into_iter());
+    itertools::assert_equal(splinter.iter(), samples);
 
     // test remove_range can clear the entire splinter
     splinter.remove_range(..);
@@ -340,7 +340,7 @@ where
 
 pub fn mkchecksum(data: &[u8]) -> u64 {
     let mut c = crc64fast_nvme::Digest::new();
-    c.write(&data);
+    c.write(data);
     c.sum64()
 }
 

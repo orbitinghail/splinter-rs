@@ -325,14 +325,14 @@ mod test {
         assert_eq!(splinter.last(), None);
     }
 
-    /// This is a regression test for a bug in the SplinterRef encoding. The bug
-    /// was that we used LittleEndian encoded values to store unaligned values,
+    /// This is a regression test for a bug in the `SplinterRef` encoding. The bug
+    /// was that we used `LittleEndian` encoded values to store unaligned values,
     /// which sort in reverse order from what we expect.
     #[test]
     fn test_contains_bug() {
         let mut set_gen = SetGen::new(0xDEAD_BEEF);
         let set = set_gen.random(1024);
-        let lookup = set[(set.len() / 3) as usize];
+        let lookup = set[set.len() / 3];
         let splinter = mksplinter(&set).encode_to_splinter_ref();
         assert!(splinter.contains(lookup))
     }
@@ -427,7 +427,7 @@ mod test {
 
     use hegel::generators;
 
-    /// SplinterRef contains exactly the same values as the original Splinter.
+    /// `SplinterRef` contains exactly the same values as the original Splinter.
     #[hegel::test]
     fn test_splinter_ref_contains_same_values(tc: hegel::TestCase) {
         let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
@@ -441,7 +441,7 @@ mod test {
         }
     }
 
-    /// SplinterRef iter matches the original Splinter iter.
+    /// `SplinterRef` iter matches the original Splinter iter.
     #[hegel::test]
     fn test_splinter_ref_iter_matches(tc: hegel::TestCase) {
         let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
@@ -452,7 +452,7 @@ mod test {
         assert_eq!(owned_items, ref_items);
     }
 
-    /// Optimized Splinter encodes to an equivalent SplinterRef.
+    /// Optimized Splinter encodes to an equivalent `SplinterRef`.
     #[hegel::test]
     fn test_optimized_splinter_ref_equivalence(tc: hegel::TestCase) {
         let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()));
@@ -477,7 +477,7 @@ mod test {
         assert_eq!(decoded1, decoded2);
     }
 
-    /// SplinterRef select and rank match owned Splinter.
+    /// `SplinterRef` select and rank match owned Splinter.
     #[hegel::test]
     fn test_splinter_ref_select_rank(tc: hegel::TestCase) {
         let values: Vec<u32> = tc.draw(generators::vecs(generators::integers::<u32>()).min_size(1));
