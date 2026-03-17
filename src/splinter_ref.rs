@@ -71,7 +71,7 @@ use crate::{
 /// let splinter_ref = SplinterRef::from_bytes(shared_bytes).unwrap();
 /// assert!(splinter_ref.contains(42));
 /// ```
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct SplinterRef<B> {
     pub(crate) data: B,
 }
