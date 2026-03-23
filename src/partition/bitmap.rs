@@ -542,7 +542,7 @@ mod test {
     fn test_bitmap_low_matches_model(tc: hegel::TestCase) {
         let values = tc.draw(
             generators::vecs(generators::integers::<u16>())
-                .unique()
+                .unique(true)
                 .max_size(512),
         );
         let probes = tc.draw(generators::vecs(generators::integers::<u16>()).max_size(64));
@@ -578,7 +578,7 @@ mod test {
     fn test_bitmap_low_range_ops_match_model(tc: hegel::TestCase) {
         let values = tc.draw(
             generators::vecs(generators::integers::<u16>())
-                .unique()
+                .unique(true)
                 .max_size(512),
         );
         let mut start = tc.draw(generators::integers::<u16>());
@@ -609,12 +609,12 @@ mod test {
     fn test_bitmap_low_cut_matches_model(tc: hegel::TestCase) {
         let lhs_values = tc.draw(
             generators::vecs(generators::integers::<u16>())
-                .unique()
+                .unique(true)
                 .max_size(512),
         );
         let rhs_values = tc.draw(
             generators::vecs(generators::integers::<u16>())
-                .unique()
+                .unique(true)
                 .max_size(512),
         );
 
@@ -645,7 +645,7 @@ mod test {
     fn test_bitmap_block_complement_matches_model(tc: hegel::TestCase) {
         let values = tc.draw(
             generators::vecs(generators::integers::<u8>())
-                .unique()
+                .unique(true)
                 .max_size(256),
         );
 
