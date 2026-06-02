@@ -802,18 +802,6 @@ dependencies = [
 
 [[package]]
 name = "range-set-blaze"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "953906b1d974976f882aea72a511bd37c5f633ef17839fd3bf2bd2d18cc101be"
-dependencies = [
- "gen_ops",
- "itertools 0.14.0",
- "num-integer",
- "num-traits",
-]
-
-[[package]]
-name = "range-set-blaze"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4dbaaf29990efce7efbdb301794fbacf9fcdbfb871e77f67c00b0ae3c08b665e"
@@ -1000,7 +988,7 @@ dependencies = [
  "num",
  "proptest",
  "rand 0.10.1",
- "range-set-blaze 0.5.0",
+ "range-set-blaze",
  "roaring",
  "splinter-rs",
  "static_assertions",
@@ -1077,12 +1065,12 @@ dependencies = [
 
 [[package]]
 name = "u24"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ad99188ca534c9d64fca4f6db75521ff55ce3b4d10c821d695a90f996d159"
+checksum = "3620d57106792483ffde8a3cf30b37f76b9ff7fe1a1833551c4872ffc3cfbfb0"
 dependencies = [
  "num",
- "range-set-blaze 0.4.1",
+ "range-set-blaze",
  "static_assertions",
  "zerocopy",
 ]
